@@ -1,0 +1,39 @@
+name: Build Installers
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  build-classroom:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+        working-directory: classroom-app
+      - run: npm run build
+        working-directory: classroom-app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: classroom-app-installer
+          path: classroom-app/dist/*.exe
+
+  build-teacher:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+        working-directory: teacher-app
+      - run: npm run build
+        working-directory: teacher-app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: teacher-app-installer
+          path: teacher-app/dist/*.exe
