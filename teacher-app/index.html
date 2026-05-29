@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>教师端 — 教室呼叫系统</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h1>教室呼叫</h1>
+      <span class="brand-sub">教师端</span>
+    </div>
+
+    <div class="connect-box">
+      <input type="text" id="ipInput" placeholder="输入教室 IP 地址" autofocus>
+      <button id="connectBtn" class="btn btn-primary">连接</button>
+    </div>
+
+    <div class="room-section">
+      <div class="section-label">已连接教室</div>
+      <ul id="roomList" class="room-list"></ul>
+      <div id="noRooms" class="muted-note">输入教室 IP 并点击连接</div>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="status-row">
+        <span id="connDot" class="dot offline"></span>
+        <span id="connLabel">未连接</span>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <div id="roomHeader" class="room-header hidden">
+      <h2 id="roomTitle"></h2>
+      <span id="studentCount" class="badge"></span>
+    </div>
+
+    <div id="msgRow" class="msg-row hidden">
+      <label>呼叫消息</label>
+      <div id="msgEditor" class="msg-editor" contenteditable="true" spellcheck="false"></div>
+      <input type="hidden" id="callMessage" value="{name}同学，请到办公室">
+    </div>
+
+    <div id="studentGrid" class="student-grid"></div>
+
+    <div id="emptyState" class="empty-state">
+      <div class="empty-icon">&#128203;</div>
+      <p>输入教室 IP 并点击连接</p>
+      <p class="muted-note">连接后将自动同步班级名称和学生名单</p>
+    </div>
+
+    <div id="historySection" class="history-section">
+      <h3>呼叫记录</h3>
+      <div id="historyTableWrap" class="history-table-wrap">
+        <table id="historyTable" class="history-table">
+          <thead>
+            <tr><th>时间</th><th>教室</th><th>学生</th><th>状态</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div id="noHistory" class="muted-note">暂无记录</div>
+    </div>
+
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

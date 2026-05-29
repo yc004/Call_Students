@@ -1,0 +1,51 @@
+{
+  "name": "classroom-app",
+  "version": "1.0.0",
+  "description": "教室端 —— 大屏呼叫显示",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win",
+    "build:portable": "electron-builder --win portable"
+  },
+  "build": {
+    "appId": "com.schoolcall.classroom",
+    "productName": "教室呼叫-教室端",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "manage.html",
+      "manage.css",
+      "manage.js",
+      "popup.html",
+      "popup.css",
+      "popup.js",
+      "node_modules/**/*",
+      "!node_modules/electron/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "教室呼叫-教室端"
+    }
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.0"
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  }
+}

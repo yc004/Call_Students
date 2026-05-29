@@ -1,0 +1,193 @@
+{
+  "rooms": [
+    {
+      "id": "mpqyrm84cpma2lu",
+      "ip": "localhost",
+      "name": "高一(1)班"
+    }
+  ],
+  "callHistory": [
+    {
+      "id": "mpqzwmkoabgphxh",
+      "roomName": "高一(1)班",
+      "studentName": "daniel",
+      "time": "2026-05-29T14:06:37.896Z",
+      "status": "displayed"
+    },
+    {
+      "id": "mpqzwge2bk67w78",
+      "roomName": "高一(1)班",
+      "studentName": "daniel",
+      "time": "2026-05-29T14:06:29.882Z",
+      "status": "displayed"
+    },
+    {
+      "id": "mpqzcbk4c0m85n2",
+      "roomName": "高一(1)班",
+      "studentName": "daniel",
+      "time": "2026-05-29T13:50:50.501Z",
+      "status": "displayed"
+    },
+    {
+      "id": "mpqz40mrb7qd2r8",
+      "roomName": "高一(1)班",
+      "studentName": "daniel",
+      "time": "2026-05-29T13:44:23.091Z",
+      "status": "displayed"
+    },
+    {
+      "id": "mpqz3tzdrh3xa13",
+      "roomName": "高一(1)班",
+      "studentName": "daniel",
+      "time": "2026-05-29T13:44:14.473Z",
+      "status": "displayed"
+    },
+    {
+      "id": "mppn3me4jc13mri",
+      "roomName": "localhost",
+      "studentName": "daniel",
+      "time": "2026-05-28T15:20:23.068Z",
+      "status": "displayed"
+    },
+    {
+      "id": "mppmx1tf1qikfpm",
+      "roomName": "高一1班",
+      "studentName": "daniel",
+      "time": "2026-05-28T15:15:16.467Z",
+      "status": "displayed"
+    },
+    {
+      "id": "mppmuilyczto1xb",
+      "roomName": "高一1班",
+      "studentName": "daniel",
+      "time": "2026-05-28T15:13:18.262Z",
+      "status": "displayed"
+    },
+    {
+      "id": "mppmrthv3805wi0",
+      "roomName": "高一1班",
+      "studentName": "daniel",
+      "time": "2026-05-28T15:11:12.403Z",
+      "status": "displayed"
+    },
+    {
+      "id": "mppmqbxdcp0r694",
+      "roomName": "高一1班",
+      "studentName": "daniel",
+      "time": "2026-05-28T15:10:02.977Z",
+      "status": "displayed"
+    },
+    {
+      "id": "mppmq2bhk5yv8w1",
+      "roomName": "高一1班",
+      "studentName": "daniel",
+      "time": "2026-05-28T15:09:50.525Z",
+      "status": "displayed"
+    },
+    {
+      "id": "mppmoobc419i3ha",
+      "roomName": "高一1班",
+      "studentName": "daniel",
+      "time": "2026-05-28T15:08:45.721Z",
+      "status": "displayed"
+    },
+    {
+      "id": "mppmog7ixrnub7z",
+      "roomName": "高一1班",
+      "studentName": "daniel",
+      "time": "2026-05-28T15:08:35.214Z",
+      "status": "displayed"
+    },
+    {
+      "id": "mppmjiib4ppo7w9",
+      "roomName": "高一1班",
+      "studentName": "daniel",
+      "time": "2026-05-28T15:04:44.915Z",
+      "status": "displayed"
+    },
+    {
+      "id": "mppmj9v2eestzou",
+      "roomName": "高一1班",
+      "studentName": "daniel",
+      "time": "2026-05-28T15:04:33.710Z",
+      "status": "displayed"
+    },
+    {
+      "id": "mppm7zv1zsw0gjp",
+      "roomName": "高一1班",
+      "studentName": "daniel",
+      "time": "2026-05-28T14:55:47.534Z",
+      "status": "displayed"
+    },
+    {
+      "id": "mppm5fhumwx9klu",
+      "roomName": "高一1班",
+      "studentName": "daniel",
+      "time": "2026-05-28T14:53:47.826Z",
+      "status": "displayed"
+    },
+    {
+      "id": "mppm4y2v3hf95ys",
+      "roomName": "高一1班",
+      "studentName": "daniel",
+      "time": "2026-05-28T14:53:25.255Z",
+      "status": "displayed"
+    },
+    {
+      "id": "mppm3mjfg9n74vr",
+      "roomName": "高一1班",
+      "studentName": "daniel",
+      "time": "2026-05-28T14:52:23.643Z",
+      "status": "displayed"
+    },
+    {
+      "id": "mppm3haxaxaghbc",
+      "roomName": "高一1班",
+      "studentName": "daniel",
+      "time": "2026-05-28T14:52:16.857Z",
+      "status": "displayed"
+    },
+    {
+      "id": "mppl8iv0cbyu0s8",
+      "roomName": "高一1班",
+      "studentName": "daniel",
+      "time": "2026-05-28T14:28:12.540Z",
+      "status": "displayed"
+    },
+    {
+      "id": "mppl8ceuwe5vcub",
+      "roomName": "高一1班",
+      "studentName": "daniel",
+      "time": "2026-05-28T14:28:04.182Z",
+      "status": "displayed"
+    },
+    {
+      "id": "mppjsexvzukprpp",
+      "roomName": "高一1班",
+      "studentName": "daniel",
+      "time": "2026-05-28T13:47:41.347Z",
+      "status": "displayed"
+    },
+    {
+      "id": "mppjsagiop7an99",
+      "roomName": "高一1班",
+      "studentName": "daniel",
+      "time": "2026-05-28T13:47:35.538Z",
+      "status": "displayed"
+    },
+    {
+      "id": "mppjs3bz6ojtzs1",
+      "roomName": "高一1班",
+      "studentName": "daniel",
+      "time": "2026-05-28T13:47:26.303Z",
+      "status": "displayed"
+    },
+    {
+      "id": "mppjm1qxv7ecf54",
+      "roomName": "高一1班",
+      "studentName": "daniel",
+      "time": "2026-05-28T13:42:44.313Z",
+      "status": "displayed"
+    }
+  ]
+}

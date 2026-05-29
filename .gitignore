@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.reasonix/
+*.exe
+*.blockmap
+builder-debug.yml
+win-unpacked/

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>教室管理</title>
+  <link rel="stylesheet" href="manage.css">
+</head>
+<body>
+
+<div class="container">
+  <h1>教室管理</h1>
+
+  <!-- 班级名称 -->
+  <div class="field">
+    <label for="className">班级名称</label>
+    <input type="text" id="className" placeholder="例如：高一(3)班" autofocus>
+  </div>
+
+  <!-- 学生名单 -->
+  <div class="section">
+    <div class="section-head">
+      <h2>学生名单</h2>
+      <div class="section-head-actions">
+        <button id="importBtn" class="btn">📥 批量导入</button>
+        <button id="addBtn" class="btn btn-primary">＋ 添加学生</button>
+      </div>
+    </div>
+
+    <table id="studentTable">
+      <thead>
+        <tr>
+          <th style="width:60px">序号</th>
+          <th>姓名</th>
+          <th style="width:100px">操作</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <div id="emptyHint" class="empty-hint">暂无学生，请点击右上角「添加学生」</div>
+  </div>
+
+  <!-- 保存 -->
+  <div class="actions">
+    <button id="saveBtn" class="btn btn-primary btn-lg">保存</button>
+    <span id="saveStatus" class="save-status"></span>
+  </div>
+</div>
+
+<!-- 添加 / 编辑 弹窗 -->
+<div id="modal" class="modal hidden">
+  <div class="modal-card">
+    <h3 id="modalTitle">添加学生</h3>
+    <input type="text" id="studentName" placeholder="学生姓名" maxlength="20">
+    <div class="modal-actions">
+      <button id="modalCancel" class="btn">取消</button>
+      <button id="modalConfirm" class="btn btn-primary">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 批量导入弹窗 -->
+<div id="importModal" class="modal hidden">
+  <div class="modal-card modal-wide">
+    <h3>批量导入学生</h3>
+    <p class="modal-hint">每行一个姓名，或用空格 / 逗号 / 顿号分隔</p>
+    <textarea id="importText" rows="10" placeholder="张三&#10;李四&#10;王五"></textarea>
+    <div class="modal-actions">
+      <button id="importCancel" class="btn">取消</button>
+      <button id="importConfirm" class="btn btn-primary">导入</button>
+    </div>
+  </div>
+</div>
+
+<script src="manage.js"></script>
+</body>
+</html>
