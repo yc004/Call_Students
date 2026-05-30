@@ -12,6 +12,7 @@
   let ipInput, connectBtn, roomList, noRooms, connDot, connLabel;
   let roomHeader, roomTitle, studentCount, msgRow, callMessageInp;
   let studentGrid, emptyState, historyTbody, noHistory;
+  let searchInput, searchRow, searchResult;
   let msgEditor;
 
   // ── 状态 ──
@@ -25,6 +26,7 @@
     callTimers:   {},
     reconnectTimer: null,
     reconnectAttempts: 0,
+    searchQuery:  '',
   };
   const MAX_HISTORY = 500;
 
@@ -120,6 +122,8 @@
     state.currentRoom = null;
     state.students    = [];
     state.className   = '';
+    state.searchQuery = '';
+    if (searchInput) searchInput.value = '';
     hideRoomUI();
     renderStudents();
     setStatus('offline', '未连接');
@@ -204,6 +208,7 @@
   function showRoomUI(name) {
     if (roomHeader) roomHeader.classList.remove('hidden');
     if (msgRow)     msgRow.classList.remove('hidden');
+    if (searchRow)  searchRow.classList.remove('hidden');
     if (emptyState) emptyState.style.display = 'none';
     if (roomTitle)  roomTitle.textContent = name;
   }
@@ -211,6 +216,7 @@
   function hideRoomUI() {
     if (roomHeader) roomHeader.classList.add('hidden');
     if (msgRow)     msgRow.classList.add('hidden');
+    if (searchRow)  searchRow.classList.add('hidden');
     if (emptyState) emptyState.style.display = '';
     if (roomTitle)  roomTitle.textContent = '';
   }
@@ -219,11 +225,23 @@
     if (!studentGrid) return;
     studentGrid.innerHTML = '';
     if (studentCount) studentCount.textContent = '';
+    if (searchResult) searchResult.textContent = '';
 
     if (!state.currentRoom || state.students.length === 0) return;
-    if (studentCount) studentCount.textContent = `${state.students.length} 人`;
 
-    state.students.forEach(s => {
+    const q = state.searchQuery || '';
+    const list = q ? state.students.filter(s => s.name.toLowerCase().includes(q)) : state.students;
+
+    if (studentCount) studentCount.textContent = `${state.students.length} 人`;
+    if (searchResult) {
+      if (q && list.length < state.students.length) {
+        searchResult.textContent = `${list.length} / ${state.students.length} 人`;
+      } else if (q && list.length === 0) {
+        searchResult.textContent = '无匹配';
+      }
+    }
+
+    list.forEach(s => {
       const card = document.createElement('div');
       card.className = 'student-card';
       card.innerHTML = `<div class="stu-name">${esc(s.name)}</div>`;
@@ -386,6 +404,13 @@
       if (e.key === 'Enter') connect(ipInput.value);
     });
 
+    if (searchInput) {
+      searchInput.addEventListener('input', () => {
+        state.searchQuery = searchInput.value.trim().toLowerCase();
+        renderStudents();
+      });
+    }
+
     initEditor();
   }
 
@@ -418,6 +443,9 @@
     msgEditor      = document.getElementById('msgEditor');
     studentGrid    = document.getElementById('studentGrid');
     emptyState     = document.getElementById('emptyState');
+    searchInput    = document.getElementById('searchInput');
+    searchRow      = document.getElementById('searchRow');
+    searchResult   = document.getElementById('searchResult');
     historyTbody   = document.querySelector('#historyTable tbody');
     noHistory      = document.getElementById('noHistory');
 

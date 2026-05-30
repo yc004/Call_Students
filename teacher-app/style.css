@@ -314,6 +314,42 @@ body {
 }
 
 
+/* ── 搜索 ── */
+
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.search-row.hidden { display: none; }
+
+.search-input {
+  flex: 1;
+  max-width: 320px;
+  padding: 8px 12px;
+  font-size: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.search-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-a);
+}
+
+.search-input::placeholder {
+  color: var(--text-3);
+}
+
+.search-result {
+  font-size: 13px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
 
 /* ── 学生网格 ── */
 
