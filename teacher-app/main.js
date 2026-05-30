@@ -74,7 +74,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  // macOS 下不自动退出，保持和其他应用一致
+  if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('activate', () => {

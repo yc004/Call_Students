@@ -20,6 +20,7 @@ let tray = null;
 let manageWin = null;
 let popupWin = null;
 let wss = null;
+let heartbeatTimer = null;
 const callMap = new Map();        // callId → ws
 const callQueue = [];             // 呼叫队列
 let isPopupBusy = false;
@@ -224,6 +225,7 @@ function startWSServer() {
   wss.on('connection', (ws, req) => {
     const remote = req.socket.remoteAddress;
     console.log(`[WS] teacher connected (${remote})`);
+    ws._lastPing = Date.now();
 
     ws.on('message', (raw) => {
       let msg;
@@ -249,6 +251,7 @@ function startWSServer() {
         }
 
         case 'ping': {
+          ws._lastPing = Date.now();
           ws.send(JSON.stringify({ type: 'pong' }));
           break;
         }
@@ -262,6 +265,18 @@ function startWSServer() {
 
     ws.on('error', (err) => console.error(`[WS] error:`, err.message));
   });
+
+  // 心跳超时检测：每 15s 检查一次，超过 60s 无心跳则断开
+  heartbeatTimer = setInterval(() => {
+    if (!wss) return;
+    const now = Date.now();
+    wss.clients.forEach(ws => {
+      if (now - (ws._lastPing || 0) > 60000) {
+        console.log('[WS] heartbeat timeout, terminating connection');
+        ws.terminate();
+      }
+    });
+  }, 15000);
 }
 
 // ═══════════════════════════════════════
@@ -316,6 +331,7 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => { /* 什么都不做，保持托盘运行 */ });
 
 app.on('before-quit', () => {
+  if (heartbeatTimer) clearInterval(heartbeatTimer);
   if (wss) wss.close();
 });
 

@@ -23,7 +23,10 @@
     students:     [],
     className:    '',
     callTimers:   {},
+    reconnectTimer: null,
+    reconnectAttempts: 0,
   };
+  const MAX_HISTORY = 500;
 
   // ═══════════════════════════════════
   //  持久化
@@ -54,7 +57,9 @@
     ip = ip.trim();
     if (!ip) return;
 
-    // 断开旧连接
+    // 断开旧连接 & 清除重连
+    if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
+    state.reconnectAttempts = 0;
     disconnect();
 
     setStatus('connecting', '连接中…');
@@ -97,6 +102,7 @@
         setStatus('offline', '已断开');
         hideRoomUI();
         renderRooms();
+        scheduleReconnect(ip);
       }
     };
 
@@ -104,6 +110,8 @@
   }
 
   function disconnect() {
+    if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
+    state.reconnectAttempts = 0;
     if (state.ws) {
       state.ws.onclose = null;
       state.ws.close();
@@ -116,6 +124,14 @@
     renderStudents();
     setStatus('offline', '未连接');
     renderRooms();
+  }
+
+  function scheduleReconnect(ip) {
+    if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
+    const delay = Math.min(1000 * Math.pow(2, state.reconnectAttempts), 30000);
+    state.reconnectAttempts++;
+    setStatus('connecting', `重连中(${state.reconnectAttempts})…`);
+    state.reconnectTimer = setTimeout(() => connect(ip), delay);
   }
 
   function setStatus(cls, text) {
@@ -249,6 +265,7 @@
       time: new Date().toISOString(),
       status: 'sent',
     });
+    if (state.callHistory.length > MAX_HISTORY) state.callHistory.length = MAX_HISTORY;
     renderHistory();
     saveToDisk();
 
