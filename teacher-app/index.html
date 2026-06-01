@@ -37,44 +37,112 @@
 
   <main class="main">
 
-    <div id="roomHeader" class="room-header hidden">
-      <h2 id="roomTitle"></h2>
-      <span id="studentCount" class="badge"></span>
+    <!-- Tab 导航 -->
+    <div id="mainTabs" class="main-tabs hidden">
+      <button class="main-tab active" data-tab="call">📢 呼叫</button>
+      <button class="main-tab" data-tab="homework">📋 作业管理</button>
     </div>
 
-    <div id="msgRow" class="msg-row hidden">
-      <label>呼叫消息</label>
-      <div id="msgEditor" class="msg-editor" contenteditable="true" spellcheck="false"></div>
-      <input type="hidden" id="callMessage" value="{name}同学，请到办公室">
-    </div>
-
-    <div id="searchRow" class="search-row hidden">
-      <input type="text" id="searchInput" class="search-input" placeholder="搜索学生姓名…" autocomplete="off">
-      <span id="searchResult" class="search-result"></span>
-    </div>
-
-    <div id="studentGrid" class="student-grid"></div>
-
-    <div id="emptyState" class="empty-state">
-      <div class="empty-icon">&#128203;</div>
-      <p>输入教室 IP 并点击连接</p>
-      <p class="muted-note">连接后将自动同步班级名称和学生名单</p>
-    </div>
-
-    <div id="historySection" class="history-section">
-      <h3>呼叫记录</h3>
-      <div id="historyTableWrap" class="history-table-wrap">
-        <table id="historyTable" class="history-table">
-          <thead>
-            <tr><th>时间</th><th>教室</th><th>学生</th><th>状态</th></tr>
-          </thead>
-          <tbody></tbody>
-        </table>
+    <!-- ══════════ 呼叫 Tab ══════════ -->
+    <div class="main-tab-content" id="tab-call">
+      <div id="roomHeader" class="room-header hidden">
+        <h2 id="roomTitle"></h2>
+        <span id="studentCount" class="badge"></span>
       </div>
-      <div id="noHistory" class="muted-note">暂无记录</div>
+
+      <div id="msgRow" class="msg-row hidden">
+        <label>呼叫消息</label>
+        <div id="msgEditor" class="msg-editor" contenteditable="true" spellcheck="false"></div>
+        <input type="hidden" id="callMessage" value="{name}同学，请到办公室">
+      </div>
+
+      <div id="searchRow" class="search-row hidden">
+        <input type="text" id="searchInput" class="search-input" placeholder="搜索学生姓名…" autocomplete="off">
+        <span id="searchResult" class="search-result"></span>
+      </div>
+
+      <div id="studentGrid" class="student-grid"></div>
+
+      <div id="emptyState" class="empty-state">
+        <div class="empty-icon">&#128203;</div>
+        <p>输入教室 IP 并点击连接</p>
+        <p class="muted-note">连接后将自动同步班级名称和学生名单</p>
+      </div>
+
+      <div id="historySection" class="history-section">
+        <h3>呼叫记录</h3>
+        <div id="historyTableWrap" class="history-table-wrap">
+          <table id="historyTable" class="history-table">
+            <thead>
+              <tr><th>时间</th><th>教室</th><th>学生</th><th>状态</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div id="noHistory" class="muted-note">暂无记录</div>
+      </div>
+    </div>
+
+    <!-- ══════════ 作业管理 Tab ══════════ -->
+    <div class="main-tab-content hidden" id="tab-homework">
+      <div id="hwSection" class="hw-section">
+        <div class="hw-toolbar">
+          <div class="hw-toolbar-left">
+            <div class="ms-wrap" id="hwSubjectMs">
+              <button class="ms-btn" id="hwSubjectBtn">全部学科 ▾</button>
+              <div class="ms-drop hidden" id="hwSubjectDrop"></div>
+            </div>
+            <div class="ms-wrap" id="hwAssignMs">
+              <button class="ms-btn" id="hwAssignBtn">全部作业 ▾</button>
+              <div class="ms-drop hidden" id="hwAssignDrop"></div>
+            </div>
+            <select id="hwStatusFilter" class="hw-filter-select">
+              <option value="">全部状态</option>
+            </select>
+            <input type="date" id="hwDateFrom" class="hw-date-input" title="开始日期">
+            <span class="hw-date-sep">~</span>
+            <input type="date" id="hwDateTo" class="hw-date-input" title="结束日期">
+          </div>
+          <div class="hw-toolbar-right">
+            <button id="addSubjectBtn" class="btn btn-sm">＋学科</button>
+            <button id="delSubjectBtn" class="btn btn-sm btn-danger">删学科</button>
+            <button id="addAssignmentBtn2" class="btn btn-primary btn-sm">＋ 添加作业</button>
+          </div>
+        </div>
+        <div id="hwContent" class="hw-content"></div>
+      </div>
     </div>
 
   </main>
+</div>
+
+<!-- 添加学科弹窗 -->
+<div id="hwSubjectModal" class="modal hidden">
+  <div class="modal-card">
+    <h3>添加学科</h3>
+    <input type="text" id="hwSubjectName" placeholder="学科名称，例如：数学" maxlength="20">
+    <div class="modal-actions">
+      <button id="hwSubjectModalCancel" class="btn">取消</button>
+      <button id="hwSubjectModalConfirm" class="btn btn-primary">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 添加/编辑作业弹窗 -->
+<div id="hwModal" class="modal hidden">
+  <div class="modal-card modal-wide">
+    <h3 id="hwModalTitleLabel">添加作业</h3>
+    <label class="field-label">学科</label>
+    <select id="hwModalSubject" class="field-select"></select>
+    <label class="field-label">作业标题</label>
+    <input type="text" id="hwModalTitle" placeholder="例如：第一章练习" maxlength="50">
+    <label class="field-label">日期</label>
+    <input type="date" id="hwModalDate">
+    <div class="modal-actions">
+      <button id="hwModalCancel" class="btn">取消</button>
+      <button id="hwModalConfirm" class="btn btn-primary">确定</button>
+    </div>
+  </div>
 </div>
 
 <script src="app.js"></script>

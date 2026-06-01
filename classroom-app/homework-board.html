@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>作业看板</title>
+  <link rel="stylesheet" href="homework-board.css">
+</head>
+<body>
+
+<div class="board" id="board">
+  <!-- 标题栏（可拖拽） -->
+  <div class="board-bar" id="boardBar">
+    <span class="board-title">📊 作业看板</span>
+    <span class="board-info" id="boardInfo"></span>
+    <div class="board-bar-actions">
+      <select id="boardSubjectFilter" class="board-filter">
+        <option value="">全部学科</option>
+      </select>
+      <select id="boardAssignFilter" class="board-filter">
+        <option value="">全部作业</option>
+      </select>
+      <select id="boardStatusFilter" class="board-filter">
+        <option value="">全部状态</option>
+      </select>
+      <button class="board-btn" id="addHwBtn" title="新建作业">＋</button>
+      <button class="board-btn" id="refreshBtn" title="刷新">🔄</button>
+      <button class="board-btn board-btn-close" id="closeBtn" title="关闭">✕</button>
+    </div>
+  </div>
+
+  <!-- 内容区 -->
+  <div class="board-body">
+    <div id="boardEmpty" class="board-empty">今天没有作业<button id="addFirstBtn" class="board-add-first">＋ 添加作业</button></div>
+    <div id="boardTableWrap" class="board-table-wrap hidden"></div>
+  </div>
+</div>
+
+<!-- 添加作业弹窗 -->
+<div id="addModal" class="b-modal hidden">
+  <div class="b-modal-card">
+    <h3>添加今日作业</h3>
+    <label class="b-label">学科</label>
+    <select id="addSubject" class="b-input"></select>
+    <label class="b-label">作业标题</label>
+    <input type="text" id="addTitle" class="b-input" placeholder="例如：第一章练习" maxlength="50">
+    <div class="b-modal-acts">
+      <button id="addCancel" class="b-btn">取消</button>
+      <button id="addConfirm" class="b-btn b-btn-primary">确定</button>
+    </div>
+  </div>
+</div>
+
+<script src="homework-board.js"></script>
+</body>
+</html>

@@ -2,15 +2,17 @@ const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen } = require
 const WebSocket = require('ws');
 const fs = require('fs');
 const path = require('path');
+const Database = require('better-sqlite3');
 
 app.commandLine.appendSwitch('disable-http-cache');
 const zlib = require('zlib');
 
 // ── 常量 ──
-// 开发模式用项目目录，打包后用系统用户目录（asar 只读不能写）
-const DATA_FILE = app.isPackaged
-  ? path.join(app.getPath('userData'), 'data.json')
-  : path.join(__dirname, 'data', 'data.json');
+const DATA_DIR = app.isPackaged
+  ? app.getPath('userData')
+  : path.join(__dirname, 'data');
+const DB_FILE   = path.join(DATA_DIR, 'data.db');
+const JSON_FILE = path.join(DATA_DIR, 'data.json'); // 旧格式，用于迁移
 const WS_PORT = 3456;
 const POPUP_W = 500;
 const POPUP_H = 300;
@@ -19,36 +21,84 @@ const POPUP_H = 300;
 let tray = null;
 let manageWin = null;
 let popupWin = null;
+let boardWin = null;
 let wss = null;
 let heartbeatTimer = null;
-const callMap = new Map();        // callId → ws
-const callQueue = [];             // 呼叫队列
+const callMap = new Map();
+const callQueue = [];
 let isPopupBusy = false;
+let db = null;
 
 // ═══════════════════════════════════════
-//  数据读写
+//  SQLite 数据库
 // ═══════════════════════════════════════
+
+function getDb() {
+  if (db) return db;
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  db = new Database(DB_FILE);
+  db.pragma('journal_mode = WAL');
+  db.pragma('foreign_keys = ON');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+    CREATE TABLE IF NOT EXISTS students (id TEXT PRIMARY KEY, name TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS subjects (name TEXT PRIMARY KEY);
+    CREATE TABLE IF NOT EXISTS assignments (id TEXT PRIMARY KEY, subject TEXT, title TEXT, date TEXT);
+    CREATE TABLE IF NOT EXISTS submissions (assignment_id TEXT, student_id TEXT, status TEXT DEFAULT '未提交', PRIMARY KEY (assignment_id, student_id));
+  `);
+  // 从旧 JSON 文件迁移
+  if (fs.existsSync(JSON_FILE)) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(JSON_FILE, 'utf-8'));
+      const data = { className: raw.className || '', students: raw.students || [], subjects: raw.subjects || [], assignments: raw.assignments || [] };
+      saveData(data);
+      fs.renameSync(JSON_FILE, JSON_FILE + '.bak');
+      console.log('[db] migrated from data.json');
+    } catch (e) { console.error('[db] migration failed:', e.message); }
+  }
+  return db;
+}
 
 function loadData() {
-  const defaults = { className: '', students: [] };
-  try {
-    if (fs.existsSync(DATA_FILE)) {
-      return { ...defaults, ...JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8')) };
-    }
-  } catch (e) { console.error('loadData failed:', e.message); }
-  ensureDir();
-  saveData(defaults);
-  return defaults;
+  const d = getDb();
+  const className = d.prepare("SELECT value FROM meta WHERE key='className'").get()?.value || '';
+  const students = d.prepare('SELECT id, name FROM students ORDER BY rowid').all();
+  const subjects = d.prepare('SELECT name FROM subjects ORDER BY name').all().map(r => r.name);
+  const assignments = d.prepare('SELECT id, subject, title, date FROM assignments ORDER BY date').all();
+  for (const a of assignments) {
+    a.submissions = {};
+    const rows = d.prepare('SELECT student_id, status FROM submissions WHERE assignment_id=?').all(a.id);
+    rows.forEach(r => { a.submissions[r.student_id] = r.status; });
+  }
+  return { className, students, subjects, assignments };
 }
 
 function saveData(data) {
-  ensureDir();
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
-}
-
-function ensureDir() {
-  const dir = path.dirname(DATA_FILE);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const d = getDb();
+  const txn = d.transaction(() => {
+    d.prepare("INSERT OR REPLACE INTO meta VALUES ('className', ?)").run(data.className || '');
+    // students
+    d.prepare('DELETE FROM students').run();
+    for (const s of (data.students || [])) {
+      d.prepare('INSERT INTO students (id, name) VALUES (?, ?)').run(s.id, s.name);
+    }
+    // subjects
+    d.prepare('DELETE FROM subjects').run();
+    for (const s of (data.subjects || [])) {
+      d.prepare('INSERT OR IGNORE INTO subjects (name) VALUES (?)').run(s);
+    }
+    // assignments + submissions
+    d.prepare('DELETE FROM assignments').run();
+    d.prepare('DELETE FROM submissions').run();
+    for (const a of (data.assignments || [])) {
+      d.prepare('INSERT INTO assignments (id, subject, title, date) VALUES (?,?,?,?)').run(a.id, a.subject, a.title, a.date);
+      for (const [sid, status] of Object.entries(a.submissions || {})) {
+        d.prepare('INSERT INTO submissions (assignment_id, student_id, status) VALUES (?,?,?)').run(a.id, sid, status);
+      }
+    }
+  });
+  txn();
+  notifyBoardDataChanged();
 }
 
 // ═══════════════════════════════════════
@@ -123,6 +173,7 @@ function rebuildTrayMenu() {
   const autoLaunch = app.getLoginItemSettings().openAtLogin;
   const menu = Menu.buildFromTemplate([
     { label: '📋 学生管理', click: () => createManageWindow() },
+    { label: '📊 作业看板', click: () => createBoardWindow() },
     { type: 'separator' },
     { label: (autoLaunch ? '☑' : '☐') + ' 开机自启',
       click: () => {
@@ -215,6 +266,34 @@ function enqueueCall(call, ws) {
 }
 
 // ═══════════════════════════════════════
+//  作业看板（悬浮窗，常驻桌面）
+// ═══════════════════════════════════════
+
+function createBoardWindow() {
+  if (boardWin && !boardWin.isDestroyed()) { boardWin.focus(); return; }
+  const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize;
+  boardWin = new BrowserWindow({
+    width: 620,
+    height: 420,
+    x: Math.round((sw - 620) / 2),
+    y: Math.round((sh - 420) / 2),
+    frame: false,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: false,
+    transparent: true,
+    title: '作业看板 — 当天提交情况',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  boardWin.loadFile('homework-board.html');
+  boardWin.on('closed', () => { boardWin = null; });
+}
+
+// ═══════════════════════════════════════
 //  WebSocket 服务
 // ═══════════════════════════════════════
 
@@ -235,7 +314,7 @@ function startWSServer() {
 
         case 'connect': {
           const data = loadData();
-          ws.send(JSON.stringify({ type: 'sync', className: data.className, students: data.students }));
+          ws.send(JSON.stringify({ type: 'sync', className: data.className, students: data.students, subjects: data.subjects, assignments: data.assignments }));
           break;
         }
 
@@ -253,6 +332,49 @@ function startWSServer() {
         case 'ping': {
           ws._lastPing = Date.now();
           ws.send(JSON.stringify({ type: 'pong' }));
+          break;
+        }
+
+        case 'update-submission': {
+          if (!msg.assignmentId || !msg.studentId) return;
+          const data = loadData();
+          const assignment = data.assignments.find(a => a.id === msg.assignmentId);
+          if (assignment) {
+            assignment.submissions[msg.studentId] = msg.status || '未提交';
+            saveData(data);
+            ws.send(JSON.stringify({ type: 'sync', className: data.className, students: data.students, subjects: data.subjects, assignments: data.assignments }));
+          }
+          break;
+        }
+
+        case 'update-assignments': {
+          if (!msg.action) return;
+          const data = loadData();
+          if (msg.action === 'add' && msg.assignment) {
+            data.assignments.push(msg.assignment);
+          } else if (msg.action === 'delete' && msg.assignment) {
+            data.assignments = data.assignments.filter(a => a.id !== msg.assignment.id);
+          } else if (msg.action === 'edit' && msg.assignment) {
+            const idx = data.assignments.findIndex(a => a.id === msg.assignment.id);
+            if (idx >= 0) data.assignments[idx] = msg.assignment;
+          }
+          saveData(data);
+          ws.send(JSON.stringify({ type: 'sync', className: data.className, students: data.students, subjects: data.subjects, assignments: data.assignments }));
+          break;
+        }
+
+        case 'update-subjects': {
+          if (!msg.action) return;
+          const data = loadData();
+          if (msg.action === 'add' && msg.subject && !data.subjects.includes(msg.subject)) {
+            data.subjects.push(msg.subject);
+            data.subjects.sort();
+          } else if (msg.action === 'delete' && msg.subject) {
+            data.subjects = data.subjects.filter(s => s !== msg.subject);
+            data.assignments = data.assignments.filter(a => a.subject !== msg.subject);
+          }
+          saveData(data);
+          ws.send(JSON.stringify({ type: 'sync', className: data.className, students: data.students, subjects: data.subjects, assignments: data.assignments }));
           break;
         }
       }
@@ -301,6 +423,26 @@ ipcMain.on('close-popup', () => {
   if (popupWin && !popupWin.isDestroyed()) popupWin.close();
 });
 
+// 作业看板：关闭
+ipcMain.on('close-board', () => {
+  if (boardWin && !boardWin.isDestroyed()) boardWin.close();
+});
+
+// 作业看板：拖拽移动
+ipcMain.on('move-board', (_, dx, dy) => {
+  if (boardWin && !boardWin.isDestroyed()) {
+    const [x, y] = boardWin.getPosition();
+    boardWin.setPosition(x + dx, y + dy);
+  }
+});
+
+// 数据变更时通知看板刷新
+function notifyBoardDataChanged() {
+  if (boardWin && !boardWin.isDestroyed()) {
+    boardWin.webContents.send('data-changed');
+  }
+}
+
 // ═══════════════════════════════════════
 //  应用生命周期
 // ═══════════════════════════════════════
@@ -314,7 +456,7 @@ app.whenReady().then(() => {
   console.log('  Classroom Call System - Classroom App');
   console.log(line);
   console.log(`  WS Port  : ${WS_PORT}`);
-  console.log(`  Data File: ${DATA_FILE}`);
+  console.log(`  Database : ${DB_FILE}`);
   console.log(line);
 
   // 默认开启开机自启（首次运行）

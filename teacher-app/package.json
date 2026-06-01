@@ -21,13 +21,16 @@
       "style.css",
       "app.js",
       "node_modules/**/*",
-      "!node_modules/electron/**"
+      "!node_modules/electron/**",
+      "!data/*"
     ],
     "win": {
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },

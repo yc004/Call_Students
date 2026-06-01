@@ -258,3 +258,374 @@ tbody tr:hover { background: #F8FAFC; }
   justify-content: flex-end;
   gap: 10px;
 }
+
+/* ══════════════════════════════
+   Tab 导航
+   ══════════════════════════════ */
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 28px;
+  background: var(--border);
+  border-radius: 10px;
+  padding: 4px;
+}
+
+.tab {
+  flex: 1;
+  padding: 8px 0;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tab:hover { color: var(--text); }
+
+.tab.active {
+  background: #fff;
+  color: var(--primary);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+.tab-content.hidden { display: none; }
+
+/* ══════════════════════════════
+   弹窗表单扩展
+   ══════════════════════════════ */
+
+.field-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: 4px;
+}
+
+.field-select {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 15px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  outline: none;
+  margin-bottom: 14px;
+  background: #fff;
+  font-family: inherit;
+}
+
+.field-select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(79, 110, 247, 0.12);
+}
+
+.modal-card input[type="date"] {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 15px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  outline: none;
+  margin-bottom: 0;
+  font-family: inherit;
+}
+
+.modal-card input[type="date"]:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(79, 110, 247, 0.12);
+}
+
+/* ══════════════════════════════
+   学科标签
+   ══════════════════════════════ */
+
+.subject-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.subject-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-size: 14px;
+  font-weight: 500;
+  background: #EEF2FF;
+  color: var(--primary);
+  border-radius: 20px;
+  border: 1px solid rgba(79, 110, 247, 0.2);
+}
+
+.subject-tag-del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px; height: 18px;
+  border: none; border-radius: 50%;
+  background: rgba(79, 110, 247, 0.15);
+  color: var(--primary);
+  font-size: 13px; cursor: pointer;
+  padding: 0; line-height: 1;
+}
+
+.subject-tag-del:hover { background: var(--danger); color: #fff; }
+
+/* ══════════════════════════════
+   作业列表
+   ══════════════════════════════ */
+
+.hw-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.hw-group-title {
+  font-size: 14px; font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.hw-count {
+  font-size: 12px; font-weight: 400;
+  color: var(--text-3); margin-left: 6px;
+}
+
+.hw-item {
+  border: 1px solid var(--border);
+  border-radius: 10px; overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.hw-item-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px;
+  cursor: pointer; user-select: none;
+  transition: background 0.15s;
+}
+
+.hw-item-header:hover { background: #F8FAFC; }
+
+.hw-item-title {
+  font-size: 14px; font-weight: 600;
+  color: var(--text); flex-shrink: 0;
+}
+
+.hw-item-meta {
+  font-size: 12px; color: var(--text-3); flex: 1;
+}
+
+.hw-item-actions {
+  display: flex; gap: 4px; flex-shrink: 0;
+}
+
+.hw-sub-grid {
+  display: none;
+  padding: 0 14px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.hw-item.expanded .hw-sub-grid { display: block; }
+
+/* ── 提交状态表 ── */
+
+.sub-table {
+  width: 100%; border-collapse: collapse;
+  margin-top: 8px;
+}
+
+.sub-table thead th {
+  font-size: 12px; font-weight: 600;
+  color: var(--text-3); padding: 8px 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sub-table tbody td {
+  padding: 6px 6px; font-size: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sub-table tbody tr:last-child td { border-bottom: none; }
+
+.sub-student-name { font-weight: 500; color: var(--text); }
+
+/* ── 状态按钮 ── */
+
+.sub-status-btn {
+  display: inline-block;
+  padding: 3px 12px; border-radius: 12px;
+  font-size: 12px; font-weight: 600;
+  cursor: pointer; user-select: none;
+  transition: all 0.15s;
+  border: 1px solid transparent;
+}
+
+.sub-status-btn.st-ok    { background: #ECFDF5; color: #059669; border-color: rgba(5,150,105,0.2); }
+.sub-status-btn.st-miss  { background: #FEF2F2; color: #DC2626; border-color: rgba(220,38,38,0.15); }
+.sub-status-btn.st-late  { background: #FFFBEB; color: #D97706; border-color: rgba(217,119,6,0.2); }
+.sub-status-btn.st-exempt{ background: #F1F5F9; color: #64748B; border-color: rgba(100,116,139,0.2); }
+
+.sub-status-btn:hover { filter: brightness(0.95); }
+
+/* ── 状态下拉 ── */
+
+.sub-status-select {
+  padding: 4px 8px; font-size: 13px; font-weight: 500;
+  border-radius: 8px; border: 1px solid var(--border);
+  outline: none; cursor: pointer; font-family: inherit;
+}
+
+.sub-status-select.st-ok    { background: #ECFDF5; color: #059669; border-color: rgba(5,150,105,0.3); }
+.sub-status-select.st-miss  { background: #FEF2F2; color: #DC2626; border-color: rgba(220,38,38,0.3); }
+.sub-status-select.st-late  { background: #FFFBEB; color: #D97706; border-color: rgba(217,119,6,0.3); }
+.sub-status-select.st-exempt{ background: #F1F5F9; color: #64748B; border-color: rgba(100,116,139,0.3); }
+
+/* ── 日期筛选 ── */
+
+.mg-filter-select {
+  padding: 5px 8px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+  outline: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.mg-filter-select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(79, 110, 247, 0.12);
+}
+
+.mg-date-input {
+  padding: 5px 8px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+  font-family: inherit;
+  width: 125px;
+}
+
+.mg-date-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(79, 110, 247, 0.12);
+}
+
+.mg-date-sep {
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+/* ── 交叉表格 ── */
+
+.hw-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+.hw-matrix {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.hw-matrix thead th {
+  position: sticky;
+  top: 0;
+  background: #F8FAFC;
+  border-bottom: 1px solid var(--border);
+  padding: 8px 10px;
+  text-align: center;
+  min-width: 100px;
+  z-index: 1;
+}
+
+.hw-matrix-name {
+  position: sticky;
+  left: 0;
+  background: #fff;
+  font-weight: 600;
+  color: var(--text);
+  text-align: left !important;
+  min-width: 80px !important;
+  white-space: nowrap;
+  padding: 8px 14px !important;
+  border-right: 2px solid var(--border);
+  z-index: 2;
+}
+
+.hw-matrix thead .hw-matrix-name { z-index: 3; }
+
+.hw-matrix tbody td {
+  padding: 6px 8px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+  background: #fff;
+}
+
+.hw-matrix tbody .hw-matrix-name { background: #fff; }
+
+.hw-matrix tbody tr:hover td { background: #F8FAFC; }
+
+.hw-matrix-hw-title {
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100px;
+  margin: 0 auto;
+}
+
+.hw-batch-sel {
+  margin-top: 3px; padding: 1px 4px;
+  font-size: 10px; font-weight: 500;
+  border: 1px solid var(--border); border-radius: 4px;
+  background: #fff; color: var(--text-3);
+  outline: none; cursor: pointer; font-family: inherit;
+  width: 80px;
+}
+.hw-batch-sel:hover { border-color: var(--primary); color: var(--primary); }
+
+.hw-matrix-hw-date {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+
+.hw-matrix-hw-acts {
+  margin-top: 4px;
+  display: flex;
+  justify-content: center;
+  gap: 2px;
+}
+
+.btn-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px; height: 22px;
+  border: none; border-radius: 4px;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 14px; cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-ico:hover { background: #F1F5F9; color: var(--primary); }
+
+.hw-matrix-cell { vertical-align: middle; }

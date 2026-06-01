@@ -5,3 +5,10 @@ dist/
 *.blockmap
 builder-debug.yml
 win-unpacked/
+
+# 运行时数据（不打包测试数据）
+data/
+*.db
+*.db-shm
+*.db-wal
+*.bak

@@ -23,14 +23,20 @@
       "popup.html",
       "popup.css",
       "popup.js",
+      "homework-board.html",
+      "homework-board.css",
+      "homework-board.js",
       "node_modules/**/*",
-      "!node_modules/electron/**"
+      "!node_modules/electron/**",
+      "!data/*"
     ],
     "win": {
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },
@@ -46,6 +52,7 @@
     "electron-builder": "^24.9.0"
   },
   "dependencies": {
+    "better-sqlite3": "^11.10.0",
     "ws": "^8.16.0"
   }
 }

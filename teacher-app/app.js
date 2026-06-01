@@ -14,6 +14,15 @@
   let studentGrid, emptyState, historyTbody, noHistory;
   let searchInput, searchRow, searchResult;
   let msgEditor;
+  let mainTabs, mainTabBtns, mainTabContents;
+  let hwSection, addSubjectBtn, delSubjectBtn;
+  let hwStatusFilter, hwDateFrom, hwDateTo, addAssignmentBtn2;
+  // 多选
+  let hwSubjectMs, hwSubjectBtn, hwSubjectDrop, selectedSubjects = [];
+  let hwAssignMs, hwAssignBtn, hwAssignDrop, selectedAssigns = [];
+  let hwContent;
+  let hwSubjectModal, hwSubjectName, hwSubjectModalCancel, hwSubjectModalConfirm;
+  let hwModal, hwModalTitleLabel, hwModalSubject, hwModalTitle, hwModalDate, hwModalCancel, hwModalConfirm;
 
   // ── 状态 ──
   const state = {
@@ -27,6 +36,9 @@
     reconnectTimer: null,
     reconnectAttempts: 0,
     searchQuery:  '',
+    subjects:     [],
+    assignments:  [],
+    editingAssignmentId: null,
   };
   const MAX_HISTORY = 500;
 
@@ -85,6 +97,10 @@
         const name = msg.className || ip;
         state.className = name;
         state.students  = msg.students || [];
+        state.subjects  = msg.subjects || [];
+        state.assignments = msg.assignments || [];
+        selectedSubjects = [];
+        selectedAssigns  = [];
 
         // 自动添加到教室列表
         addOrUpdateRoom(ip, name);
@@ -93,6 +109,7 @@
 
         showRoomUI(name);
         renderStudents();
+        renderHomework();
       } else if (msg.type === 'ack') {
         updateCallStatus(msg.callId, 'displayed');
       }
@@ -122,6 +139,8 @@
     state.currentRoom = null;
     state.students    = [];
     state.className   = '';
+    state.subjects    = [];
+    state.assignments = [];
     state.searchQuery = '';
     if (searchInput) searchInput.value = '';
     hideRoomUI();
@@ -206,6 +225,7 @@
   // ═══════════════════════════════════
 
   function showRoomUI(name) {
+    if (mainTabs)   mainTabs.classList.remove('hidden');
     if (roomHeader) roomHeader.classList.remove('hidden');
     if (msgRow)     msgRow.classList.remove('hidden');
     if (searchRow)  searchRow.classList.remove('hidden');
@@ -214,6 +234,7 @@
   }
 
   function hideRoomUI() {
+    if (mainTabs)   mainTabs.classList.add('hidden');
     if (roomHeader) roomHeader.classList.add('hidden');
     if (msgRow)     msgRow.classList.add('hidden');
     if (searchRow)  searchRow.classList.add('hidden');
@@ -319,6 +340,524 @@
   }
 
   // ═══════════════════════════════════
+  // ═══════════════════════════════════
+  //  Tab 切换
+  // ═══════════════════════════════════
+
+  function switchMainTab(name) {
+    mainTabBtns.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    mainTabContents.forEach(c => c.classList.toggle('hidden', c.id !== 'tab-' + name));
+  }
+
+  // ═══════════════════════════════════
+  //  多选组件
+  // ═══════════════════════════════════
+
+  function initMultiSelects() {
+    // 点击外部关闭
+    document.addEventListener('click', (e) => {
+      if (hwSubjectDrop && !hwSubjectMs.contains(e.target)) hwSubjectDrop.classList.add('hidden');
+      if (hwAssignDrop && !hwAssignMs.contains(e.target)) hwAssignDrop.classList.add('hidden');
+    });
+    // 学科按钮
+    if (hwSubjectBtn) hwSubjectBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      hwSubjectDrop.classList.toggle('hidden');
+      if (hwAssignDrop) hwAssignDrop.classList.add('hidden');
+    });
+    // 作业按钮
+    if (hwAssignBtn) hwAssignBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      hwAssignDrop.classList.toggle('hidden');
+      if (hwSubjectDrop) hwSubjectDrop.classList.add('hidden');
+    });
+  }
+
+  function buildSubjectDrop() {
+    if (!hwSubjectDrop) return;
+    let html = '';
+    state.subjects.forEach(sub => {
+      const chk = selectedSubjects.length === 0 || selectedSubjects.includes(sub) ? 'checked' : '';
+      html += `<label><input type="checkbox" value="${esc(sub)}" ${chk}> ${esc(sub)}</label>`;
+    });
+    html += '<div class="ms-actions"><button data-ms-action="all">全选</button><button data-ms-action="none">清除</button></div>';
+    hwSubjectDrop.innerHTML = html;
+    // 事件
+    hwSubjectDrop.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const v = cb.value;
+        if (cb.checked) { if (!selectedSubjects.includes(v)) selectedSubjects.push(v); }
+        else { selectedSubjects = selectedSubjects.filter(s => s !== v); }
+        updateSubjectBtn();
+        applyFilters();
+      });
+    });
+    hwSubjectDrop.querySelectorAll('button[data-ms-action]').forEach(b => {
+      b.addEventListener('click', () => {
+        if (b.dataset.msAction === 'all') selectedSubjects = [...state.subjects];
+        else selectedSubjects = [];
+        buildSubjectDrop(); updateSubjectBtn(); applyFilters();
+      });
+    });
+  }
+
+  function updateSubjectBtn() {
+    if (!hwSubjectBtn) return;
+    if (selectedSubjects.length === 0 || selectedSubjects.length === state.subjects.length) {
+      hwSubjectBtn.textContent = '全部学科 ▾';
+    } else if (selectedSubjects.length <= 2) {
+      hwSubjectBtn.textContent = selectedSubjects.join(', ') + ' ▾';
+    } else {
+      hwSubjectBtn.textContent = selectedSubjects.length + ' 个学科 ▾';
+    }
+  }
+
+  function buildAssignDrop() {
+    if (!hwAssignDrop) return;
+    let hws = state.assignments;
+    const from = hwDateFrom ? hwDateFrom.value : '';
+    const to = hwDateTo ? hwDateTo.value : '';
+    if (from) hws = hws.filter(a => a.date >= from);
+    if (to) hws = hws.filter(a => a.date <= to);
+    if (selectedSubjects.length > 0) hws = hws.filter(a => selectedSubjects.includes(a.subject));
+    hws.sort((a, b) => a.date.localeCompare(b.date));
+    let html = '';
+    hws.forEach(a => {
+      const chk = selectedAssigns.length === 0 || selectedAssigns.includes(a.id) ? 'checked' : '';
+      html += `<label><input type="checkbox" value="${a.id}" ${chk}> ${esc(a.subject)} - ${esc(a.title)}</label>`;
+    });
+    html += '<div class="ms-actions"><button data-ms-action="all">全选</button><button data-ms-action="none">清除</button></div>';
+    hwAssignDrop.innerHTML = html;
+    hwAssignDrop.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const v = cb.value;
+        if (cb.checked) { if (!selectedAssigns.includes(v)) selectedAssigns.push(v); }
+        else { selectedAssigns = selectedAssigns.filter(s => s !== v); }
+        updateAssignBtn();
+        applyFilters();
+      });
+    });
+    hwAssignDrop.querySelectorAll('button[data-ms-action]').forEach(b => {
+      b.addEventListener('click', () => {
+        if (b.dataset.msAction === 'all') {
+          selectedAssigns = []; hwAssignDrop.querySelectorAll('input[type="checkbox"]').forEach(cb => { selectedAssigns.push(cb.value); });
+        } else { selectedAssigns = []; }
+        buildAssignDrop(); updateAssignBtn(); applyFilters();
+      });
+    });
+  }
+
+  function updateAssignBtn() {
+    if (!hwAssignBtn) return;
+    const hws = state.assignments;
+    if (selectedAssigns.length === 0 || selectedAssigns.length >= hws.length) {
+      hwAssignBtn.textContent = '全部作业 ▾';
+    } else if (selectedAssigns.length <= 2) {
+      const names = selectedAssigns.map(id => { const a = hws.find(x => x.id === id); return a ? a.title : id; });
+      hwAssignBtn.textContent = names.join(', ') + ' ▾';
+    } else {
+      hwAssignBtn.textContent = selectedAssigns.length + ' 个作业 ▾';
+    }
+  }
+
+  function applyFilters() {
+    if (selectedAssigns.length > 0) {
+      if (selectedAssigns.length === 1) { renderSingleAssignment(selectedAssigns[0]); return; }
+      renderHomeworkList(null);
+    } else {
+      renderHomeworkList(null);
+    }
+  }
+
+  // ═══════════════════════════════════
+  //  作业管理
+  // ═══════════════════════════════════
+
+  function renderHomework() {
+    if (!hwSubjectBtn) return;
+    if (delSubjectBtn) delSubjectBtn.disabled = state.subjects.length === 0;
+
+    buildSubjectDrop();
+    updateSubjectBtn();
+    buildAssignDrop();
+    updateAssignBtn();
+
+    if (selectedAssigns.length === 1) {
+      renderSingleAssignment(selectedAssigns[0]);
+    } else {
+      renderHomeworkList(null);
+    }
+  }
+
+  // ── 辅助函数 ──
+
+  function updateStatusFilter() {
+    if (!hwStatusFilter) return;
+    const cur = hwStatusFilter.value;
+    const builtin = ['已提交', '未提交', '迟交', '免交'];
+    const customs = getHwCustomStatuses();
+    hwStatusFilter.innerHTML = '<option value="">全部状态</option>';
+    [...builtin, ...customs].forEach(st => {
+      hwStatusFilter.innerHTML += `<option value="${esc(st)}" ${cur===st?'selected':''}>${esc(st)}</option>`;
+    });
+  }
+
+  function renderSingleAssignment(aid) {
+    if (!hwContent) return;
+    const a = state.assignments.find(x => x.id === aid);
+    if (!a) { hwContent.innerHTML = '<div class="muted-note">未找到该作业</div>'; return; }
+    const builtin = ['已提交', '未提交', '迟交', '免交'];
+    const customs = getHwCustomStatuses();
+    const filterStatus = hwStatusFilter ? hwStatusFilter.value : '';
+    updateStatusFilter();
+    let html = '<div class="hw-table-wrap"><table class="hw-matrix"><thead><tr>';
+    html += '<th class="hw-matrix-name">姓名</th>';
+    html += `<th class="hw-matrix-hw"><div class="hw-matrix-hw-title">${esc(a.title)}</div>`;
+    html += `<div class="hw-matrix-hw-date">${esc(a.subject)} · ${esc(a.date)}</div>`;
+    html += `<select class="hw-batch-sel" data-batch-aid="${a.id}"><option value="">批量▼</option>`;
+    html += '<option value="已提交">全部已提交</option><option value="未提交">全部未提交</option>';
+    html += '<option value="迟交">全部迟交</option><option value="免交">全部免交</option></select>';
+    html += '<div class="hw-matrix-hw-acts">';
+    html += `<button class="btn-ico" data-edit-hw="${a.id}">✎</button>`;
+    html += `<button class="btn-ico" data-del-hw="${a.id}">×</button></div></th></tr></thead><tbody>`;
+    state.students.forEach(s => {
+      const st = (a.submissions && a.submissions[s.id]) || '未提交';
+      if (filterStatus && st !== filterStatus) return;
+      html += `<tr><td class="hw-matrix-name">${esc(s.name)}</td><td class="hw-matrix-cell">`;
+      html += `<select class="hw-grid-status-select ${hwStatusClass(st)}" data-aid="${a.id}" data-sid="${s.id}" data-prev="${esc(st)}">`;
+      builtin.forEach(x => { html += `<option value="${x}" ${st===x?'selected':''}>${x}</option>`; });
+      if (customs.length > 0) {
+        html += '<optgroup label="自定义">';
+        customs.forEach(x => { html += `<option value="${esc(x)}" ${st===x?'selected':''}>${esc(x)}</option>`; });
+        html += '</optgroup>';
+      }
+      if (st && !builtin.includes(st) && !customs.includes(st)) html += `<option value="${esc(st)}" selected>${esc(st)}</option>`;
+      html += '<option value="__custom__">✏️ 自定义...</option></select></td></tr>';
+    });
+    html += '</tbody></table></div>';
+    hwContent.innerHTML = html;
+    bindHwEvents();
+  }
+
+  function bindHwEvents() {
+    if (!hwContent) return;
+    hwContent.querySelectorAll('.hw-batch-sel').forEach(sel => {
+      sel.addEventListener('change', (e) => { e.stopPropagation(); handleBatch(sel.dataset.batchAid, sel.value); sel.value = ''; });
+    });
+    hwContent.querySelectorAll('[data-edit-hw]').forEach(btn => {
+      btn.addEventListener('click', (e) => { e.stopPropagation(); openEditHw(btn.dataset.editHw); });
+    });
+    hwContent.querySelectorAll('[data-del-hw]').forEach(btn => {
+      btn.addEventListener('click', (e) => { e.stopPropagation(); deleteHw(btn.dataset.delHw); });
+    });
+    hwContent.querySelectorAll('.hw-grid-status-select').forEach(sel => {
+      sel.addEventListener('change', (e) => { e.stopPropagation(); handleHwStatusChange(sel); });
+      sel.addEventListener('click', (e) => e.stopPropagation());
+    });
+  }
+
+  // ── 学科弹窗 ──
+
+  function openAddSubject() {
+    if (!hwSubjectModal || !hwSubjectName) return;
+    hwSubjectName.value = '';
+    hwSubjectModal.classList.remove('hidden');
+    hwSubjectName.focus();
+  }
+
+  function confirmAddSubject() {
+    if (!hwSubjectName || !hwSubjectModal) return;
+    const name = hwSubjectName.value.trim();
+    if (!name) { hwSubjectName.focus(); return; }
+    if (state.subjects.includes(name)) { alert('该学科已存在'); return; }
+    state.subjects.push(name);
+    state.subjects.sort();
+    // 自动选中新学科
+    if (!selectedSubjects.includes(name)) selectedSubjects.push(name);
+    hwSubjectModal.classList.add('hidden');
+    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+      state.ws.send(JSON.stringify({ type: 'update-subjects', action: 'add', subject: name }));
+    }
+    renderHomework();
+  }
+
+  function deleteCurrentSubject() {
+    if (selectedSubjects.length === 0) { alert('请先在学科多选中选择一个学科'); return; }
+    const subject = selectedSubjects[0];
+    const cnt = state.assignments.filter(a => a.subject === subject).length;
+    const msg = cnt ? `学科「${subject}」下有 ${cnt} 项作业，删除学科将同时删除这些作业，确定吗？` : `确定删除学科「${subject}」吗？`;
+    if (!confirm(msg)) return;
+    state.subjects = state.subjects.filter(s => s !== subject);
+    state.assignments = state.assignments.filter(a => a.subject !== subject);
+    selectedSubjects = selectedSubjects.filter(s => s !== subject);
+    selectedAssigns = selectedAssigns.filter(id => { const a = state.assignments.find(x => x.id === id); return a && a.subject !== subject; });
+    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+      state.ws.send(JSON.stringify({ type: 'update-subjects', action: 'delete', subject }));
+    }
+    renderHomework();
+  }
+
+  // ── 作业列表 ──
+
+  function updateHwSubjectSelect() {
+    if (!hwModalSubject) return;
+    hwModalSubject.innerHTML = '';
+    if (state.subjects.length === 0) {
+      hwModalSubject.innerHTML = '<option value="">-- 请先添加学科 --</option>';
+      return;
+    }
+    state.subjects.forEach(sub => {
+      const opt = document.createElement('option');
+      opt.value = sub; opt.textContent = sub;
+      hwModalSubject.appendChild(opt);
+    });
+  }
+
+  function getFilteredAssignments(subject) {
+    let hws = state.assignments;
+    if (subject) hws = hws.filter(a => a.subject === subject);
+    if (selectedSubjects.length > 0) hws = hws.filter(a => selectedSubjects.includes(a.subject));
+    if (selectedAssigns.length > 0) hws = hws.filter(a => selectedAssigns.includes(a.id));
+    const from = hwDateFrom ? hwDateFrom.value : '';
+    const to   = hwDateTo   ? hwDateTo.value   : '';
+    if (from) hws = hws.filter(a => a.date >= from);
+    if (to)   hws = hws.filter(a => a.date <= to);
+    // 按日期排序
+    hws.sort((a, b) => a.date.localeCompare(b.date));
+    return hws;
+  }
+
+  function renderHomeworkList(subject) {
+    if (!hwContent) return;
+    const hws = getFilteredAssignments(subject);
+    updateStatusFilter();
+
+    if (hws.length === 0) {
+      hwContent.innerHTML = '<div class="muted-note">该学科暂无作业</div>';
+      return;
+    }
+
+    const builtin = ['已提交', '未提交', '迟交', '免交'];
+    const customs = getHwCustomStatuses();
+    const filterStatus = hwStatusFilter ? hwStatusFilter.value : '';
+
+    let html = '<div class="hw-table-wrap"><table class="hw-matrix"><thead><tr>';
+    html += '<th class="hw-matrix-name">姓名</th>';
+    hws.forEach(a => {
+      html += `<th class="hw-matrix-hw">`;
+      html += `<div class="hw-matrix-hw-title" title="${esc(a.title)}">${esc(a.title)}</div>`;
+      html += `<div class="hw-matrix-hw-date">${esc(a.date)}</div>`;
+      html += `<select class="hw-batch-sel" data-batch-aid="${a.id}">`;
+      html += `<option value="">批量▼</option>`;
+      html += `<option value="已提交">全部已提交</option>`;
+      html += `<option value="未提交">全部未提交</option>`;
+      html += `<option value="迟交">全部迟交</option>`;
+      html += `<option value="免交">全部免交</option>`;
+      html += `</select>`;
+      html += `<div class="hw-matrix-hw-acts">`;
+      html += `<button class="btn-ico" data-edit-hw="${a.id}" title="编辑">✎</button>`;
+      html += `<button class="btn-ico" data-del-hw="${a.id}" title="删除">×</button>`;
+      html += `</div></th>`;
+    });
+    html += '</tr></thead><tbody>';
+
+    state.students.forEach(s => {
+      // 状态筛选
+      if (filterStatus) {
+        const hasStatus = hws.some(a => {
+          const st = (a.submissions && a.submissions[s.id]) || '未提交';
+          return st === filterStatus;
+        });
+        if (!hasStatus) return;
+      }
+      html += '<tr>';
+      html += `<td class="hw-matrix-name">${esc(s.name)}</td>`;
+      hws.forEach(a => {
+        const status = (a.submissions && a.submissions[s.id]) || '未提交';
+        html += `<td class="hw-matrix-cell">`;
+        html += `<select class="hw-grid-status-select ${hwStatusClass(status)}" data-aid="${a.id}" data-sid="${s.id}" data-prev="${esc(status)}">`;
+        builtin.forEach(st => {
+          html += `<option value="${st}" ${status === st ? 'selected' : ''}>${st}</option>`;
+        });
+        if (customs.length > 0) {
+          html += '<optgroup label="自定义">';
+          customs.forEach(st => {
+            html += `<option value="${esc(st)}" ${status === st ? 'selected' : ''}>${esc(st)}</option>`;
+          });
+          html += '</optgroup>';
+        }
+        if (status && !builtin.includes(status) && !customs.includes(status)) {
+          html += `<option value="${esc(status)}" selected>${esc(status)}</option>`;
+        }
+        html += '<option value="__custom__">✏️ 自定义...</option>';
+        html += '</select>';
+        html += '</td>';
+      });
+      html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+
+    hwContent.innerHTML = html;
+    bindHwEvents();
+  }
+
+  function getHwCustomStatuses() {
+    const set = new Set();
+    const builtin = ['已提交', '未提交', '迟交', '免交'];
+    state.assignments.forEach(a => {
+      if (!a.submissions) return;
+      Object.values(a.submissions).forEach(v => {
+        if (v && !builtin.includes(v)) set.add(v);
+      });
+    });
+    return Array.from(set).sort();
+  }
+
+  function hwStatusClass(s) {
+    switch (s) { case '已提交': return 'st-ok'; case '迟交': return 'st-late'; case '免交': return 'st-exempt'; default: return 'st-miss'; }
+  }
+
+  function handleBatch(aid, status) {
+    if (!status) return;
+    const a = state.assignments.find(x => x.id === aid);
+    if (!a) return;
+    if (!a.submissions) a.submissions = {};
+    state.students.forEach(s => { a.submissions[s.id] = status; });
+    // WS 同步
+    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+      state.ws.send(JSON.stringify({
+        type: 'update-assignments', action: 'edit', assignment: a,
+      }));
+    }
+    if (selectedAssigns.length === 1) renderSingleAssignment(aid);
+    else renderHomeworkList(null);
+  }
+
+  function handleHwStatusChange(sel) {
+    const aid = sel.dataset.aid;
+    const sid = sel.dataset.sid;
+    const a = state.assignments.find(x => x.id === aid);
+    if (!a) return;
+    if (!a.submissions) a.submissions = {};
+
+    if (sel.value === '__custom__') {
+      const custom = prompt('请输入自定义状态（例如：已补交、请假等）：');
+      if (!custom || !custom.trim()) {
+        sel.value = sel.dataset.prev;
+        return;
+      }
+      const val = custom.trim();
+      a.submissions[sid] = val;
+      sel.dataset.prev = val;
+    } else {
+      a.submissions[sid] = sel.value;
+      sel.dataset.prev = sel.value;
+    }
+
+    sel.className = 'hw-grid-status-select ' + hwStatusClass(a.submissions[sid]);
+
+    // 通过 WS 同步到教室端
+    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+      state.ws.send(JSON.stringify({
+        type: 'update-submission', assignmentId: aid, studentId: sid, status: a.submissions[sid],
+      }));
+    }
+
+    // 如果有新的自定义状态，重新渲染以更新下拉选项
+    const builtin = ['已提交', '未提交', '迟交', '免交'];
+    if (!builtin.includes(a.submissions[sid])) {
+      if (selectedAssigns.length === 1) renderSingleAssignment(selectedAssigns[0]);
+      else renderHomeworkList(null);
+    }
+  }
+
+  // ── 作业弹窗 ──
+
+  function openAddHw() {
+    if (state.subjects.length === 0) { alert('请先添加学科'); return; }
+    state.editingAssignmentId = null;
+    if (hwModalTitleLabel) hwModalTitleLabel.textContent = '添加作业';
+    if (hwModalTitle) hwModalTitle.value = '';
+    if (hwModalDate) hwModalDate.value = new Date().toISOString().slice(0, 10);
+    updateHwSubjectSelect();
+    // 默认选中已选的学科
+    if (hwModalSubject && selectedSubjects.length > 0) {
+      hwModalSubject.value = selectedSubjects[0];
+    } else if (hwModalSubject && state.subjects.length > 0) {
+      hwModalSubject.value = state.subjects[0];
+    }
+    hwModal.classList.remove('hidden');
+    if (hwModalTitle) hwModalTitle.focus();
+  }
+
+  function openEditHw(aid) {
+    const a = state.assignments.find(x => x.id === aid);
+    if (!a) return;
+    state.editingAssignmentId = aid;
+    if (hwModalTitleLabel) hwModalTitleLabel.textContent = '编辑作业';
+    updateHwSubjectSelect();
+    if (hwModalSubject) hwModalSubject.value = a.subject;
+    if (hwModalTitle) hwModalTitle.value = a.title;
+    if (hwModalDate) hwModalDate.value = a.date;
+    hwModal.classList.remove('hidden');
+    if (hwModalTitle) hwModalTitle.focus();
+  }
+
+  function confirmHw() {
+    if (!hwModal || !hwModalTitle || !hwModalSubject || !hwModalDate) return;
+    const subject = hwModalSubject.value;
+    if (!subject) { alert('请选择学科'); return; }
+    const title = hwModalTitle.value.trim();
+    if (!title) { hwModalTitle.focus(); return; }
+    const date = hwModalDate.value || new Date().toISOString().slice(0, 10);
+
+    const isEdit = !!state.editingAssignmentId;
+    if (isEdit) {
+      const a = state.assignments.find(x => x.id === state.editingAssignmentId);
+      if (a) { a.subject = subject; a.title = title; a.date = date; }
+    } else {
+      const subs = {};
+      state.students.forEach(s => { subs[s.id] = '未提交'; });
+      state.assignments.push({ id: genId(), subject, title, date, submissions: subs });
+    }
+
+    const savedId = state.editingAssignmentId;
+    state.editingAssignmentId = null;
+    hwModal.classList.add('hidden');
+
+    // 通过 WS 同步
+    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+      const a = isEdit
+        ? state.assignments.find(x => x.id === savedId)
+        : state.assignments[state.assignments.length - 1];
+      if (a) {
+        state.ws.send(JSON.stringify({
+          type: 'update-assignments',
+          action: isEdit ? 'edit' : 'add',
+          assignment: a,
+        }));
+      }
+    }
+
+    selectedAssigns = selectedAssigns.filter(id => id !== aid);
+    if (selectedAssigns.length === 1) renderSingleAssignment(selectedAssigns[0]);
+    else renderHomeworkList(null);
+  }
+
+  function deleteHw(aid) {
+    const a = state.assignments.find(x => x.id === aid);
+    if (!a) return;
+    if (!confirm(`确定删除作业「${a.title}」吗？`)) return;
+    state.assignments = state.assignments.filter(x => x.id !== aid);
+    selectedAssigns = selectedAssigns.filter(id => id !== aid);
+    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+      state.ws.send(JSON.stringify({ type: 'update-assignments', action: 'delete', assignment: { id: aid } }));
+    }
+    if (selectedAssigns.length === 1) renderSingleAssignment(selectedAssigns[0]);
+    else renderHomeworkList(null);
+  }
+
+  // ═══════════════════════════════════
   //  消息编辑（contenteditable，{name} → 方块）
   // ═══════════════════════════════════
 
@@ -412,6 +951,62 @@
     }
 
     initEditor();
+
+    // Tab 切换
+    mainTabBtns.forEach(btn => btn.addEventListener('click', () => switchMainTab(btn.dataset.tab)));
+
+    // 多选组件初始化
+    initMultiSelects();
+
+    // 状态筛选
+    if (hwStatusFilter) hwStatusFilter.addEventListener('change', () => {
+      if (selectedAssigns.length === 1) renderSingleAssignment(selectedAssigns[0]);
+      else renderHomeworkList(null);
+    });
+
+    // 日期筛选
+    const onDateChange = () => {
+      buildAssignDrop(); updateAssignBtn();
+      if (selectedAssigns.length === 1) renderSingleAssignment(selectedAssigns[0]);
+      else renderHomeworkList(null);
+    };
+    if (hwDateFrom) hwDateFrom.addEventListener('change', onDateChange);
+    if (hwDateTo)   hwDateTo.addEventListener('change', onDateChange);
+
+    // 学科按钮
+    if (addSubjectBtn)       addSubjectBtn.addEventListener('click', openAddSubject);
+    if (delSubjectBtn)       delSubjectBtn.addEventListener('click', deleteCurrentSubject);
+    if (addAssignmentBtn2)   addAssignmentBtn2.addEventListener('click', () => openAddHw());
+
+    // 学科弹窗
+    if (hwSubjectModalCancel)  hwSubjectModalCancel.addEventListener('click', () => hwSubjectModal && hwSubjectModal.classList.add('hidden'));
+    if (hwSubjectModalConfirm) hwSubjectModalConfirm.addEventListener('click', confirmAddSubject);
+    if (hwSubjectName) {
+      hwSubjectName.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') confirmAddSubject();
+        if (e.key === 'Escape') hwSubjectModal && hwSubjectModal.classList.add('hidden');
+      });
+    }
+    if (hwSubjectModal) {
+      hwSubjectModal.addEventListener('click', (e) => {
+        if (e.target === hwSubjectModal) hwSubjectModal.classList.add('hidden');
+      });
+    }
+
+    // 作业弹窗
+    if (hwModalCancel)  hwModalCancel.addEventListener('click', () => hwModal && hwModal.classList.add('hidden'));
+    if (hwModalConfirm) hwModalConfirm.addEventListener('click', confirmHw);
+    if (hwModalTitle) {
+      hwModalTitle.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') confirmHw();
+        if (e.key === 'Escape') hwModal && hwModal.classList.add('hidden');
+      });
+    }
+    if (hwModal) {
+      hwModal.addEventListener('click', (e) => {
+        if (e.target === hwModal) hwModal.classList.add('hidden');
+      });
+    }
   }
 
   // ═══════════════════════════════════
@@ -448,6 +1043,40 @@
     searchResult   = document.getElementById('searchResult');
     historyTbody   = document.querySelector('#historyTable tbody');
     noHistory      = document.getElementById('noHistory');
+
+    // Tab
+    mainTabs      = document.getElementById('mainTabs');
+    mainTabBtns   = document.querySelectorAll('.main-tab');
+    mainTabContents = document.querySelectorAll('.main-tab-content');
+
+    // 作业管理 DOM
+    hwSection            = document.getElementById('hwSection');
+    // 多选
+    hwSubjectMs    = document.getElementById('hwSubjectMs');
+    hwSubjectBtn   = document.getElementById('hwSubjectBtn');
+    hwSubjectDrop  = document.getElementById('hwSubjectDrop');
+    hwAssignMs     = document.getElementById('hwAssignMs');
+    hwAssignBtn    = document.getElementById('hwAssignBtn');
+    hwAssignDrop   = document.getElementById('hwAssignDrop');
+
+    addSubjectBtn        = document.getElementById('addSubjectBtn');
+    delSubjectBtn        = document.getElementById('delSubjectBtn');
+    hwStatusFilter       = document.getElementById('hwStatusFilter');
+    hwDateFrom           = document.getElementById('hwDateFrom');
+    hwDateTo             = document.getElementById('hwDateTo');
+    addAssignmentBtn2    = document.getElementById('addAssignmentBtn2');
+    hwContent            = document.getElementById('hwContent');
+    hwSubjectModal        = document.getElementById('hwSubjectModal');
+    hwSubjectName         = document.getElementById('hwSubjectName');
+    hwSubjectModalCancel  = document.getElementById('hwSubjectModalCancel');
+    hwSubjectModalConfirm = document.getElementById('hwSubjectModalConfirm');
+    hwModal               = document.getElementById('hwModal');
+    hwModalTitleLabel     = document.getElementById('hwModalTitleLabel');
+    hwModalSubject        = document.getElementById('hwModalSubject');
+    hwModalTitle          = document.getElementById('hwModalTitle');
+    hwModalDate           = document.getElementById('hwModalDate');
+    hwModalCancel         = document.getElementById('hwModalCancel');
+    hwModalConfirm        = document.getElementById('hwModalConfirm');
 
     bindEvents();
     loadFromDisk().then(data => {

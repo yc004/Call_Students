@@ -557,3 +557,476 @@ body {
 }
 
 .btn-primary:hover { background: var(--primary-h); }
+
+/* ══════════════════════════════
+   Main Tab 导航
+   ══════════════════════════════ */
+
+.main-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--border);
+  border-radius: 10px;
+  padding: 4px;
+  margin-bottom: 4px;
+}
+
+.main-tabs.hidden { display: none; }
+
+.main-tab {
+  flex: 1;
+  padding: 8px 0;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.main-tab:hover { color: var(--text); }
+
+.main-tab.active {
+  background: #fff;
+  color: var(--primary);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+.main-tab-content.hidden { display: none; }
+
+/* ══════════════════════════════
+   作业管理
+   ══════════════════════════════ */
+
+.hw-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hw-section.hidden { display: none; }
+
+.hw-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── 工具栏 ── */
+
+.hw-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.hw-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hw-subject-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.hw-subject-select {
+  padding: 7px 12px;
+  font-size: 14px;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  outline: none;
+  cursor: pointer;
+  min-width: 120px;
+  font-family: inherit;
+}
+
+.hw-subject-select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-a);
+}
+
+.hw-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── 多选组件 ── */
+
+.ms-wrap { position: relative; }
+.ms-btn {
+  padding: 6px 10px; font-size: 13px; font-weight: 500;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--card); color: var(--text);
+  cursor: pointer; font-family: inherit;
+  white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis;
+  transition: border-color 0.15s;
+}
+.ms-btn:hover, .ms-btn.open { border-color: var(--primary); }
+.ms-drop {
+  position: absolute; top: 100%; left: 0; margin-top: 4px;
+  background: #fff; border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12); z-index: 50;
+  min-width: 160px; max-height: 240px; overflow-y: auto; padding: 6px 0;
+}
+.ms-drop.hidden { display: none; }
+.ms-drop label {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 14px; font-size: 13px; cursor: pointer;
+  transition: background 0.1s;
+}
+.ms-drop label:hover { background: #F1F5F9; }
+.ms-drop input[type="checkbox"] { accent-color: var(--primary); }
+.ms-actions {
+  display: flex; gap: 4px; padding: 6px 10px;
+  border-top: 1px solid var(--border);
+}
+.ms-actions button {
+  flex: 1; padding: 4px 0; font-size: 12px; font-weight: 500;
+  border: 1px solid var(--border); border-radius: 4px;
+  background: #fff; color: var(--text-2); cursor: pointer;
+}
+.ms-actions button:hover { background: #F1F5F9; }
+
+/* ── 筛选下拉 ── */
+
+.hw-filter-select {
+  padding: 7px 10px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  outline: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.hw-filter-select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-a);
+}
+
+.hw-date-input {
+  padding: 6px 10px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+  font-family: inherit;
+  width: 130px;
+}
+
+.hw-date-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-a);
+}
+
+.hw-date-sep {
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+/* ── 交叉表格 ── */
+
+.hw-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.hw-matrix {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.hw-matrix thead th {
+  position: sticky;
+  top: 0;
+  background: #F8FAFC;
+  border-bottom: 1px solid var(--border);
+  padding: 8px 10px;
+  text-align: center;
+  min-width: 110px;
+  z-index: 1;
+}
+
+.hw-matrix-name {
+  position: sticky;
+  left: 0;
+  background: #fff;
+  font-weight: 600;
+  color: var(--text);
+  text-align: left !important;
+  min-width: 80px !important;
+  white-space: nowrap;
+  padding: 8px 14px !important;
+  border-right: 2px solid var(--border);
+  z-index: 2;
+}
+
+.hw-matrix thead .hw-matrix-name {
+  z-index: 3;
+}
+
+.hw-matrix tbody td {
+  padding: 6px 8px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+  background: #fff;
+}
+
+.hw-matrix tbody .hw-matrix-name {
+  background: #fff;
+}
+
+.hw-matrix tbody tr:hover td {
+  background: #F8FAFC;
+}
+
+.hw-matrix-hw-title {
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100px;
+  margin: 0 auto;
+}
+
+.hw-batch-sel {
+  margin-top: 3px; padding: 1px 4px;
+  font-size: 10px; font-weight: 500;
+  border: 1px solid var(--border); border-radius: 4px;
+  background: #fff; color: var(--text-3);
+  outline: none; cursor: pointer; font-family: inherit;
+  width: 80px;
+}
+.hw-batch-sel:hover { border-color: var(--primary); color: var(--primary); }
+
+.hw-matrix-hw-date {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+
+.hw-matrix-hw-acts {
+  margin-top: 4px;
+  display: flex;
+  justify-content: center;
+  gap: 2px;
+}
+
+.btn-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px; height: 22px;
+  border: none; border-radius: 4px;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 14px; cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-ico:hover {
+  background: #F1F5F9;
+  color: var(--primary);
+}
+
+.hw-matrix-cell {
+  vertical-align: middle;
+}
+
+/* ── 作业内容区 ── */
+
+.hw-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ── 作业列表项 ── */
+
+.hw-list-item {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.hw-list-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}
+
+.hw-list-header:hover {
+  background: #F8FAFC;
+}
+
+.hw-list-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.hw-list-meta {
+  font-size: 12px;
+  color: var(--text-3);
+  flex: 1;
+}
+
+.hw-item-actions {
+  display: flex; gap: 4px; flex-shrink: 0;
+}
+
+.hw-del-btn {
+  color: var(--text-3);
+  font-size: 14px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.hw-list-header:hover .hw-del-btn {
+  opacity: 1;
+}
+
+/* ── 弹窗表单扩展 ── */
+
+.modal-wide {
+  width: 440px;
+}
+
+.modal-card .field-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: 4px;
+}
+
+.modal-card .field-select {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+  margin-bottom: 14px;
+  background: #fff;
+  font-family: inherit;
+}
+
+.modal-card .field-select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-a);
+}
+
+.modal-card input[type="date"] {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+  font-family: inherit;
+}
+
+.modal-card input[type="date"]:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-a);
+}
+
+.hw-del-btn:hover {
+  color: var(--danger);
+}
+
+/* ── 提交网格 ── */
+
+.hw-list-grid {
+  display: none;
+  padding: 0 14px 10px;
+  border-top: 1px solid var(--border);
+}
+
+.hw-list-item.expanded .hw-list-grid {
+  display: block;
+}
+
+.hw-grid-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 6px;
+}
+
+.hw-grid-table tbody td {
+  padding: 5px 6px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+}
+
+.hw-grid-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.hw-grid-name {
+  font-weight: 500;
+  color: var(--text);
+}
+
+/* ── 状态下拉选择 ── */
+
+.hw-grid-status-select {
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  outline: none;
+  cursor: pointer;
+  font-family: inherit;
+  max-width: 120px;
+}
+
+.hw-grid-status-select.st-ok    { background: #ECFDF5; color: #059669; border-color: rgba(5,150,105,0.3); }
+.hw-grid-status-select.st-miss  { background: #FEF2F2; color: #DC2626; border-color: rgba(220,38,38,0.3); }
+.hw-grid-status-select.st-late  { background: #FFFBEB; color: #D97706; border-color: rgba(217,119,6,0.3); }
+.hw-grid-status-select.st-exempt{ background: #F1F5F9; color: #64748B; border-color: rgba(100,116,139,0.3); }
+
+/* ── Modal 日期输入 ── */
+
+.modal-card input[type="date"] {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+  font-family: inherit;
+}
+
+.modal-card input[type="date"]:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-a);
+}

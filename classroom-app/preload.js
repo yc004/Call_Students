@@ -12,4 +12,9 @@ contextBridge.exposeInMainWorld('api', {
   onShowCall: (cb)    => ipcRenderer.on('show-call', (_e, call) => cb(call)),
   callAck:    (callId)=> ipcRenderer.send('call-ack', callId),
   closePopup: ()      => ipcRenderer.send('close-popup'),
+
+  // ── 作业看板（board 页用） ──
+  closeBoard:  ()     => ipcRenderer.send('close-board'),
+  moveBoard:   (dx, dy) => ipcRenderer.send('move-board', dx, dy),
+  onDataChanged: (cb) => ipcRenderer.on('data-changed', () => cb()),
 });

@@ -11,44 +11,83 @@
 <div class="container">
   <h1>教室管理</h1>
 
-  <!-- 班级名称 -->
-  <div class="field">
-    <label for="className">班级名称</label>
-    <input type="text" id="className" placeholder="例如：高一(3)班" autofocus>
+  <!-- Tab 导航 -->
+  <div class="tabs">
+    <button class="tab active" data-tab="students">学生名单</button>
+    <button class="tab" data-tab="homework">作业管理</button>
   </div>
 
-  <!-- 学生名单 -->
-  <div class="section">
-    <div class="section-head">
-      <h2>学生名单</h2>
-      <div class="section-head-actions">
-        <button id="importBtn" class="btn">📥 批量导入</button>
-        <button id="addBtn" class="btn btn-primary">＋ 添加学生</button>
+  <!-- ══════════ 学生名单 Tab ══════════ -->
+  <div class="tab-content" id="tab-students">
+    <div class="field">
+      <label for="className">班级名称</label>
+      <input type="text" id="className" placeholder="例如：高一(3)班" autofocus>
+    </div>
+
+    <div class="section">
+      <div class="section-head">
+        <h2>学生名单</h2>
+        <div class="section-head-actions">
+          <button id="importBtn" class="btn">📥 批量导入</button>
+          <button id="addBtn" class="btn btn-primary">＋ 添加学生</button>
+        </div>
+      </div>
+      <table id="studentTable">
+        <thead>
+          <tr><th style="width:60px">序号</th><th>姓名</th><th style="width:100px">操作</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <div id="emptyHint" class="empty-hint">暂无学生，请点击右上角「添加学生」</div>
+    </div>
+
+    <div class="actions">
+      <button id="saveBtn" class="btn btn-primary btn-lg">保存</button>
+      <span id="saveStatus" class="save-status"></span>
+    </div>
+  </div>
+
+  <!-- ══════════ 作业管理 Tab ══════════ -->
+  <div class="tab-content hidden" id="tab-homework">
+
+    <!-- 学科 -->
+    <div class="section">
+      <div class="section-head">
+        <h2>学科</h2>
+        <button id="addSubjectBtn" class="btn btn-primary btn-sm">＋ 添加学科</button>
+      </div>
+      <div id="subjectTags" class="subject-tags">
+        <span class="empty-hint">暂无学科，请先添加</span>
       </div>
     </div>
 
-    <table id="studentTable">
-      <thead>
-        <tr>
-          <th style="width:60px">序号</th>
-          <th>姓名</th>
-          <th style="width:100px">操作</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
+    <!-- 作业列表 -->
+    <div class="section">
+      <div class="section-head">
+        <h2>作业</h2>
+        <div class="section-head-actions">
+          <select id="mgStatusFilter" class="mg-filter-select">
+            <option value="">全部状态</option>
+          </select>
+          <input type="date" id="mgDateFrom" class="mg-date-input" title="开始日期">
+          <span class="mg-date-sep">~</span>
+          <input type="date" id="mgDateTo" class="mg-date-input" title="结束日期">
+          <button id="addAssignmentBtn" class="btn btn-primary btn-sm">＋ 添加作业</button>
+        </div>
+      </div>
+      <div id="assignmentList" class="hw-list">
+        <span class="empty-hint">暂无作业</span>
+      </div>
+    </div>
 
-    <div id="emptyHint" class="empty-hint">暂无学生，请点击右上角「添加学生」</div>
-  </div>
-
-  <!-- 保存 -->
-  <div class="actions">
-    <button id="saveBtn" class="btn btn-primary btn-lg">保存</button>
-    <span id="saveStatus" class="save-status"></span>
+    <div class="actions">
+      <button id="hwSaveBtn" class="btn btn-primary btn-lg">保存</button>
+      <span id="hwSaveStatus" class="save-status"></span>
+    </div>
   </div>
 </div>
 
-<!-- 添加 / 编辑 弹窗 -->
+<!-- 学生弹窗 -->
 <div id="modal" class="modal hidden">
   <div class="modal-card">
     <h3 id="modalTitle">添加学生</h3>
@@ -69,6 +108,35 @@
     <div class="modal-actions">
       <button id="importCancel" class="btn">取消</button>
       <button id="importConfirm" class="btn btn-primary">导入</button>
+    </div>
+  </div>
+</div>
+
+<!-- 学科弹窗 -->
+<div id="subjectModal" class="modal hidden">
+  <div class="modal-card">
+    <h3>添加学科</h3>
+    <input type="text" id="subjectName" placeholder="学科名称，例如：数学" maxlength="20">
+    <div class="modal-actions">
+      <button id="subjectModalCancel" class="btn">取消</button>
+      <button id="subjectModalConfirm" class="btn btn-primary">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 作业弹窗 -->
+<div id="assignmentModal" class="modal hidden">
+  <div class="modal-card modal-wide">
+    <h3 id="assignmentModalTitle">添加作业</h3>
+    <label class="field-label">学科</label>
+    <select id="assignmentSubject" class="field-select"></select>
+    <label class="field-label">作业标题</label>
+    <input type="text" id="assignmentTitle" placeholder="例如：第一章练习" maxlength="50">
+    <label class="field-label">日期</label>
+    <input type="date" id="assignmentDate">
+    <div class="modal-actions">
+      <button id="assignmentModalCancel" class="btn">取消</button>
+      <button id="assignmentModalConfirm" class="btn btn-primary">确定</button>
     </div>
   </div>
 </div>
