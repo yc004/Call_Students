@@ -1,39 +1,55 @@
 /* ══════════════════════════════════════════
-   呼叫弹窗 — 样式
+   呼叫弹窗 — Apple 液态玻璃风格
    ══════════════════════════════════════════ */
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+::-webkit-scrollbar { display: none; }
+
 html, body {
-  width: 100%;
-  height: 100%;
-  background: transparent;
-  overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, "Microsoft YaHei", "PingFang SC", sans-serif;
+  width: 100%; height: 100%;
+  background: transparent; overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Microsoft YaHei", "PingFang SC", sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 .popup-container {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
 }
-
-/* ── 卡片 ── */
 
 .call-card {
   position: relative;
-  background: #FFFFFF;
-  border-radius: 20px;
-  padding: 40px 56px 28px;
+  background: rgba(255,255,255,0.78);
+  backdrop-filter: blur(40px) saturate(200%);
+  -webkit-backdrop-filter: blur(40px) saturate(200%);
+  border-radius: 28px;
+  padding: 44px 60px 32px;
   text-align: center;
-  box-shadow:
-    0 8px 40px rgba(0, 0, 0, 0.25),
-    0 2px 8px  rgba(0, 0, 0, 0.12);
-  min-width: 400px;
-  max-width: 460px;
-  animation: popIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  border: 1px solid rgba(0,0,0,0.06);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.15), 0 0 0 0.5px rgba(255,255,255,0.3) inset;
+  min-width: 420px; max-width: 480px;
+  overflow: hidden;
+  animation: popIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* 反射光条 */
+.call-card::before {
+  content: '';
+  position: absolute; top: 0; left: 20px; right: 20px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.7), transparent);
+  z-index: 2; pointer-events: none;
+}
+
+/* 水滴高光 */
+.call-card::after {
+  content: '';
+  position: absolute; top: -60px; right: -60px;
+  width: 180px; height: 180px;
+  background: radial-gradient(circle, rgba(255,255,255,0.5) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
 }
 
 @keyframes popIn {
@@ -41,70 +57,43 @@ html, body {
   to   { transform: scale(1);    opacity: 1; }
 }
 
-/* ── 关闭按钮 ── */
-
 .close-btn {
-  position: absolute;
-  top: 12px;
-  right: 14px;
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: #F1F5F9;
-  color: #64748B;
-  font-size: 14px;
-  border-radius: 50%;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.15s, color 0.15s;
+  position: absolute; top: 14px; right: 16px;
+  width: 28px; height: 28px; border: none;
+  background: rgba(0,0,0,0.04); color: #86868B;
+  font-size: 14px; border-radius: 50%;
+  cursor: pointer; display: flex;
+  align-items: center; justify-content: center;
+  transition: all 0.15s; z-index: 3;
 }
-
-.close-btn:hover { background: #FEE2E2; color: #EF4444; }
-
-/* ── 内容 ── */
+.close-btn:hover { background: rgba(255,59,48,0.1); color: #FF3B30; }
 
 .call-class {
-  font-size: 20px;
-  color: #94A3B8;
-  font-weight: 500;
-  margin-bottom: 6px;
-  letter-spacing: 0.5px;
-  min-height: 28px;
+  font-size: 20px; color: #AEAEB2; font-weight: 500;
+  margin-bottom: 6px; letter-spacing: 0.5px; min-height: 28px;
+  position: relative; z-index: 1;
 }
 
 .call-student {
-  font-size: 56px;
-  font-weight: 700;
-  color: #0F172A;
-  margin: 8px 0 12px;
-  letter-spacing: 6px;
-  line-height: 1.2;
+  font-size: 56px; font-weight: 700; color: #1D1D1F;
+  margin: 8px 0 12px; letter-spacing: 6px; line-height: 1.2;
+  position: relative; z-index: 1;
 }
 
 .call-message {
-  font-size: 20px;
-  color: #4F6EF7;
-  font-weight: 500;
-  letter-spacing: 1px;
+  font-size: 20px; color: #007AFF; font-weight: 500;
+  letter-spacing: 1px; position: relative; z-index: 1;
 }
 
-/* ── 倒计时条 ── */
-
 .call-timer {
-  margin-top: 20px;
-  height: 4px;
-  background: #F1F5F9;
-  border-radius: 2px;
-  overflow: hidden;
+  margin-top: 22px; height: 4px;
+  background: rgba(0,0,0,0.04); border-radius: 2px;
+  overflow: hidden; position: relative; z-index: 1;
 }
 
 .timer-bar {
-  display: block;
-  height: 100%;
-  width: 100%;
-  background: linear-gradient(90deg, #4F6EF7, #818CF8);
+  display: block; height: 100%; width: 100%;
+  background: linear-gradient(90deg, #007AFF, #5AC8FA);
   border-radius: 2px;
   animation: shrink 8s linear forwards;
 }

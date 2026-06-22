@@ -23,10 +23,12 @@
   let hwContent;
   let hwSubjectModal, hwSubjectName, hwSubjectModalCancel, hwSubjectModalConfirm;
   let hwModal, hwModalTitleLabel, hwModalSubject, hwModalTitle, hwModalDate, hwModalCancel, hwModalConfirm;
+  // 批量呼叫
+  let batchBar, batchCount, batchSelectAll, batchClear, batchCallBtn;
 
   // ── 状态 ──
   const state = {
-    rooms:        [],       // { id, ip, name (from sync) }
+    rooms:        [],       // { ip, name (from sync), password? }
     callHistory:  [],
     currentRoom:  null,
     ws:           null,
@@ -39,6 +41,9 @@
     subjects:     [],
     assignments:  [],
     editingAssignmentId: null,
+    account:      null,       // { name, role, subjects, connectionId }
+    teacherStatus: null,      // 'approved' | 'pending' | null
+    selectedStudents: new Set(),
   };
   const MAX_HISTORY = 500;
 
@@ -47,11 +52,11 @@
   // ═══════════════════════════════════
 
   async function loadFromDisk() {
-    if (!api.getData) return { rooms: [], callHistory: [] };
+    if (!api.getData) return { rooms: [], callHistory: [], account: null };
     try {
       const d = await api.getData();
-      return { rooms: d.rooms || [], callHistory: d.callHistory || [] };
-    } catch (e) { return { rooms: [], callHistory: [] }; }
+      return { account: d.account || null, rooms: d.rooms || [], callHistory: d.callHistory || [] };
+    } catch (e) { return { rooms: [], callHistory: [], account: null }; }
   }
 
   async function saveToDisk() {
@@ -64,8 +69,191 @@
   }
 
   // ═══════════════════════════════════
-  //  连接
+  //  账户管理
   // ═══════════════════════════════════
+
+  // DOM refs for account overlay
+  let accountOverlay, accountTitle, loginForm, registerForm;
+  let loginName, loginPassword, loginError, loginBtn;
+  let regName, regPassword, regPassword2, regRole, regSubjectsGroup, regSubjects, regError, regBtn;
+  let showRegister, showLogin;
+  let teacherInfo, joinOverlay, joinDesc, joinRequestView, joinWaitingView;
+
+  function showAccountOverlay(mode) {
+    if (accountOverlay) accountOverlay.classList.remove('hidden');
+    if (loginForm) loginForm.classList.toggle('hidden', mode !== 'login');
+    if (registerForm) registerForm.classList.toggle('hidden', mode !== 'register');
+    if (accountTitle) accountTitle.textContent = mode === 'login' ? '欢迎回来' : '创建教师账户';
+    var desc = document.getElementById('accountDesc');
+    if (desc) desc.textContent = mode === 'login' ? '登录以同步你的教学数据' : '注册后即可连接教室并使用全部功能';
+    if (mode === 'login' && loginName) loginName.focus();
+    if (mode === 'register' && regName) regName.focus();
+  }
+
+  function hideAccountOverlay() {
+    if (accountOverlay) accountOverlay.classList.add('hidden');
+  }
+
+  async function handleRegister() {
+    var name = regName ? regName.value.trim() : '';
+    var pwd  = regPassword ? regPassword.value : '';
+    var pwd2 = regPassword2 ? regPassword2.value : '';
+    var subjStr = regSubjects ? regSubjects.value.trim() : '';
+
+    if (!name) { showAcctError('regError', '请输入教师姓名'); return; }
+    if (!pwd || pwd.length < 3) { showAcctError('regError', '密码至少3位'); return; }
+    if (pwd !== pwd2) { showAcctError('regError', '两次输入的密码不一致'); return; }
+
+    var subjects = subjStr.split(/[,，]+/).map(function (s) { return s.trim(); }).filter(Boolean);
+
+    var account = {
+      name: name, password: pwd, subjects: subjects,
+      connectionId: genId(),
+    };
+
+    if (api.saveAccount) {
+      await api.saveAccount(account);
+      console.log('[account] saved:', account.name, account.connectionId);
+    }
+    state.account = { name: account.name, subjects: account.subjects, connectionId: account.connectionId };
+    hideAccountOverlay();
+    updateTeacherInfo();
+  }
+
+  async function handleLogin() {
+    var name = loginName ? loginName.value.trim() : '';
+    var pwd  = loginPassword ? loginPassword.value : '';
+    if (!name) { showAcctError('loginError', '请输入教师姓名'); return; }
+    if (!pwd)  { showAcctError('loginError', '请输入密码'); return; }
+
+    var data = await loadFromDisk();
+    var acct = data.account;
+    if (!acct || acct.name !== name || acct.password !== pwd) {
+      showAcctError('loginError', '姓名或密码不正确');
+      return;
+    }
+    state.account = { name: acct.name, role: acct.role, subjects: acct.subjects || [], connectionId: acct.connectionId };
+    hideAccountOverlay();
+    updateTeacherInfo();
+  }
+
+  function showAcctError(id, msg) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.remove('hidden');
+  }
+
+  // ═══════════════════════════════
+  //  加入教室流程
+  // ═══════════════════════════════
+
+  function showJoinOverlay(mode, className) {
+    if (joinOverlay) joinOverlay.classList.remove('hidden');
+    if (joinDesc) joinDesc.textContent = '教室：' + (className || '未知');
+    if (joinRequestView) joinRequestView.classList.toggle('hidden', mode !== 'request');
+    if (joinWaitingView) joinWaitingView.classList.toggle('hidden', mode !== 'waiting');
+    // 确保主 UI 隐藏
+    hideMainUI();
+  }
+
+  function hideJoinOverlay() {
+    if (joinOverlay) joinOverlay.classList.add('hidden');
+  }
+
+  function hideMainUI() {
+    if (mainTabs)   mainTabs.classList.add('hidden');
+    if (roomHeader) roomHeader.classList.add('hidden');
+    if (msgRow)     msgRow.classList.add('hidden');
+    if (searchRow)  searchRow.classList.add('hidden');
+    if (emptyState) emptyState.style.display = '';
+  }
+
+  function showMainUI() {
+    if (mainTabs)   mainTabs.classList.remove('hidden');
+    if (roomHeader) roomHeader.classList.remove('hidden');
+    if (msgRow)     msgRow.classList.remove('hidden');
+    if (searchRow)  searchRow.classList.remove('hidden');
+    if (emptyState) emptyState.style.display = 'none';
+  }
+
+  function sendJoinRequest() {
+    if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
+    state.ws.send(JSON.stringify({ type: 'join-request' }));
+    showJoinOverlay('waiting', state.className);
+  }
+
+  // ═══════════════════════════════
+  //  账户管理
+  // ═══════════════════════════════
+
+  let acctModal, acctMgmtName, acctMgmtId, acctMgmtSubjects, acctMgmtExport;
+
+  function openAcctModal() {
+    console.log('[acct] openAcctModal, modal:', !!acctModal, 'account:', !!state.account);
+    if (!acctModal || !state.account) return;
+    if (acctMgmtName) acctMgmtName.textContent = state.account.name;
+    if (acctMgmtId) acctMgmtId.textContent = state.account.connectionId;
+    if (acctMgmtSubjects) acctMgmtSubjects.textContent = (state.account.subjects || []).join(', ') || '未设置';
+    if (acctMgmtExport) acctMgmtExport.value = JSON.stringify({ connectionId: state.account.connectionId, name: state.account.name, subjects: state.account.subjects || [] });
+    acctModal.classList.remove('hidden');
+  }
+
+  function closeAcctModal() {
+    if (acctModal) acctModal.classList.add('hidden');
+  }
+
+  async function handleLogout() {
+    if (!confirm('确定退出登录吗？')) return;
+    if (api.saveAccount) await api.saveAccount(null);
+    state.account = null;
+    state.teacherStatus = null;
+    closeAcctModal();
+    hideJoinOverlay();
+    hideMainUI();
+    if (teacherInfo) teacherInfo.innerHTML = '';
+    var exp = document.getElementById('exportSection');
+    if (exp) exp.classList.add('hidden');
+    showAccountOverlay('login');
+    disconnect();
+  }
+
+  async function handleDeleteAccount() {
+    if (!confirm('确定删除账户吗？此操作不可撤销，所有本地数据将被清除。')) return;
+    // 清空 data.json
+    if (api.saveData) await api.saveData({ account: null, rooms: [], callHistory: [] });
+    state.account = null;
+    state.teacherStatus = null;
+    state.rooms = [];
+    state.callHistory = [];
+    closeAcctModal();
+    hideJoinOverlay();
+    hideMainUI();
+    if (teacherInfo) teacherInfo.innerHTML = '';
+    var exp = document.getElementById('exportSection');
+    if (exp) exp.classList.add('hidden');
+    renderRooms();
+    renderHistory();
+    disconnect();
+    showAccountOverlay('register');
+  }
+
+  function updateTeacherInfo() {
+    if (!teacherInfo || !state.account) return;
+    var acct = state.account;
+    var t = state.teacherStatus;
+    var roleStr = t && t.role ? ' · ' + esc(t.role) : '';
+    teacherInfo.innerHTML = esc(acct.name) + roleStr;
+
+    // 显示导出区域
+    var exp = document.getElementById('exportSection');
+    var expInput = document.getElementById('exportInfo');
+    if (exp && expInput) {
+      exp.classList.remove('hidden');
+      expInput.value = JSON.stringify({ connectionId: acct.connectionId, name: acct.name, subjects: acct.subjects || [] });
+    }
+  }
+
 
   function connect(ip) {
     ip = ip.trim();
@@ -86,7 +274,13 @@
 
     ws.onopen = () => {
       setStatus('online', '已连接');
-      ws.send(JSON.stringify({ type: 'connect' }));
+      const acct = state.account || {};
+      ws.send(JSON.stringify({
+        type: 'connect',
+        connectionId: acct.connectionId || '',
+        name: acct.name || '',
+        subjects: acct.subjects || [],
+      }));
     };
 
     ws.onmessage = (event) => {
@@ -102,14 +296,31 @@
         selectedSubjects = [];
         selectedAssigns  = [];
 
+        // 教师身份（来自教室端）
+        if (msg.teacher) {
+          state.teacherStatus = msg.teacher;
+          updateTeacherInfo();
+        }
+
         // 自动添加到教室列表
         addOrUpdateRoom(ip, name);
         state.currentRoom = state.rooms.find(r => r.ip === ip) || null;
         renderRooms();
 
-        showRoomUI(name);
-        renderStudents();
-        renderHomework();
+        // 待审核状态
+        if (msg.teacher && msg.teacher.status === 'pending') {
+          showJoinOverlay('request', name);
+        } else {
+          hideJoinOverlay();
+          showRoomUI(name);
+          renderStudents();
+          renderHomework();
+        }
+      } else if (msg.type === 'join-ack') {
+        // 教室端确认收到加入请求
+        showJoinOverlay('waiting', state.className);
+      } else if (msg.type === 'auth-required') {
+        alert(msg.message || '操作被拒绝：权限不足');
       } else if (msg.type === 'ack') {
         updateCallStatus(msg.callId, 'displayed');
       }
@@ -142,6 +353,8 @@
     state.subjects    = [];
     state.assignments = [];
     state.searchQuery = '';
+    state.selectedStudents.clear();
+    updateBatchBar();
     if (searchInput) searchInput.value = '';
     hideRoomUI();
     renderStudents();
@@ -171,7 +384,7 @@
     if (existing) {
       existing.name = name;
     } else {
-      state.rooms.push({ id: genId(), ip, name });
+      state.rooms.push({ ip, name });
     }
     await saveToDisk();
   }
@@ -221,6 +434,22 @@
   }
 
   // ═══════════════════════════════════
+  //  密码认证
+  // ═══════════════════════════════════
+
+  async function promptForPassword(ip) {
+    const pwd = prompt(`教室「${state.className || ip}」需要管理密码才能修改数据：\n\n请输入管理密码（取消则仅查看）：`);
+    if (pwd === null || pwd.trim() === '') return; // 取消 → 保持只读
+    // 断开并重新连接，带上密码
+    const room = state.rooms.find(r => r.ip === ip);
+    if (room) room.password = pwd.trim();
+    await saveToDisk();
+    // 重新连接
+    disconnect();
+    setTimeout(() => connect(ip), 300);
+  }
+
+  // ═══════════════════════════════════
   //  主区域
   // ═══════════════════════════════════
 
@@ -234,12 +463,10 @@
   }
 
   function hideRoomUI() {
-    if (mainTabs)   mainTabs.classList.add('hidden');
-    if (roomHeader) roomHeader.classList.add('hidden');
-    if (msgRow)     msgRow.classList.add('hidden');
-    if (searchRow)  searchRow.classList.add('hidden');
-    if (emptyState) emptyState.style.display = '';
-    if (roomTitle)  roomTitle.textContent = '';
+    hideMainUI();
+    hideJoinOverlay();
+    if (roomTitle) roomTitle.textContent = '';
+    state.teacherStatus = null;
   }
 
   function renderStudents() {
@@ -265,7 +492,17 @@
     list.forEach(s => {
       const card = document.createElement('div');
       card.className = 'student-card';
-      card.innerHTML = `<div class="stu-name">${esc(s.name)}</div>`;
+      if (state.selectedStudents.has(s.id)) card.classList.add('selected');
+      const initial = s.name.charAt(0);
+      card.innerHTML = `<div class="stu-avatar">${esc(initial)}</div><div class="stu-name">${esc(s.name)}</div><div class="card-check">✓</div>`;
+
+      // 点击卡片切换选中
+      card.addEventListener('click', (e) => {
+        // 不拦截按钮点击
+        if (e.target.closest('.call-btn')) return;
+        toggleSelect(s.id);
+        renderStudents();
+      });
 
       const btn = document.createElement('button');
       btn.className = 'call-btn';
@@ -274,6 +511,92 @@
       card.appendChild(btn);
       studentGrid.appendChild(card);
     });
+
+    updateBatchBar();
+  }
+
+  function toggleSelect(id) {
+    if (state.selectedStudents.has(id)) {
+      state.selectedStudents.delete(id);
+    } else {
+      state.selectedStudents.add(id);
+    }
+  }
+
+  function updateBatchBar() {
+    if (!batchBar) return;
+    var count = state.selectedStudents.size;
+    if (count > 0) {
+      batchBar.classList.remove('hidden');
+      if (batchCount) batchCount.textContent = '已选 ' + count + ' 人';
+    } else {
+      batchBar.classList.add('hidden');
+    }
+  }
+
+  function selectAll() {
+    var list = getFilteredStudentList();
+    list.forEach(function (s) { state.selectedStudents.add(s.id); });
+    renderStudents();
+  }
+
+  function clearSelection() {
+    state.selectedStudents.clear();
+    renderStudents();
+  }
+
+  function getFilteredStudentList() {
+    var q = state.searchQuery || '';
+    return q ? state.students.filter(function (s) { return s.name.toLowerCase().includes(q); }) : state.students;
+  }
+
+  function batchCall() {
+    if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
+      alert('未连接到教室');
+      return;
+    }
+    if (state.selectedStudents.size === 0) return;
+
+    // 收集选中学生姓名
+    var names = [];
+    state.selectedStudents.forEach(function (sid) {
+      var student = state.students.find(function (s) { return s.id === sid; });
+      if (student) names.push(student.name);
+    });
+    if (names.length === 0) return;
+
+    var joinedNames = names.join('、');
+    var rawMsg = (callMessageInp && callMessageInp.value.trim()) || '{name}同学，请到办公室';
+    var msg = rawMsg.replace(/\{name\}/g, joinedNames);
+
+    var callId = genId();
+    state.ws.send(JSON.stringify({
+      type: 'call', callId: callId,
+      studentName: joinedNames,
+      className: state.className,
+      message: msg,
+    }));
+
+    state.callHistory.unshift({
+      id: callId,
+      roomName: state.className || (state.currentRoom ? state.currentRoom.ip : ''),
+      studentName: joinedNames,
+      time: new Date().toISOString(),
+      status: 'sent',
+    });
+
+    if (state.callHistory.length > MAX_HISTORY) state.callHistory.length = MAX_HISTORY;
+    renderHistory();
+    saveToDisk();
+
+    // 视觉反馈
+    var cards = studentGrid.querySelectorAll('.student-card.selected');
+    cards.forEach(function (c) { c.classList.add('card-called'); });
+    setTimeout(function () {
+      cards.forEach(function (c) { c.classList.remove('card-called'); });
+    }, 2000);
+
+    clearSelection();
   }
 
   // ═══════════════════════════════════
@@ -310,10 +633,13 @@
 
     btnEl.classList.add('called');
     btnEl.textContent = '✓ 已发送';
+    const card = btnEl.closest('.student-card');
+    if (card) card.classList.add('card-called');
     clearTimeout(state.callTimers[student.name]);
     state.callTimers[student.name] = setTimeout(() => {
       btnEl.classList.remove('called');
       btnEl.textContent = '📢 呼叫';
+      if (card) card.classList.remove('card-called');
     }, 5000);
   }
 
@@ -373,10 +699,17 @@
     });
   }
 
+  function getTeacherSubjects() {
+    var t = state.teacherStatus;
+    if (!t || t.role === '班主任') return state.subjects;
+    return state.subjects.filter(function (s) { return (t.subjects || []).indexOf(s) !== -1; });
+  }
+
   function buildSubjectDrop() {
     if (!hwSubjectDrop) return;
     let html = '';
-    state.subjects.forEach(sub => {
+    var subs = getTeacherSubjects();
+    subs.forEach(sub => {
       const chk = selectedSubjects.length === 0 || selectedSubjects.includes(sub) ? 'checked' : '';
       html += `<label><input type="checkbox" value="${esc(sub)}" ${chk}> ${esc(sub)}</label>`;
     });
@@ -394,7 +727,7 @@
     });
     hwSubjectDrop.querySelectorAll('button[data-ms-action]').forEach(b => {
       b.addEventListener('click', () => {
-        if (b.dataset.msAction === 'all') selectedSubjects = [...state.subjects];
+        if (b.dataset.msAction === 'all') selectedSubjects = [...getTeacherSubjects()];
         else selectedSubjects = [];
         buildSubjectDrop(); updateSubjectBtn(); applyFilters();
       });
@@ -403,7 +736,8 @@
 
   function updateSubjectBtn() {
     if (!hwSubjectBtn) return;
-    if (selectedSubjects.length === 0 || selectedSubjects.length === state.subjects.length) {
+    var teacherSubs = getTeacherSubjects();
+    if (selectedSubjects.length === 0 || selectedSubjects.length === teacherSubs.length) {
       hwSubjectBtn.textContent = '全部学科 ▾';
     } else if (selectedSubjects.length <= 2) {
       hwSubjectBtn.textContent = selectedSubjects.join(', ') + ' ▾';
@@ -415,6 +749,13 @@
   function buildAssignDrop() {
     if (!hwAssignDrop) return;
     let hws = state.assignments;
+
+    // 授课教师只能看到自己学科的作业
+    var t = state.teacherStatus;
+    if (t && t.role !== '班主任' && (t.subjects || []).length > 0) {
+      hws = hws.filter(function (a) { return t.subjects.indexOf(a.subject) !== -1; });
+    }
+
     const from = hwDateFrom ? hwDateFrom.value : '';
     const to = hwDateTo ? hwDateTo.value : '';
     if (from) hws = hws.filter(a => a.date >= from);
@@ -477,8 +818,17 @@
     if (!hwSubjectBtn) return;
     if (delSubjectBtn) delSubjectBtn.disabled = state.subjects.length === 0;
 
-    buildSubjectDrop();
-    updateSubjectBtn();
+    // 授课教师：隐藏学科筛选 + 学科管理按钮（角色来自教室端 sync）
+    var t = state.teacherStatus;
+    var isHR = !t || t.role === '班主任';
+    if (hwSubjectMs)     hwSubjectMs.style.display     = isHR ? '' : 'none';
+    if (addSubjectBtn)   addSubjectBtn.style.display   = isHR ? '' : 'none';
+    if (delSubjectBtn)   delSubjectBtn.style.display   = isHR ? '' : 'none';
+
+    if (isHR) {
+      buildSubjectDrop();
+      updateSubjectBtn();
+    }
     buildAssignDrop();
     updateAssignBtn();
 
@@ -602,11 +952,12 @@
   function updateHwSubjectSelect() {
     if (!hwModalSubject) return;
     hwModalSubject.innerHTML = '';
-    if (state.subjects.length === 0) {
+    var subs = getTeacherSubjects();
+    if (subs.length === 0) {
       hwModalSubject.innerHTML = '<option value="">-- 请先添加学科 --</option>';
       return;
     }
-    state.subjects.forEach(sub => {
+    subs.forEach(sub => {
       const opt = document.createElement('option');
       opt.value = sub; opt.textContent = sub;
       hwModalSubject.appendChild(opt);
@@ -615,6 +966,13 @@
 
   function getFilteredAssignments(subject) {
     let hws = state.assignments;
+
+    // 授课教师只能看到自己学科的作业
+    var t = state.teacherStatus;
+    if (t && t.role !== '班主任' && (t.subjects || []).length > 0) {
+      hws = hws.filter(function (a) { return t.subjects.indexOf(a.subject) !== -1; });
+    }
+
     if (subject) hws = hws.filter(a => a.subject === subject);
     if (selectedSubjects.length > 0) hws = hws.filter(a => selectedSubjects.includes(a.subject));
     if (selectedAssigns.length > 0) hws = hws.filter(a => selectedAssigns.includes(a.id));
@@ -704,7 +1062,8 @@
   function getHwCustomStatuses() {
     const set = new Set();
     const builtin = ['已提交', '未提交', '迟交', '免交'];
-    state.assignments.forEach(a => {
+    var assignments = getFilteredAssignments(null);  // 授课教师只看自己学科的
+    assignments.forEach(a => {
       if (!a.submissions) return;
       Object.values(a.submissions).forEach(v => {
         if (v && !builtin.includes(v)) set.add(v);
@@ -930,7 +1289,10 @@
   //  工具
   // ═══════════════════════════════════
 
-  function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 9); }
+  // 基于时间戳的唯一 ID：毫秒时间戳(36进制) + 4位随机数
+  function genId() {
+    return Date.now().toString(36) + Math.floor(Math.random() * 46656).toString(36);
+  }
   function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 
   // ═══════════════════════════════════
@@ -1007,6 +1369,39 @@
         if (e.target === hwModal) hwModal.classList.add('hidden');
       });
     }
+
+    // 账户事件
+    if (showRegister) showRegister.addEventListener('click', function (e) { e.preventDefault(); showAccountOverlay('register'); });
+    if (showLogin)    showLogin.addEventListener('click',    function (e) { e.preventDefault(); showAccountOverlay('login'); });
+    if (regBtn) regBtn.addEventListener('click', handleRegister);
+    if (loginBtn) loginBtn.addEventListener('click', handleLogin);
+    // Enter 键登录/注册
+    if (loginPassword) loginPassword.addEventListener('keydown', function (e) { if (e.key === 'Enter') handleLogin(); });
+    if (regPassword2)  regPassword2.addEventListener('keydown',  function (e) { if (e.key === 'Enter') handleRegister(); });
+    // 导出复制
+    var copyBtn = document.getElementById('copyExportBtn');
+    if (copyBtn) copyBtn.addEventListener('click', function () {
+      var inp = document.getElementById('exportInfo');
+      if (inp) { inp.select(); document.execCommand('copy'); }
+    });
+    // 加入教室
+    // ── 批量呼叫 ──
+    if (batchSelectAll) batchSelectAll.addEventListener('click', selectAll);
+    if (batchClear)     batchClear.addEventListener('click', clearSelection);
+    if (batchCallBtn)   batchCallBtn.addEventListener('click', batchCall);
+
+    var joinRequestBtn = document.getElementById('joinRequestBtn');
+    if (joinRequestBtn) joinRequestBtn.addEventListener('click', sendJoinRequest);
+    // 重新连接检查（共用）
+    var reconnectBtns = document.querySelectorAll('#joinReconnectBtn, #joinCheckBtn');
+    reconnectBtns.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        if (state.currentRoom) {
+          disconnect();
+          setTimeout(function () { connect(state.currentRoom.ip); }, 300);
+        }
+      });
+    });
   }
 
   // ═══════════════════════════════════
@@ -1038,6 +1433,12 @@
     msgEditor      = document.getElementById('msgEditor');
     studentGrid    = document.getElementById('studentGrid');
     emptyState     = document.getElementById('emptyState');
+    // 批量呼叫
+    batchBar       = document.getElementById('batchBar');
+    batchCount     = document.getElementById('batchCount');
+    batchSelectAll = document.getElementById('batchSelectAll');
+    batchClear     = document.getElementById('batchClear');
+    batchCallBtn   = document.getElementById('batchCallBtn');
     searchInput    = document.getElementById('searchInput');
     searchRow      = document.getElementById('searchRow');
     searchResult   = document.getElementById('searchResult');
@@ -1078,10 +1479,62 @@
     hwModalCancel         = document.getElementById('hwModalCancel');
     hwModalConfirm        = document.getElementById('hwModalConfirm');
 
+    // 账户
+    accountOverlay   = document.getElementById('accountOverlay');
+    accountTitle     = document.getElementById('accountTitle');
+    loginForm        = document.getElementById('loginForm');
+    registerForm     = document.getElementById('registerForm');
+    loginName        = document.getElementById('loginName');
+    loginPassword    = document.getElementById('loginPassword');
+    loginError       = document.getElementById('loginError');
+    loginBtn         = document.getElementById('loginBtn');
+    regName          = document.getElementById('regName');
+    regPassword      = document.getElementById('regPassword');
+    regPassword2     = document.getElementById('regPassword2');
+    regSubjects      = document.getElementById('regSubjects');
+    regError         = document.getElementById('regError');
+    regBtn           = document.getElementById('regBtn');
+    showRegister     = document.getElementById('showRegister');
+    showLogin        = document.getElementById('showLogin');
+    teacherInfo      = document.getElementById('teacherInfo');
+    joinOverlay      = document.getElementById('joinOverlay');
+    joinDesc         = document.getElementById('joinDesc');
+    joinRequestView  = document.getElementById('joinRequestView');
+    joinWaitingView  = document.getElementById('joinWaitingView');
+
+    // 账户管理
+    acctModal        = document.getElementById('acctModal');
+    acctMgmtName     = document.getElementById('acctMgmtName');
+    acctMgmtId       = document.getElementById('acctMgmtId');
+    acctMgmtSubjects = document.getElementById('acctMgmtSubjects');
+    acctMgmtExport   = document.getElementById('acctMgmtExport');
+
+    // 账户设置按钮（直接绑定，不走 bindEvents）
+    var gearBtn = document.getElementById('acctGearBtn');
+    if (gearBtn) { gearBtn.onclick = openAcctModal; }
+    if (acctModal) { acctModal.addEventListener('click', function (e) { if (e.target === acctModal) closeAcctModal(); }); }
+    var acctClose = document.getElementById('acctMgmtClose');
+    if (acctClose) { acctClose.onclick = closeAcctModal; }
+    var acctLogout = document.getElementById('acctMgmtLogout');
+    if (acctLogout) { acctLogout.onclick = handleLogout; }
+    var acctDelete = document.getElementById('acctMgmtDelete');
+    if (acctDelete) { acctDelete.onclick = handleDeleteAccount; }
+    var acctCopy = document.getElementById('acctMgmtCopy');
+    if (acctCopy) { acctCopy.onclick = function () { if (acctMgmtExport) { acctMgmtExport.select(); document.execCommand('copy'); } }; }
+
     bindEvents();
     loadFromDisk().then(data => {
       state.rooms       = data.rooms;
       state.callHistory = data.callHistory;
+      // 账户检查：有账户直接进入，无账户显示注册
+      if (data.account && data.account.connectionId) {
+        state.account = { name: data.account.name, subjects: data.account.subjects || [], connectionId: data.account.connectionId };
+        updateTeacherInfo();
+        // 账号已存在 → 直接进入主页，无需登录
+        hideAccountOverlay();
+      } else {
+        showAccountOverlay('register');
+      }
       renderRooms();
       renderHistory();
     });

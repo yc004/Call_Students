@@ -20,6 +20,17 @@
   let assignmentModalCancel, assignmentModalConfirm;
   let mgStatusFilter, mgDateFrom, mgDateTo;
   let hwSaveBtn, hwSaveStatus;
+  // 设置 DOM
+  let oldPasswordInp, newPasswordInp, confirmPasswordInp;
+  let setPasswordBtn, clearPasswordBtn, pwdMsg;
+  let pwdStatusIcon, pwdStatusText;
+  // 教师管理 DOM
+  let pendingTbody, noPending, approvedTbody, noApproved, pendingCount;
+  let editTeacherModal, editTeacherName, editTeacherRole, editTeacherSubjects, editTeacherId, editSubjectsField;
+  let editTeacherCancel, editTeacherConfirm;
+  // 导入教师 DOM
+  let importTeacherBtn, importTeacherModal, importTeacherData, importTeacherRole, importTeacherSubjects, importSubjectsField;
+  let importTeacherCancel, importTeacherConfirm;
 
   // ── 状态 ──
   let students = [];
@@ -67,12 +78,86 @@
   }
 
   // ═══════════════════════════════
+  //  密码管理
+  // ═══════════════════════════════
+
+  async function updatePasswordStatus() {
+    if (!pwdStatusIcon || !pwdStatusText) return;
+    try {
+      const has = await api.hasPassword();
+      if (has) {
+        pwdStatusIcon.textContent = '🔒';
+        pwdStatusText.textContent = '已设置密码';
+      } else {
+        pwdStatusIcon.textContent = '🔓';
+        pwdStatusText.textContent = '当前未设置密码';
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  async function handleSetPassword() {
+    if (!oldPasswordInp || !newPasswordInp || !confirmPasswordInp || !pwdMsg) return;
+    const oldPwd = oldPasswordInp.value;
+    const newPwd = newPasswordInp.value.trim();
+    const confirmPwd = confirmPasswordInp.value.trim();
+
+    if (!newPwd) { showPwdMsg('请输入新密码', false); return; }
+    if (newPwd !== confirmPwd) { showPwdMsg('两次输入的新密码不一致', false); return; }
+    if (newPwd.length < 3) { showPwdMsg('密码至少需要 3 位', false); return; }
+
+    try {
+      const ok = await api.changePassword(oldPwd, newPwd);
+      if (ok) {
+        showPwdMsg('密码设置成功', true);
+        oldPasswordInp.value = '';
+        newPasswordInp.value = '';
+        confirmPasswordInp.value = '';
+        updatePasswordStatus();
+      } else {
+        showPwdMsg('当前密码不正确', false);
+      }
+    } catch (e) { showPwdMsg('操作失败', false); }
+  }
+
+  async function handleClearPassword() {
+    if (!confirm('确定要清除管理密码吗？清除后任何人都可以打开管理窗口。')) return;
+    const oldPwd = oldPasswordInp ? oldPasswordInp.value : '';
+    try {
+      const ok = await api.changePassword(oldPwd, '');
+      if (ok) {
+        showPwdMsg('密码已清除', true);
+        if (oldPasswordInp) oldPasswordInp.value = '';
+        if (newPasswordInp) newPasswordInp.value = '';
+        if (confirmPasswordInp) confirmPasswordInp.value = '';
+        updatePasswordStatus();
+      } else {
+        showPwdMsg('当前密码不正确，无法清除', false);
+      }
+    } catch (e) { showPwdMsg('操作失败', false); }
+  }
+
+  function showPwdMsg(text, ok) {
+    if (!pwdMsg) return;
+    pwdMsg.textContent = text;
+    pwdMsg.style.color = ok ? '#10B981' : '#EF4444';
+    pwdMsg.classList.add('show');
+    setTimeout(() => { pwdMsg.classList.remove('show'); }, 2500);
+  }
+
+  // ═══════════════════════════════
   //  Tab 切换
   // ═══════════════════════════════
 
   function switchTab(name) {
     tabBtns.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
     tabContents.forEach(c => c.classList.toggle('hidden', c.id !== 'tab-' + name));
+    if (name === 'settings') updatePasswordStatus();
+    if (name === 'teachers') {
+      loadTeachers();
+      // 打开教师管理 tab 时清除角标
+      var teachersTab = document.querySelector('[data-tab="teachers"]');
+      if (teachersTab) teachersTab.textContent = '👨‍🏫 教师管理';
+    }
   }
 
   // ═══════════════════════════════
@@ -569,6 +654,21 @@
     // Tab
     tabBtns.forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
 
+    // ── 实时监听教师申请 ──
+    if (api.onTeachersChanged) {
+      api.onTeachersChanged(function () {
+        loadTeachers();
+        // 更新 tab 上的待审核数量角标
+        var teachersTab = document.querySelector('[data-tab="teachers"]');
+        if (teachersTab && api.getTeachers) {
+          api.getTeachers().then(function (d) {
+            var count = (d.pending || []).length;
+            teachersTab.textContent = count > 0 ? '👨‍🏫 教师管理 (' + count + ')' : '👨‍🏫 教师管理';
+          });
+        }
+      });
+    }
+
     // 学生
     if (addBtn)       addBtn.addEventListener('click', openAdd);
     if (saveBtn)      saveBtn.addEventListener('click', save);
@@ -621,10 +721,173 @@
 
     // 保存
     if (hwSaveBtn) hwSaveBtn.addEventListener('click', () => save());
+
+    // 密码
+    if (setPasswordBtn)   setPasswordBtn.addEventListener('click', handleSetPassword);
+    if (clearPasswordBtn) clearPasswordBtn.addEventListener('click', handleClearPassword);
+
+    // 教师管理
+    if (editTeacherCancel)  editTeacherCancel.addEventListener('click', function () { editTeacherModal.classList.add('hidden'); });
+    if (editTeacherConfirm) editTeacherConfirm.addEventListener('click', handleEditTeacherConfirm);
+    if (editTeacherRole)    editTeacherRole.addEventListener('change', function () { editSubjectsField.classList.toggle('hidden', editTeacherRole.value === '班主任'); });
+    if (editTeacherModal)   editTeacherModal.addEventListener('click', function (e) { if (e.target === editTeacherModal) editTeacherModal.classList.add('hidden'); });
+    // 导入
+    if (importTeacherBtn)     importTeacherBtn.addEventListener('click', openImportTeacher);
+    if (importTeacherCancel)  importTeacherCancel.addEventListener('click', function () { importTeacherModal.classList.add('hidden'); });
+    if (importTeacherConfirm) importTeacherConfirm.addEventListener('click', handleImportTeacherConfirm);
+    if (importTeacherRole)    importTeacherRole.addEventListener('change', function () { if (importSubjectsField) importSubjectsField.classList.toggle('hidden', importTeacherRole.value === '班主任'); });
+    if (importTeacherModal)   importTeacherModal.addEventListener('click', function (e) { if (e.target === importTeacherModal) importTeacherModal.classList.add('hidden'); });
+    // 导入数据粘贴后自动预填科目
+    if (importTeacherData) importTeacherData.addEventListener('input', function () {
+      try {
+        var info = JSON.parse(importTeacherData.value.trim());
+        if (info.subjects && info.subjects.length && importTeacherSubjects) {
+          importTeacherSubjects.value = info.subjects.join(', ');
+        }
+      } catch (e) { /* 忽略解析错误 */ }
+    });
   }
 
   // ═══════════════════════════════
-  //  启动
+  //  教师管理
+  // ═══════════════════════════════
+
+  async function loadTeachers() {
+    if (!api.getTeachers) return;
+    try {
+      var data = await api.getTeachers();
+      var approved = data.approved || [];
+      var pending = data.pending || [];
+      renderApproved(approved);
+      renderPending(pending);
+    } catch (e) { console.error('loadTeachers failed:', e); }
+  }
+
+  function renderApproved(list) {
+    if (!approvedTbody || !noApproved) return;
+    approvedTbody.innerHTML = '';
+    if (list.length === 0) { noApproved.style.display = ''; document.getElementById('approvedTable') && (document.getElementById('approvedTable').style.display = 'none'); return; }
+    noApproved.style.display = 'none';
+    document.getElementById('approvedTable').style.display = '';
+    list.forEach(function (t) {
+      var tr = document.createElement('tr');
+      var subj = (t.subjects || []).join(', ') || '-';
+      var time = t.approved_at ? new Date(t.approved_at).toLocaleString('zh-CN') : '';
+      tr.innerHTML = '<td>' + esc(t.name) + '</td>' +
+        '<td><span class="role-badge ' + (t.role === '班主任' ? 'role-hr' : 'role-subj') + '">' + esc(t.role) + '</span></td>' +
+        '<td>' + esc(subj) + '</td>' +
+        '<td>' + esc(time) + '</td>' +
+        '<td>' +
+          '<button class="btn btn-sm" data-edit-teacher="' + t.connection_id + '">编辑</button> ' +
+          '<button class="btn btn-sm btn-danger" data-rem-teacher="' + t.connection_id + '">删除</button>' +
+        '</td>';
+      approvedTbody.appendChild(tr);
+    });
+    approvedTbody.querySelectorAll('[data-edit-teacher]').forEach(function (btn) {
+      btn.addEventListener('click', function () { openEditTeacher(btn.dataset.editTeacher); });
+    });
+    approvedTbody.querySelectorAll('[data-rem-teacher]').forEach(function (btn) {
+      btn.addEventListener('click', function () { handleRemoveTeacher(btn.dataset.remTeacher); });
+    });
+  }
+
+  function renderPending(list) {
+    if (!pendingTbody || !noPending) return;
+    pendingTbody.innerHTML = '';
+    if (pendingCount) { pendingCount.textContent = list.length || ''; pendingCount.classList.toggle('hidden', !list.length); }
+    if (list.length === 0) { noPending.style.display = ''; document.getElementById('pendingTable') && (document.getElementById('pendingTable').style.display = 'none'); return; }
+    noPending.style.display = 'none';
+    document.getElementById('pendingTable').style.display = '';
+    list.forEach(function (t) {
+      var tr = document.createElement('tr');
+      var subj = (t.subjects || []).join(', ') || '-';
+      var time = t.requested_at ? new Date(t.requested_at).toLocaleString('zh-CN') : '';
+      tr.innerHTML = '<td>' + esc(t.name) + '</td>' +
+        '<td><span class="role-badge ' + (t.role === '班主任' ? 'role-hr' : 'role-subj') + '">' + esc(t.role) + '</span></td>' +
+        '<td>' + esc(subj) + '</td>' +
+        '<td>' + esc(time) + '</td>' +
+        '<td>' +
+          '<button class="btn btn-sm btn-primary" data-approve="' + t.connection_id + '">批准</button> ' +
+          '<button class="btn btn-sm btn-danger" data-reject="' + t.connection_id + '">拒绝</button>' +
+        '</td>';
+      pendingTbody.appendChild(tr);
+    });
+    pendingTbody.querySelectorAll('[data-approve]').forEach(function (btn) {
+      btn.addEventListener('click', async function () {
+        if (!api.approveTeacher) return;
+        await api.approveTeacher(btn.dataset.approve);
+        loadTeachers();
+      });
+    });
+    pendingTbody.querySelectorAll('[data-reject]').forEach(function (btn) {
+      btn.addEventListener('click', async function () {
+        if (!confirm('确定拒绝该教师的加入申请吗？')) return;
+        if (!api.rejectTeacher) return;
+        await api.rejectTeacher(btn.dataset.reject);
+        loadTeachers();
+      });
+    });
+  }
+
+  function openEditTeacher(connectionId) {
+    if (!editTeacherModal || !api.getTeachers) return;
+    api.getTeachers().then(function (data) {
+      var t = (data.approved || []).find(function (x) { return x.connection_id === connectionId; });
+      if (!t) return;
+      editTeacherId.value = connectionId;
+      editTeacherName.value = t.name;
+      editTeacherRole.value = t.role;
+      editTeacherSubjects.value = (t.subjects || []).join(', ');
+      editSubjectsField.classList.toggle('hidden', t.role === '班主任');
+      editTeacherModal.classList.remove('hidden');
+    });
+  }
+
+  function handleEditTeacherConfirm() {
+    if (!editTeacherId || !editTeacherRole || !api.updateTeacher) return;
+    var role = editTeacherRole.value;
+    var subjects = editTeacherSubjects.value.split(/[,，]+/).map(function (s) { return s.trim(); }).filter(Boolean);
+    api.updateTeacher(editTeacherId.value, { role: role, subjects: subjects }).then(function () {
+      editTeacherModal.classList.add('hidden');
+      loadTeachers();
+    });
+  }
+
+  function handleRemoveTeacher(connectionId) {
+    if (!confirm('确定删除该教师吗？删除后该教师将需要重新申请加入。')) return;
+    if (!api.removeTeacher) return;
+    api.removeTeacher(connectionId).then(function () { loadTeachers(); });
+  }
+
+  function openImportTeacher() {
+    if (!importTeacherModal) return;
+    importTeacherData.value = '';
+    importTeacherRole.value = '授课教师';
+    importTeacherSubjects.value = '';
+    if (importSubjectsField) importSubjectsField.classList.remove('hidden');
+    importTeacherModal.classList.remove('hidden');
+    importTeacherData.focus();
+  }
+
+  function handleImportTeacherConfirm() {
+    if (!importTeacherData || !api.importTeacher) return;
+    var raw = importTeacherData.value.trim();
+    var info;
+    try { info = JSON.parse(raw); } catch (e) { alert('JSON 格式不正确'); return; }
+    if (!info.connectionId || !info.name) { alert('缺少 connectionId 或 name'); return; }
+
+    var role = importTeacherRole.value;
+    var subjects = importTeacherSubjects.value.split(/[,，]+/).map(function (s) { return s.trim(); }).filter(Boolean);
+    // 如果导入的 JSON 中有 subjects，预填但允许修改
+    if (!subjects.length && info.subjects && info.subjects.length) {
+      subjects = info.subjects;
+    }
+
+    api.importTeacher(info.connectionId, info.name, role, subjects).then(function () {
+      importTeacherModal.classList.add('hidden');
+      loadTeachers();
+    });
+  }
   // ═══════════════════════════════
 
   function onReady() {
@@ -668,11 +931,55 @@
     assignmentModalCancel   = document.getElementById('assignmentModalCancel');
     assignmentModalConfirm  = document.getElementById('assignmentModalConfirm');
 
+    // 设置
+    oldPasswordInp      = document.getElementById('oldPassword');
+    newPasswordInp      = document.getElementById('newPassword');
+    confirmPasswordInp  = document.getElementById('confirmPassword');
+    setPasswordBtn      = document.getElementById('setPasswordBtn');
+    clearPasswordBtn    = document.getElementById('clearPasswordBtn');
+    pwdMsg              = document.getElementById('pwdMsg');
+    pwdStatusIcon       = document.getElementById('pwdStatusIcon');
+    pwdStatusText       = document.getElementById('pwdStatusText');
+
+    // 教师管理
+    pendingTbody        = document.querySelector('#pendingTable tbody');
+    noPending           = document.getElementById('noPending');
+    pendingCount        = document.getElementById('pendingCount');
+    approvedTbody       = document.querySelector('#approvedTable tbody');
+    noApproved          = document.getElementById('noApproved');
+    editTeacherModal    = document.getElementById('editTeacherModal');
+    editTeacherName     = document.getElementById('editTeacherName');
+    editTeacherRole     = document.getElementById('editTeacherRole');
+    editTeacherSubjects = document.getElementById('editTeacherSubjects');
+    editTeacherId       = document.getElementById('editTeacherId');
+    editSubjectsField   = document.getElementById('editSubjectsField');
+    editTeacherCancel   = document.getElementById('editTeacherCancel');
+    editTeacherConfirm  = document.getElementById('editTeacherConfirm');
+
+    // 导入教师
+    importTeacherBtn     = document.getElementById('importTeacherBtn');
+    importTeacherModal   = document.getElementById('importTeacherModal');
+    importTeacherData    = document.getElementById('importTeacherData');
+    importTeacherRole    = document.getElementById('importTeacherRole');
+    importTeacherSubjects = document.getElementById('importTeacherSubjects');
+    importSubjectsField  = document.getElementById('importSubjectsField');
+    importTeacherCancel  = document.getElementById('importTeacherCancel');
+    importTeacherConfirm = document.getElementById('importTeacherConfirm');
+
     hwSaveBtn    = document.getElementById('hwSaveBtn');
     hwSaveStatus = document.getElementById('hwSaveStatus');
 
     bindEvents();
     loadData();
+
+    // 初始检查待审核数量，更新角标
+    if (api.getTeachers) {
+      api.getTeachers().then(function (d) {
+        var count = (d.pending || []).length;
+        var teachersTab = document.querySelector('[data-tab="teachers"]');
+        if (teachersTab && count > 0) teachersTab.textContent = '👨‍🏫 教师管理 (' + count + ')';
+      });
+    }
   }
 
   if (document.readyState === 'loading') {

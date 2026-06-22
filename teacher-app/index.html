@@ -8,113 +8,169 @@
 </head>
 <body>
 
+<!-- 背景装饰 -->
+<div class="bg-decor">
+  <div class="bg-blob bg-blob-1"></div>
+  <div class="bg-blob bg-blob-2"></div>
+  <div class="bg-blob bg-blob-3"></div>
+</div>
+
 <div class="app">
-
-  <aside class="sidebar">
-    <div class="sidebar-header">
-      <h1>教室呼叫</h1>
-      <span class="brand-sub">教师端</span>
+  <!-- ══════════ 标题栏（通用组件：拖拽 + 窗口控制） ══════════ -->
+  <header class="title-bar">
+    <div class="title-bar-left">
+      <span class="title-bar-icon">🏫</span>
+      <span class="title-bar-text">教室呼叫 — 教师端</span>
     </div>
+    <div class="title-bar-ctrl">
+      <button class="win-btn win-min" onclick="api.winMinimize()" title="最小化"></button>
+      <button class="win-btn win-max" onclick="api.winMaximize()" title="最大化"></button>
+      <button class="win-btn win-close" onclick="api.winClose()" title="关闭"></button>
+    </div>
+  </header>
 
-    <div class="connect-box">
-      <input type="text" id="ipInput" placeholder="输入教室 IP 地址" autofocus>
+  <!-- ══════════ 工具栏 ══════════ -->
+  <div class="topbar">
+    <div class="topbar-connect">
+      <input type="text" id="ipInput" placeholder="教室 IP 地址" autofocus>
       <button id="connectBtn" class="btn btn-primary">连接</button>
     </div>
 
-    <div class="room-section">
-      <div class="section-label">已连接教室</div>
-      <ul id="roomList" class="room-list"></ul>
-      <div id="noRooms" class="muted-note">输入教室 IP 并点击连接</div>
+    <div class="topbar-status">
+      <span id="connDot" class="dot offline"></span>
+      <span id="connLabel">未连接</span>
     </div>
 
-    <div class="sidebar-footer">
-      <div class="status-row">
-        <span id="connDot" class="dot offline"></span>
-        <span id="connLabel">未连接</span>
-      </div>
-    </div>
-  </aside>
-
-  <main class="main">
-
-    <!-- Tab 导航 -->
-    <div id="mainTabs" class="main-tabs hidden">
-      <button class="main-tab active" data-tab="call">📢 呼叫</button>
-      <button class="main-tab" data-tab="homework">📋 作业管理</button>
+    <div id="pendingBanner" class="pending-banner hidden">
+      ⏳ 等待管理员审核…
+      <button id="pendingReconnectBtn">🔄 重新检查</button>
     </div>
 
-    <!-- ══════════ 呼叫 Tab ══════════ -->
-    <div class="main-tab-content" id="tab-call">
-      <div id="roomHeader" class="room-header hidden">
-        <h2 id="roomTitle"></h2>
-        <span id="studentCount" class="badge"></span>
+    <div class="topbar-acct">
+      <span class="teacher-name" id="teacherInfo"></span>
+      <button class="acct-btn-sm" id="acctGearBtn" title="账户管理">⚙</button>
+    </div>
+  </div>
+
+  <div class="app-body">
+    <!-- ══════════ 侧边栏 — 教室列表 ══════════ -->
+    <aside class="sidebar">
+      <div class="sidebar-panel">
+        <div class="sidebar-label">教室列表</div>
+        <ul id="roomList" class="room-list"></ul>
+        <div id="noRooms" class="muted-note">输入 IP 并点击连接</div>
       </div>
 
-      <div id="msgRow" class="msg-row hidden">
-        <label>呼叫消息</label>
-        <div id="msgEditor" class="msg-editor" contenteditable="true" spellcheck="false"></div>
-        <input type="hidden" id="callMessage" value="{name}同学，请到办公室">
-      </div>
-
-      <div id="searchRow" class="search-row hidden">
-        <input type="text" id="searchInput" class="search-input" placeholder="搜索学生姓名…" autocomplete="off">
-        <span id="searchResult" class="search-result"></span>
-      </div>
-
-      <div id="studentGrid" class="student-grid"></div>
-
-      <div id="emptyState" class="empty-state">
-        <div class="empty-icon">&#128203;</div>
-        <p>输入教室 IP 并点击连接</p>
-        <p class="muted-note">连接后将自动同步班级名称和学生名单</p>
-      </div>
-
-      <div id="historySection" class="history-section">
-        <h3>呼叫记录</h3>
+      <div class="sidebar-panel" id="historySection">
+        <div class="sidebar-label">呼叫记录</div>
         <div id="historyTableWrap" class="history-table-wrap">
           <table id="historyTable" class="history-table">
-            <thead>
-              <tr><th>时间</th><th>教室</th><th>学生</th><th>状态</th></tr>
-            </thead>
+            <thead><tr><th>时间</th><th>教室</th><th>学生</th><th>状态</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
         <div id="noHistory" class="muted-note">暂无记录</div>
       </div>
-    </div>
+    </aside>
 
-    <!-- ══════════ 作业管理 Tab ══════════ -->
-    <div class="main-tab-content hidden" id="tab-homework">
-      <div id="hwSection" class="hw-section">
-        <div class="hw-toolbar">
-          <div class="hw-toolbar-left">
-            <div class="ms-wrap" id="hwSubjectMs">
-              <button class="ms-btn" id="hwSubjectBtn">全部学科 ▾</button>
-              <div class="ms-drop hidden" id="hwSubjectDrop"></div>
+    <!-- ══════════ 主区域 ══════════ -->
+    <main class="main">
+
+      <!-- Tab 导航 -->
+      <nav id="mainTabs" class="main-tabs hidden">
+        <button class="main-tab active" data-tab="call">📢 呼叫学生</button>
+        <button class="main-tab" data-tab="homework">📋 作业管理</button>
+      </nav>
+
+      <!-- ══════ 呼叫 Tab ══════ -->
+      <div class="main-tab-content" id="tab-call">
+
+        <!-- 教室信息卡片 -->
+        <div id="roomHeader" class="room-header hidden">
+          <div class="room-header-glass">
+            <div class="room-header-left">
+              <span class="room-header-icon">🏫</span>
+              <div>
+                <h2 id="roomTitle"></h2>
+                <span class="room-header-sub">已连接教室</span>
+              </div>
             </div>
-            <div class="ms-wrap" id="hwAssignMs">
-              <button class="ms-btn" id="hwAssignBtn">全部作业 ▾</button>
-              <div class="ms-drop hidden" id="hwAssignDrop"></div>
+            <div class="room-header-right">
+              <span id="studentCount" class="badge"></span>
             </div>
-            <select id="hwStatusFilter" class="hw-filter-select">
-              <option value="">全部状态</option>
-            </select>
-            <input type="date" id="hwDateFrom" class="hw-date-input" title="开始日期">
-            <span class="hw-date-sep">~</span>
-            <input type="date" id="hwDateTo" class="hw-date-input" title="结束日期">
-          </div>
-          <div class="hw-toolbar-right">
-            <button id="addSubjectBtn" class="btn btn-sm">＋学科</button>
-            <button id="delSubjectBtn" class="btn btn-sm btn-danger">删学科</button>
-            <button id="addAssignmentBtn2" class="btn btn-primary btn-sm">＋ 添加作业</button>
           </div>
         </div>
-        <div id="hwContent" class="hw-content"></div>
-      </div>
-    </div>
 
-  </main>
+        <!-- 快捷操作栏：消息 + 搜索 -->
+        <div id="msgRow" class="call-bar msg-row hidden">
+          <div class="call-bar-msg">
+            <span class="call-bar-label">📝</span>
+            <div id="msgEditor" class="msg-editor" contenteditable="true" spellcheck="false"></div>
+            <input type="hidden" id="callMessage" value="{name}同学，请到办公室">
+          </div>
+          <div id="searchRow" class="call-bar-search search-row">
+            <input type="text" id="searchInput" class="search-input" placeholder="搜索学生…" autocomplete="off">
+            <span id="searchResult" class="search-result"></span>
+          </div>
+        </div>
+
+        <!-- 批量操作栏 -->
+        <div id="batchBar" class="batch-bar hidden">
+          <span id="batchCount" class="batch-count"></span>
+          <button id="batchSelectAll" class="btn btn-sm">全选</button>
+          <button id="batchClear" class="btn btn-sm">取消</button>
+          <button id="batchCallBtn" class="btn btn-primary btn-sm">📢 批量呼叫</button>
+        </div>
+
+        <!-- 学生卡片网格 -->
+        <div id="studentGrid" class="student-grid"></div>
+
+        <!-- 空态 -->
+        <div id="emptyState" class="empty-state">
+          <div class="empty-state-card">
+            <div class="empty-icon">🏫</div>
+            <h3>未连接教室</h3>
+            <p>在顶部输入教室 IP 地址并点击连接</p>
+            <p class="muted-note">连接后将自动同步班级学生名单</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══════ 作业管理 Tab ══════ -->
+      <div class="main-tab-content hidden" id="tab-homework">
+        <div id="hwSection" class="hw-section">
+          <div class="hw-toolbar">
+            <div class="hw-toolbar-left">
+              <div class="ms-wrap" id="hwSubjectMs">
+                <button class="ms-btn" id="hwSubjectBtn">全部学科 ▾</button>
+                <div class="ms-drop hidden" id="hwSubjectDrop"></div>
+              </div>
+              <div class="ms-wrap" id="hwAssignMs">
+                <button class="ms-btn" id="hwAssignBtn">全部作业 ▾</button>
+                <div class="ms-drop hidden" id="hwAssignDrop"></div>
+              </div>
+              <select id="hwStatusFilter" class="hw-filter-select">
+                <option value="">全部状态</option>
+              </select>
+              <input type="date" id="hwDateFrom" class="hw-date-input" title="开始日期">
+              <span class="hw-date-sep">~</span>
+              <input type="date" id="hwDateTo" class="hw-date-input" title="结束日期">
+            </div>
+            <div class="hw-toolbar-right">
+              <button id="addSubjectBtn" class="btn btn-sm">＋ 学科</button>
+              <button id="delSubjectBtn" class="btn btn-sm btn-danger">删学科</button>
+              <button id="addAssignmentBtn2" class="btn btn-primary btn-sm">＋ 作业</button>
+            </div>
+          </div>
+          <div id="hwContent" class="hw-content"></div>
+        </div>
+      </div>
+
+    </main>
+  </div>
 </div>
+
+<!-- ══════════ 弹窗 ══════════ -->
 
 <!-- 添加学科弹窗 -->
 <div id="hwSubjectModal" class="modal hidden">
@@ -141,6 +197,119 @@
     <div class="modal-actions">
       <button id="hwModalCancel" class="btn">取消</button>
       <button id="hwModalConfirm" class="btn btn-primary">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 账户覆盖层 -->
+<div id="accountOverlay" class="account-overlay hidden">
+  <div class="account-card">
+
+    <!-- 装饰头部 -->
+    <div class="acct-header">
+      <div class="acct-header-icon">👨‍🏫</div>
+      <h2 id="accountTitle">欢迎使用教室呼叫</h2>
+      <p class="acct-header-desc" id="accountDesc">登录以同步你的教学数据</p>
+    </div>
+
+    <!-- 登录表单 -->
+    <div id="loginForm" class="acct-form">
+      <div class="acct-input-group">
+        <span class="acct-input-icon">👤</span>
+        <input type="text" id="loginName" placeholder="教师姓名" maxlength="20" autofocus>
+      </div>
+      <div class="acct-input-group">
+        <span class="acct-input-icon">🔑</span>
+        <input type="password" id="loginPassword" placeholder="登录密码" maxlength="32">
+      </div>
+      <p id="loginError" class="acct-error hidden"></p>
+      <button id="loginBtn" class="btn btn-primary acct-btn">登 录</button>
+      <p class="acct-switch">首次使用？<a id="showRegister">创建教师账户</a></p>
+    </div>
+
+    <!-- 注册表单 -->
+    <div id="registerForm" class="acct-form hidden">
+      <div class="acct-input-group">
+        <span class="acct-input-icon">👤</span>
+        <input type="text" id="regName" placeholder="你的姓名" maxlength="20">
+      </div>
+      <div class="acct-input-group">
+        <span class="acct-input-icon">🔑</span>
+        <input type="password" id="regPassword" placeholder="设置密码（至少3位）" maxlength="32">
+      </div>
+      <div class="acct-input-group">
+        <span class="acct-input-icon">🔑</span>
+        <input type="password" id="regPassword2" placeholder="再次输入密码" maxlength="32">
+      </div>
+      <div class="acct-field">
+        <label class="acct-label">📚 授课科目</label>
+        <input type="text" id="regSubjects" placeholder="数学, 语文, 英语…" maxlength="100">
+        <span class="acct-hint">用逗号分隔，帮助管理员了解你的教学范围</span>
+      </div>
+      <p id="regError" class="acct-error hidden"></p>
+      <button id="regBtn" class="btn btn-primary acct-btn">创建账户</button>
+      <p class="acct-switch">已有账户？<a id="showLogin">返回登录</a></p>
+    </div>
+
+    <!-- 导出身份信息 -->
+    <div id="exportSection" class="acct-export hidden">
+      <div class="acct-export-divider"></div>
+      <p class="acct-export-title">📤 导出连接信息</p>
+      <p class="acct-hint">将下方信息发送给教室管理员，可免审核直接导入</p>
+      <div class="acct-export-row">
+        <input type="text" id="exportInfo" readonly>
+        <button id="copyExportBtn" class="btn btn-sm">📋 复制</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- 账户管理弹窗 -->
+<div id="acctModal" class="b-modal hidden">
+  <div class="b-modal-card">
+    <h3>账户管理</h3>
+    <div class="acct-mgmt-info">
+      <p><strong>姓名</strong><span id="acctMgmtName"></span></p>
+      <p><strong>连接 ID</strong><span id="acctMgmtId" class="acct-mgmt-mono"></span></p>
+      <p><strong>授课科目</strong><span id="acctMgmtSubjects"></span></p>
+    </div>
+    <div class="acct-mgmt-export">
+      <p class="acct-hint">导出给教室管理员导入：</p>
+      <div class="acct-export-row">
+        <input type="text" id="acctMgmtExport" readonly>
+        <button id="acctMgmtCopy" class="btn btn-sm">📋</button>
+      </div>
+    </div>
+    <div class="acct-mgmt-actions">
+      <button id="acctMgmtLogout" class="btn btn-danger-outline">🚪 退出登录</button>
+      <button id="acctMgmtDelete" class="btn btn-danger">🗑 删除账户</button>
+    </div>
+    <div class="b-modal-acts">
+      <button id="acctMgmtClose" class="b-btn">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 加入教室覆盖层 -->
+<div id="joinOverlay" class="join-overlay hidden">
+  <div class="join-card">
+    <div class="join-icon">🔗</div>
+    <h2>加入教室</h2>
+    <p class="join-desc" id="joinDesc"></p>
+
+    <div id="joinRequestView" class="hidden">
+      <p class="join-hint">首次连接到该教室，需要申请加入才能使用功能。</p>
+      <button id="joinRequestBtn" class="btn btn-primary join-btn">📨 申请加入</button>
+      <p class="join-hint" style="margin-top:14px">也可以将连接信息导出后发给管理员直接导入。</p>
+      <button id="joinReconnectBtn" class="btn">🔄 重新连接</button>
+    </div>
+
+    <div id="joinWaitingView" class="hidden">
+      <div class="join-spinner">⏳</div>
+      <p class="join-wait-msg">申请已提交，等待教室管理员审核…</p>
+      <p class="join-hint">审核通过后点击下方按钮重新连接。</p>
+      <button id="joinCheckBtn" class="btn btn-primary join-btn">🔄 重新连接检查状态</button>
     </div>
   </div>
 </div>

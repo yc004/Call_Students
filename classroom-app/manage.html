@@ -8,6 +8,19 @@
 </head>
 <body>
 
+<!-- ══════════ 标题栏（通用组件：拖拽 + 窗口控制） ══════════ -->
+<header class="title-bar">
+  <div class="title-bar-left">
+    <span class="title-bar-icon">🏫</span>
+    <span class="title-bar-text">教室管理</span>
+  </div>
+  <div class="title-bar-ctrl">
+    <button class="win-btn win-min" onclick="api.winMinimize()" title="最小化"></button>
+    <button class="win-btn win-max" onclick="api.winMaximize()" title="最大化"></button>
+    <button class="win-btn win-close" onclick="api.winClose()" title="关闭"></button>
+  </div>
+</header>
+
 <div class="container">
   <h1>教室管理</h1>
 
@@ -15,6 +28,8 @@
   <div class="tabs">
     <button class="tab active" data-tab="students">学生名单</button>
     <button class="tab" data-tab="homework">作业管理</button>
+    <button class="tab" data-tab="settings">⚙ 设置</button>
+    <button class="tab" data-tab="teachers">👨‍🏫 教师管理</button>
   </div>
 
   <!-- ══════════ 学生名单 Tab ══════════ -->
@@ -83,6 +98,99 @@
     <div class="actions">
       <button id="hwSaveBtn" class="btn btn-primary btn-lg">保存</button>
       <span id="hwSaveStatus" class="save-status"></span>
+    </div>
+  </div>
+
+  <!-- ══════════ 设置 Tab ══════════ -->
+  <div class="tab-content hidden" id="tab-settings">
+    <div class="section">
+      <div class="section-head">
+        <h2>🔒 管理密码</h2>
+      </div>
+      <p class="settings-hint">设置密码后，打开管理窗口和作业看板时需要输入密码验证。</p>
+      <p class="settings-hint">未设置密码时，教师端可直接连接并进行所有操作。</p>
+
+      <div id="pwdStatus" class="pwd-status">
+        <span id="pwdStatusIcon">🔓</span>
+        <span id="pwdStatusText">当前未设置密码</span>
+      </div>
+
+      <div class="pwd-form">
+        <div class="field">
+          <label for="oldPassword">当前密码</label>
+          <input type="password" id="oldPassword" placeholder="留空表示当前无密码" maxlength="32">
+        </div>
+        <div class="field">
+          <label for="newPassword">新密码</label>
+          <input type="password" id="newPassword" placeholder="输入新密码…" maxlength="32">
+        </div>
+        <div class="field">
+          <label for="confirmPassword">确认新密码</label>
+          <input type="password" id="confirmPassword" placeholder="再次输入新密码…" maxlength="32">
+        </div>
+        <div class="pwd-form-actions">
+          <button id="setPasswordBtn" class="btn btn-primary">设置密码</button>
+          <button id="clearPasswordBtn" class="btn btn-danger-outline">清除密码</button>
+        </div>
+        <span id="pwdMsg" class="save-status"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ 教师管理 Tab ══════════ -->
+  <div class="tab-content hidden" id="tab-teachers">
+    <div class="section">
+      <div class="section-head">
+        <h2>待审核的加入请求</h2>
+        <span id="pendingCount" class="badge hidden">0</span>
+      </div>
+      <table id="pendingTable">
+        <thead><tr><th>姓名</th><th>角色</th><th>学科</th><th>请求时间</th><th style="width:140px">操作</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div id="noPending" class="empty-hint">暂无待审核的请求</div>
+    </div>
+
+    <div class="section">
+      <div class="section-head">
+        <h2>已批准的教师</h2>
+        <button id="importTeacherBtn" class="btn btn-sm">📥 导入教师</button>
+      </div>
+      <table id="approvedTable">
+        <thead><tr><th>姓名</th><th>角色</th><th>学科</th><th>批准时间</th><th style="width:120px">操作</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div id="noApproved" class="empty-hint">暂无已批准的教师</div>
+    </div>
+
+    <!-- 编辑教师弹窗 -->
+    <div id="editTeacherModal" class="modal hidden">
+      <div class="modal-card">
+        <h3>编辑教师</h3>
+        <div class="field"><label>姓名</label><input type="text" id="editTeacherName" disabled></div>
+        <div class="field"><label>角色</label><select id="editTeacherRole"><option value="班主任">班主任</option><option value="授课教师">授课教师</option></select></div>
+        <div class="field" id="editSubjectsField"><label>学科（逗号分隔）</label><input type="text" id="editTeacherSubjects" placeholder="数学, 语文"></div>
+        <div class="modal-actions">
+          <button id="editTeacherCancel" class="btn">取消</button>
+          <button id="editTeacherConfirm" class="btn btn-primary">确定</button>
+        </div>
+        <input type="hidden" id="editTeacherId">
+      </div>
+    </div>
+
+    <!-- 导入教师弹窗 -->
+    <div id="importTeacherModal" class="modal hidden">
+      <div class="modal-card modal-wide">
+        <h3>导入教师</h3>
+        <p class="modal-hint">粘贴教师导出的连接信息（JSON格式）</p>
+        <textarea id="importTeacherData" rows="3" placeholder='{"connectionId":"...","name":"张老师"}'></textarea>
+        <div class="field"><label>角色</label><select id="importTeacherRole"><option value="班主任">班主任</option><option value="授课教师">授课教师</option></select></div>
+        <div class="field" id="importSubjectsField"><label>学科（逗号分隔）</label><input type="text" id="importTeacherSubjects" placeholder="数学, 语文"></div>
+        <div class="modal-actions">
+          <button id="importTeacherCancel" class="btn">取消</button>
+          <button id="importTeacherConfirm" class="btn btn-primary">导入并批准</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
