@@ -1,7 +1,13 @@
 const { app, BrowserWindow, ipcMain, Menu } = require('electron');
 const fs = require('fs');
 const path = require('path');
-const { publicAccount, verifyAccountPassword, makeStoredAccount } = require('./account-auth');
+const {
+  publicAccount,
+  verifyAccountPassword,
+  makeStoredAccount,
+  generateLoginKey,
+  parseLoginKey,
+} = require('./account-auth');
 
 // 禁用磁盘缓存
 app.commandLine.appendSwitch('disable-http-cache');
@@ -67,6 +73,33 @@ ipcMain.handle('login-account', (_, name, password) => {
     return { ok: true, account: publicAccount(migrated) };
   }
   return { ok: true, account: publicAccount(stored) };
+});
+ipcMain.handle('generate-login-key', () => {
+  const stored = loadAllData().account;
+  if (!stored) return { ok: false, message: '请先登录教师账户' };
+  try {
+    return { ok: true, loginKey: generateLoginKey(stored) };
+  } catch (error) {
+    return { ok: false, message: error.message || '登录密钥生成失败' };
+  }
+});
+ipcMain.handle('import-login-key', (_, loginKey, replaceExisting = false) => {
+  let imported;
+  try {
+    imported = parseLoginKey(loginKey);
+  } catch (error) {
+    return { ok: false, message: error.message || '登录密钥无效' };
+  }
+  const existing = loadAllData().account;
+  if (existing && existing.connectionId !== imported.connectionId && !replaceExisting) {
+    return {
+      ok: false,
+      needsReplace: true,
+      message: `本机已有“${existing.name || '教师'}”账户，导入将替换本机账户。`,
+    };
+  }
+  saveData({ account: imported });
+  return { ok: true, account: publicAccount(imported) };
 });
 // ═══════════════════════════════════════
 //  窗口

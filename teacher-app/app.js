@@ -30,8 +30,9 @@
   let labelModal, labelPreview, labelStudentSelect, labelNewName;
   let labelCancel, labelConfirm;
   // 账户与审批 DOM
-  let accountOverlay, accountTitle, accountDesc, loginForm, registerForm;
+  let accountOverlay, accountTitle, accountDesc, loginForm, registerForm, keyLoginForm;
   let loginName, loginPassword, loginError, regName, regSubjects, regPassword, regPassword2, regError;
+  let loginKeyInput, keyLoginError, generatedLoginKey, loginKeyResult, loginKeyStatus;
   let teacherInfo, accountMenuBtn, accountModal, approvalOverlay, approvalDesc;
   let classroomTabBtn, manageClassName, manageStudents, saveClassroomBtn;
   let classroomSetupOverlay, setupClassName, setupStudents, setupError, completeSetupBtn;
@@ -90,20 +91,27 @@
     const appRoot = document.querySelector('.app');
     if (appRoot) appRoot.setAttribute('inert', '');
     const isLogin = mode === 'login';
+    const isRegister = mode === 'register';
+    const isKeyLogin = mode === 'key';
     loginForm && loginForm.classList.toggle('hidden', !isLogin);
-    registerForm && registerForm.classList.toggle('hidden', isLogin);
-    if (accountTitle) accountTitle.textContent = isLogin ? '教师登录' : '创建教师账户';
+    registerForm && registerForm.classList.toggle('hidden', !isRegister);
+    keyLoginForm && keyLoginForm.classList.toggle('hidden', !isKeyLogin);
+    if (accountTitle) accountTitle.textContent = isLogin ? '教师登录' : (isRegister ? '创建教师账户' : '使用登录密钥');
     if (accountDesc) {
       accountDesc.textContent = isLogin
         ? '登录后才能连接教室和使用教学功能。'
-        : '账户保存在这台教师电脑上，创建后需由教室管理员批准。';
+        : (isRegister
+          ? '账户保存在这台教师电脑上，创建后需由教室管理员批准。'
+          : '粘贴从原教师端生成的密钥，恢复同一个教师身份。');
     }
     clearAccountErrors();
     if (isLogin && loginName) {
       loginName.value = account && account.name ? account.name : loginName.value;
       setTimeout(() => (loginPassword || loginName).focus(), 0);
-    } else if (regName) {
+    } else if (isRegister && regName) {
       setTimeout(() => regName.focus(), 0);
+    } else if (isKeyLogin && loginKeyInput) {
+      setTimeout(() => loginKeyInput.focus(), 0);
     }
   }
 
@@ -115,7 +123,7 @@
   }
 
   function clearAccountErrors() {
-    [loginError, regError].forEach(el => {
+    [loginError, regError, keyLoginError].forEach(el => {
       if (!el) return;
       el.textContent = '';
       el.classList.add('hidden');
@@ -197,6 +205,68 @@
     setSignedInAccount(result.account);
   }
 
+  async function handleKeyLogin(event) {
+    event && event.preventDefault();
+    const loginKey = loginKeyInput ? loginKeyInput.value.trim() : '';
+    clearAccountErrors();
+    if (!loginKey) { showAccountError(keyLoginError, '请粘贴完整的登录密钥'); return; }
+    if (!api.importLoginKey) { showAccountError(keyLoginError, '请在教师端应用中使用登录密钥'); return; }
+
+    let result;
+    try {
+      result = await api.importLoginKey(loginKey, false);
+      if (result && result.needsReplace) {
+        const shouldReplace = confirm(`${result.message}\n\n替换只会更改本机教师账户，不会删除教室列表和呼叫记录。是否继续？`);
+        if (!shouldReplace) return;
+        result = await api.importLoginKey(loginKey, true);
+      }
+    } catch (_error) {
+      showAccountError(keyLoginError, '密钥登录服务暂时不可用，请重试');
+      return;
+    }
+    if (!result || !result.ok) {
+      showAccountError(keyLoginError, result && result.message ? result.message : '登录密钥无效');
+      return;
+    }
+    if (loginKeyInput) loginKeyInput.value = '';
+    setSignedInAccount(result.account);
+  }
+
+  async function handleGenerateLoginKey() {
+    if (!api.generateLoginKey) return;
+    const button = document.getElementById('generateLoginKeyBtn');
+    if (button) { button.disabled = true; button.textContent = '生成中…'; }
+    try {
+      const result = await api.generateLoginKey();
+      if (!result || !result.ok) {
+        alert(result && result.message ? result.message : '登录密钥生成失败');
+        return;
+      }
+      if (generatedLoginKey) generatedLoginKey.value = result.loginKey;
+      if (loginKeyStatus) loginKeyStatus.textContent = '密钥等同于登录凭证，请勿发送给他人。';
+      loginKeyResult && loginKeyResult.classList.remove('hidden');
+    } catch (_error) {
+      alert('登录密钥生成失败，请重试');
+    } finally {
+      if (button) { button.disabled = false; button.textContent = '重新生成'; }
+    }
+  }
+
+  async function handleCopyLoginKey() {
+    const value = generatedLoginKey ? generatedLoginKey.value : '';
+    if (!value) return;
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(value);
+      copied = true;
+    } catch (_error) {
+      generatedLoginKey.focus();
+      generatedLoginKey.select();
+      copied = document.execCommand('copy');
+    }
+    if (loginKeyStatus) loginKeyStatus.textContent = copied ? '已复制，可在其他教师端直接粘贴登录。' : '复制失败，请手动选择并复制。';
+  }
+
   function openAccountModal() {
     if (!state.account || !accountModal) return;
     const name = document.getElementById('accountModalName');
@@ -205,6 +275,11 @@
     if (name) name.textContent = state.account.name;
     if (subjects) subjects.textContent = (state.account.subjects || []).join('、') || '未填写授课科目';
     if (connectionId) connectionId.textContent = state.account.connectionId;
+    if (generatedLoginKey) generatedLoginKey.value = '';
+    if (loginKeyStatus) loginKeyStatus.textContent = '密钥等同于登录凭证，请勿发送给他人。';
+    loginKeyResult && loginKeyResult.classList.add('hidden');
+    const generateButton = document.getElementById('generateLoginKeyBtn');
+    if (generateButton) generateButton.textContent = '生成密钥';
     accountModal.classList.remove('hidden');
   }
 
@@ -580,8 +655,8 @@
     approvedTeacherList.innerHTML = approved.length ? approved.map(teacher => {
       const homeroom = teacher.role === '班主任';
       return `<div class="teacher-manage-item">
-        <div class="teacher-manage-main"><div class="teacher-role-line"><strong>${esc(teacher.name)}</strong><span class="teacher-role-chip${homeroom ? ' homeroom' : ''}">${esc(teacher.role)}</span></div><small>${homeroom ? '本教室绑定账户' : esc(teacherSubjectText(teacher))} · ${esc(teacher.connection_id.slice(-8))}</small></div>
-        <div class="teacher-manage-actions">${homeroom ? '' : `<button class="btn" data-teacher-action="edit" data-id="${esc(teacher.connection_id)}">科目授权</button><button class="btn btn-danger-text" data-teacher-action="remove" data-id="${esc(teacher.connection_id)}">移除</button>`}</div>
+        <div class="teacher-manage-main"><div class="teacher-role-line"><strong>${esc(teacher.name)}</strong><span class="teacher-role-chip${homeroom ? ' homeroom' : ''}">${esc(teacher.role)}</span></div><small>${esc(teacherSubjectText(teacher))} · ${esc(teacher.connection_id.slice(-8))}</small></div>
+        <div class="teacher-manage-actions">${homeroom ? `<button class="btn" data-teacher-action="edit" data-id="${esc(teacher.connection_id)}">设置科目</button>` : `<button class="btn" data-teacher-action="edit" data-id="${esc(teacher.connection_id)}">科目授权</button><button class="btn btn-danger-text" data-teacher-action="remove" data-id="${esc(teacher.connection_id)}">移除</button>`}</div>
       </div>`;
     }).join('') : '<div class="teacher-manage-empty">暂无已加入教师</div>';
   }
@@ -1572,7 +1647,9 @@
         const teacher = (state.teachers.approved || []).find(item => item.connection_id === connectionId);
         if (!teacher) return;
         editingTeacherId = connectionId;
-        teacherEditName.textContent = teacher.name;
+        const teacherEditTitle = document.getElementById('teacherEditTitle');
+        if (teacherEditTitle) teacherEditTitle.textContent = teacher.role === '班主任' ? '设置班主任授课科目' : '设置授课科目';
+        teacherEditName.textContent = `${teacher.name} · ${teacher.role || '授课教师'}`;
         teacherEditSubjects.value = (teacher.subjects || []).join(', ');
         teacherEditModal.classList.remove('hidden');
         teacherEditSubjects.focus();
@@ -1625,10 +1702,21 @@
 
     if (loginForm) loginForm.addEventListener('submit', handleLogin);
     if (registerForm) registerForm.addEventListener('submit', handleRegister);
+    if (keyLoginForm) keyLoginForm.addEventListener('submit', handleKeyLogin);
     const showRegister = document.getElementById('showRegister');
     const showLogin = document.getElementById('showLogin');
+    const showKeyLogin = document.getElementById('showKeyLogin');
+    const showKeyLoginFromRegister = document.getElementById('showKeyLoginFromRegister');
+    const backToPasswordLogin = document.getElementById('backToPasswordLogin');
     if (showRegister) showRegister.addEventListener('click', () => showAccountOverlay('register'));
     if (showLogin) showLogin.addEventListener('click', () => showAccountOverlay('login'));
+    if (showKeyLogin) showKeyLogin.addEventListener('click', () => showAccountOverlay('key'));
+    if (showKeyLoginFromRegister) showKeyLoginFromRegister.addEventListener('click', () => showAccountOverlay('key'));
+    if (backToPasswordLogin) backToPasswordLogin.addEventListener('click', () => showAccountOverlay('login'));
+    const generateLoginKeyBtn = document.getElementById('generateLoginKeyBtn');
+    const copyLoginKeyBtn = document.getElementById('copyLoginKeyBtn');
+    if (generateLoginKeyBtn) generateLoginKeyBtn.addEventListener('click', handleGenerateLoginKey);
+    if (copyLoginKeyBtn) copyLoginKeyBtn.addEventListener('click', handleCopyLoginKey);
     if (accountMenuBtn) accountMenuBtn.addEventListener('click', openAccountModal);
     const accountModalClose = document.getElementById('accountModalClose');
     const logoutBtn = document.getElementById('logoutBtn');
@@ -1723,6 +1811,7 @@
     accountDesc    = document.getElementById('accountDesc');
     loginForm      = document.getElementById('loginForm');
     registerForm   = document.getElementById('registerForm');
+    keyLoginForm   = document.getElementById('keyLoginForm');
     loginName      = document.getElementById('loginName');
     loginPassword  = document.getElementById('loginPassword');
     loginError     = document.getElementById('loginError');
@@ -1731,6 +1820,11 @@
     regPassword    = document.getElementById('regPassword');
     regPassword2   = document.getElementById('regPassword2');
     regError       = document.getElementById('regError');
+    loginKeyInput  = document.getElementById('loginKeyInput');
+    keyLoginError  = document.getElementById('keyLoginError');
+    generatedLoginKey = document.getElementById('generatedLoginKey');
+    loginKeyResult = document.getElementById('loginKeyResult');
+    loginKeyStatus = document.getElementById('loginKeyStatus');
     teacherInfo    = document.getElementById('teacherInfo');
     accountMenuBtn = document.getElementById('accountMenuBtn');
     accountModal   = document.getElementById('accountModal');

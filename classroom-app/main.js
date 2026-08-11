@@ -236,7 +236,7 @@ function saveData(data) {
     for (const s of (data.students || [])) {
       d.prepare('INSERT INTO students (id, name) VALUES (?, ?)').run(s.id, s.name);
     }
-    // 学科由已批准任课教师的授课科目派生，旧 subjects 表不再写入。
+    // 学科由班主任和已批准任课教师的授课科目派生，旧 subjects 表不再写入。
     // assignments + submissions
     d.prepare('DELETE FROM assignments').run();
     d.prepare('DELETE FROM submissions').run();
@@ -337,7 +337,7 @@ function bindHomeroomTeacher(connectionId) {
     d.prepare('DELETE FROM pending_requests WHERE connection_id=?').run(id);
     d.prepare('DELETE FROM approved_teachers WHERE connection_id=?').run(id);
     d.prepare('INSERT INTO approved_teachers (connection_id, name, role, subjects, approved_at) VALUES (?,?,?,?,?)')
-      .run(id, teacher.name, '班主任', '[]', now);
+      .run(id, teacher.name, '班主任', teacher.subjects || '[]', now);
   })();
   notifyTeacherCandidatesChanged();
   notifyOnboardingChanged();
@@ -349,7 +349,6 @@ function bindHomeroomTeacher(connectionId) {
 
 function getDerivedSubjects() {
   return Array.from(new Set(getApprovedTeachers()
-    .filter(teacher => teacher.role === '授课教师')
     .flatMap(teacher => teacher.subjects || [])
     .map(subject => String(subject).trim()).filter(Boolean))).sort();
 }
@@ -607,12 +606,10 @@ function openHomeworkWidget() {
   homeworkWidgetWin = new BrowserWindow({
     width, height, minWidth: 360, minHeight: 440,
     x: Math.max(12, sw - width - 28), y: Math.max(12, Math.round((sh - height) / 2)),
-    frame: false, resizable: true, movable: true, alwaysOnTop: true, backgroundColor: '#F7F9FD', title: '今日作业',
+    frame: false, resizable: true, movable: true, alwaysOnTop: false, backgroundColor: '#F7F9FD', title: '今日作业',
     icon: APP_ICON_PATH,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
   });
-  homeworkWidgetWin.setAlwaysOnTop(true, 'floating');
-  homeworkWidgetWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   homeworkWidgetWin.loadFile('renderer/homework/homework-widget.html');
   homeworkWidgetWin.on('close', (event) => {
     if (!app.isQuitting) { event.preventDefault(); homeworkWidgetWin.hide(); }
@@ -1118,8 +1115,8 @@ function startWSServer() {
           }
           const action = String(msg.action || '');
           const connectionId = String(msg.connectionId || '').trim();
-          if (!connectionId || connectionId === operator.connectionId) {
-            ws.send(JSON.stringify({ type: 'auth-required', message: '不能修改当前绑定的班主任账户' }));
+          if (!connectionId || (connectionId === operator.connectionId && action !== 'update')) {
+            ws.send(JSON.stringify({ type: 'auth-required', message: '班主任只能修改自己的授课科目' }));
             return;
           }
           const subjects = Array.isArray(msg.subjects)
@@ -1140,8 +1137,8 @@ function startWSServer() {
             refreshTeacherConnections(connectionId, true);
           } else if (action === 'update') {
             const target = d.prepare('SELECT role FROM approved_teachers WHERE connection_id=?').get(connectionId);
-            if (!target || target.role === '班主任') return;
-            d.prepare("UPDATE approved_teachers SET role='授课教师', subjects=? WHERE connection_id=?")
+            if (!target) return;
+            d.prepare('UPDATE approved_teachers SET subjects=? WHERE connection_id=?')
               .run(JSON.stringify(subjects), connectionId);
             refreshTeacherConnections(connectionId, false);
           } else if (action === 'remove') {
@@ -1157,7 +1154,7 @@ function startWSServer() {
         }
 
         case 'update-subjects': {
-          ws.send(JSON.stringify({ type: 'auth-required', message: '学科由已加入班级的任课教师授课科目自动生成，不能手动修改' }));
+          ws.send(JSON.stringify({ type: 'auth-required', message: '学科由班主任和已加入教师的授课科目自动生成，不能手动修改' }));
           break;
         }
 

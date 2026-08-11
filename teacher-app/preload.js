@@ -11,4 +11,6 @@ contextBridge.exposeInMainWorld('api', {
   saveData:    (data)   => ipcRenderer.invoke('save-data', data),
   registerAccount: (account) => ipcRenderer.invoke('register-account', account),
   loginAccount: (name, password) => ipcRenderer.invoke('login-account', name, password),
+  generateLoginKey: () => ipcRenderer.invoke('generate-login-key'),
+  importLoginKey: (loginKey, replaceExisting = false) => ipcRenderer.invoke('import-login-key', loginKey, replaceExisting),
 });

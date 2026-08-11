@@ -217,6 +217,7 @@
       <input id="loginPassword" type="password" maxlength="64" autocomplete="current-password" placeholder="输入密码">
       <p id="loginError" class="account-error hidden" aria-live="polite"></p>
       <button id="loginBtn" class="btn btn-primary account-primary" type="submit">登录</button>
+      <button id="showKeyLogin" class="btn account-secondary" type="button">使用登录密钥</button>
       <p class="account-switch">首次在这台电脑使用？<button id="showRegister" type="button">创建本机账户</button></p>
     </form>
 
@@ -232,7 +233,17 @@
       <input id="regPassword2" type="password" maxlength="64" autocomplete="new-password" placeholder="再次输入密码">
       <p id="regError" class="account-error hidden" aria-live="polite"></p>
       <button id="regBtn" class="btn btn-primary account-primary" type="submit">创建并登录</button>
+      <button id="showKeyLoginFromRegister" class="btn account-secondary" type="button">已有密钥，直接登录</button>
       <p class="account-switch">本机已有账户？<button id="showLogin" type="button">返回登录</button></p>
+    </form>
+
+    <form id="keyLoginForm" class="account-form hidden">
+      <label for="loginKeyInput">登录密钥</label>
+      <textarea id="loginKeyInput" class="login-key-input" rows="6" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="粘贴以 TEACHER-KEY-1 开头的完整密钥"></textarea>
+      <span class="account-field-hint">密钥会恢复同一个教师身份、班级权限和授课科目。</span>
+      <p id="keyLoginError" class="account-error hidden" aria-live="polite"></p>
+      <button class="btn btn-primary account-primary" type="submit">使用密钥登录</button>
+      <p class="account-switch"><button id="backToPasswordLogin" type="button">返回密码登录</button></p>
     </form>
   </div>
 </div>
@@ -266,14 +277,14 @@
   </div>
 </div>
 
-<!-- 任课教师科目授权 -->
+<!-- 教师授课科目设置 -->
 <div id="teacherEditModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="teacherEditTitle">
   <div class="modal-card">
     <h3 id="teacherEditTitle">设置授课科目</h3>
     <p id="teacherEditName" class="field-hint"></p>
     <label class="field-label" for="teacherEditSubjects">授课科目</label>
     <input id="teacherEditSubjects" type="text" maxlength="120" placeholder="例如：数学, 物理">
-    <p class="field-hint">多个科目使用逗号分隔。学科列表将由已加入教师的授课科目自动生成。</p>
+    <p class="field-hint">多个科目使用逗号分隔。学科列表将由班主任和已加入教师的授课科目自动生成。</p>
     <div class="modal-actions"><button id="teacherEditCancel" class="btn" type="button">取消</button><button id="teacherEditSave" class="btn btn-primary" type="button">保存授权</button></div>
   </div>
 </div>
@@ -288,6 +299,19 @@
     </div>
     <div class="account-id-row"><span>连接 ID</span><code id="accountConnectionId"></code></div>
     <p class="account-field-hint">教室管理员可通过此身份批准你的设备。</p>
+    <section class="login-key-section" aria-labelledby="loginKeyTitle">
+      <div class="login-key-heading">
+        <div><strong id="loginKeyTitle">跨设备登录密钥</strong><small>在其他教师端粘贴即可登录此账户</small></div>
+        <button id="generateLoginKeyBtn" class="btn btn-sm" type="button">生成密钥</button>
+      </div>
+      <div id="loginKeyResult" class="login-key-result hidden">
+        <textarea id="generatedLoginKey" rows="5" readonly spellcheck="false" aria-label="生成的登录密钥"></textarea>
+        <div class="login-key-actions">
+          <span id="loginKeyStatus" aria-live="polite">密钥等同于登录凭证，请勿发送给他人。</span>
+          <button id="copyLoginKeyBtn" class="btn btn-primary btn-sm" type="button">复制密钥</button>
+        </div>
+      </div>
+    </section>
     <div class="modal-actions">
       <button id="accountModalClose" class="btn">关闭</button>
       <button id="logoutBtn" class="btn btn-danger-outline">退出登录</button>
@@ -315,6 +339,6 @@
   </div>
 </div>
 
-<script src="app.js?v=12"></script>
+  <script src="app.js?v=13"></script>
 </body>
 </html>

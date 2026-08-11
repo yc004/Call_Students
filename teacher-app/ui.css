@@ -24,7 +24,7 @@
 .approval-overlay { z-index:250; }
 .account-form { display:flex; flex-direction:column; align-items:stretch; }
 .account-form label { display:block; }
-.account-form input { display:block; width:100%; }
+.account-form input,.account-form textarea { display:block; width:100%; }
 .account-switch { display:block; }
 .room-header-actions { display:flex; align-items:center; gap:10px; }
 .modal-card textarea { width:100%; min-height:180px; padding:11px 13px; border:1px solid #dce3ee; border-radius:10px; color:var(--text); background:#fff; font:inherit; line-height:1.55; resize:vertical; outline:none; }
@@ -55,6 +55,19 @@
   border-color:#82a8f4;
   box-shadow:0 0 0 3px rgba(53,104,232,.11);
 }
+.account-form textarea {
+  min-height:132px;
+  padding:11px 13px;
+  border:1px solid #dce3ee;
+  border-radius:10px;
+  color:var(--text);
+  background:#fff;
+  font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  resize:vertical;
+  outline:none;
+}
+.account-form textarea:focus { border-color:#82a8f4; box-shadow:0 0 0 3px rgba(53,104,232,.11); }
+.account-secondary { width:100%; margin-top:4px; }
 .account-field-hint,.field-hint {
   color:var(--text-3);
   font-size:12px;
@@ -90,6 +103,17 @@
 .account-id-row { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; gap:12px; padding:11px 12px; }
 .account-id-row span { color:var(--text-3); font-size:12px; }
 .account-id-row code { overflow:hidden; color:var(--text-2); text-overflow:ellipsis; white-space:nowrap; }
+.account-modal-card { width:min(540px,calc(100vw - 32px)); max-height:calc(100vh - 48px); overflow:auto; }
+.login-key-section { margin-top:3px; padding:15px; border:1px solid var(--border); border-radius:13px; background:#fafbfe; }
+.login-key-heading { display:flex; align-items:center; justify-content:space-between; gap:14px; }
+.login-key-heading > div { display:flex; min-width:0; flex-direction:column; }
+.login-key-heading strong { font-size:14px; }
+.login-key-heading small { margin-top:2px; color:var(--text-3); font-size:11px; }
+.login-key-result { margin-top:13px; padding-top:13px; border-top:1px solid var(--border); }
+.login-key-result textarea { min-height:104px; font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; resize:none; }
+.login-key-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:9px; }
+.login-key-actions span { flex:1; color:#a15c08; font-size:11px; line-height:1.45; }
+.login-key-actions .btn { flex:0 0 auto; }
 
 @media (max-height:780px) {
   .account-card,.approval-card { padding:24px 28px; }
