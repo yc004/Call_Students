@@ -11,7 +11,7 @@ $unpackedPath = (Resolve-Path $UnpackedExecutable).Path
 $installDir = Join-Path $env:RUNNER_TEMP $InstallFolderName
 
 function Invoke-SmokeTest([string]$Executable, [string]$Label) {
-  Write-Host "[smoke] starting $Label: $Executable"
+  Write-Host "[smoke] starting ${Label}: $Executable"
   $process = Start-Process -FilePath $Executable -ArgumentList '--ci-smoke-test' -PassThru
   if (-not $process.WaitForExit(120000)) {
     $process.Kill()
