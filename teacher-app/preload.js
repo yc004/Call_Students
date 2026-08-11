@@ -9,5 +9,6 @@ contextBridge.exposeInMainWorld('api', {
   // ── 数据读写 ──
   getData:     ()       => ipcRenderer.invoke('get-data'),
   saveData:    (data)   => ipcRenderer.invoke('save-data', data),
-  saveAccount: (acct)   => ipcRenderer.invoke('save-account', acct),
+  registerAccount: (account) => ipcRenderer.invoke('register-account', account),
+  loginAccount: (name, password) => ipcRenderer.invoke('login-account', name, password),
 });

@@ -10,8 +10,13 @@ contextBridge.exposeInMainWorld('api', {
   getData:    ()      => ipcRenderer.invoke('get-data'),
   saveData:   (data)  => ipcRenderer.invoke('save-data', data),
 
-  // ── 打开管理窗口（托盘菜单用） ──
-  openManage: ()      => ipcRenderer.send('open-manage'),
+  // ── 首次安装班主任绑定引导 ──
+  getOnboardingStatus: () => ipcRenderer.invoke('get-onboarding-status'),
+  bindHomeroomTeacher: (connectionId) => ipcRenderer.invoke('bind-homeroom-teacher', connectionId),
+  finishOnboarding: () => ipcRenderer.send('finish-onboarding'),
+  onOnboardingChanged: (cb) => ipcRenderer.on('onboarding-changed', () => cb()),
+
+  openFaceRegister: (studentId, name) => ipcRenderer.send('open-face-register', studentId, name),
 
   // ── 呼叫弹窗（popup 页用） ──
   onShowCall: (cb)    => ipcRenderer.on('show-call', (_e, call) => cb(call)),
@@ -21,24 +26,39 @@ contextBridge.exposeInMainWorld('api', {
   // ── 作业看板（board 页用） ──
   closeBoard:  ()     => ipcRenderer.send('close-board'),
   moveBoard:   (dx, dy) => ipcRenderer.send('move-board', dx, dy),
+  openHomeworkWidget: () => ipcRenderer.send('open-homework-widget'),
+  hideHomeworkWidget: () => ipcRenderer.send('hide-homework-widget'),
+  openHomeworkBoard: () => ipcRenderer.send('open-homework-board'),
+  setHomeworkFloatExpanded: (expanded) => ipcRenderer.send('set-homework-float-expanded', expanded),
+  moveHomeworkFloat: (dx, dy) => ipcRenderer.send('move-homework-float', dx, dy),
   onDataChanged: (cb) => ipcRenderer.on('data-changed', () => cb()),
   boardLog:    (tag, msg) => ipcRenderer.send('board-log', tag, msg),
 
-  // ── 密码验证（密码窗口用） ──
-  verifyPassword: (pwd) => ipcRenderer.invoke('verify-password', pwd),
-  passwordOk:     (target) => ipcRenderer.send('password-ok', target),
-  closePassword:  () => ipcRenderer.send('close-password'),
+  // ── 人脸识别（face-check / face-register 页用） ──
+  faceAPI: {
+    getGallery:      ()      => ipcRenderer.invoke('face:get-gallery'),
+    registerFace:    (id, name, img) => ipcRenderer.invoke('face:register', id, name, img),
+    saveDescriptor:  (id, name, desc) => ipcRenderer.invoke('face:save-descriptor', id, name, desc),
+    reportDetections:(dets)  => ipcRenderer.invoke('face:report-detections', dets),
+    reportPresence:  (results) => ipcRenderer.invoke('face:report-presence', results),
+    getAttendance:   ()      => ipcRenderer.invoke('face:get-attendance'),
+    getStudents:     ()      => ipcRenderer.invoke('face:get-students'),
+    resetAdaptive:   (id)    => ipcRenderer.invoke('face:reset-adaptive', id),
+    removeStudent:   (id)    => ipcRenderer.invoke('face:remove-student', id),
+    updateConfig:    (cfg)   => ipcRenderer.invoke('face:update-config', cfg),
+    diagLog:         (line)  => ipcRenderer.send('face:diag-log', line),
 
-  // ── 密码管理（管理页用） ──
-  hasPassword:    () => ipcRenderer.invoke('has-password'),
-  changePassword: (oldPwd, newPwd) => ipcRenderer.invoke('change-password', oldPwd, newPwd),
+    // ── 原生人脸引擎（C++ ONNX Runtime 加速） ──
+    getNativeStatus:       ()      => ipcRenderer.invoke('face:native-status'),
+    nativeDetect:          (pixels, w, h) => ipcRenderer.invoke('face:native-detect', pixels, w, h),
+    nativeExtractDescriptor: (pixels, w, h) => ipcRenderer.invoke('face:native-extract-descriptor', pixels, w, h),
+    nativeMatch:           (desc)  => ipcRenderer.invoke('face:native-match', desc),
+  },
 
-  // ── 教师管理（管理页用） ──
-  getTeachers:     () => ipcRenderer.invoke('get-teachers'),
-  approveTeacher:  (connectionId) => ipcRenderer.invoke('approve-teacher', connectionId),
-  rejectTeacher:   (connectionId) => ipcRenderer.invoke('reject-teacher', connectionId),
-  updateTeacher:   (connectionId, data) => ipcRenderer.invoke('update-teacher', connectionId, data),
-  removeTeacher:   (connectionId) => ipcRenderer.invoke('remove-teacher', connectionId),
-  importTeacher:   (connectionId, name, role, subjects) => ipcRenderer.invoke('import-teacher', connectionId, name, role, subjects),
-  onTeachersChanged: (cb) => ipcRenderer.on('teachers-changed', () => cb()),
+  // ── 人脸识别开关 ──
+  getFaceCheckEnabled:  () => ipcRenderer.invoke('get-face-check-enabled'),
+  setFaceCheckEnabled:  (enabled) => ipcRenderer.invoke('set-face-check-enabled', enabled),
+
+  // ── 人脸注册窗口事件 ──
+  onSetStudent: (cb) => ipcRenderer.on('set-student', (_e, studentId, name) => cb(studentId, name)),
 });

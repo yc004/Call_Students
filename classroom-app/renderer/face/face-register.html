@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>人脸注册</title>
+  <link rel="stylesheet" href="face-register.css">
+  <link rel="stylesheet" href="../shared/ui.css">
+</head>
+<body>
+
+<div class="fr-container">
+  <h2>学生人脸注册</h2>
+
+  <div class="fr-video-wrap">
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas" width="320" height="240"></canvas>
+    <div id="noCamera" class="fr-no-camera hidden">
+      <p>未检测到摄像头</p>
+      <p class="fr-hint">请检查摄像头连接后刷新页面</p>
+      <button id="retryCameraBtn" class="btn btn-primary">重试</button>
+    </div>
+  </div>
+
+  <div class="fr-controls">
+    <div class="fr-field">
+      <label for="studentSelect">选择学生</label>
+      <select id="studentSelect">
+        <option value="">-- 请选择学生 --</option>
+      </select>
+    </div>
+
+    <div class="fr-actions">
+      <button id="captureBtn" class="btn btn-primary" disabled>拍照并录入</button>
+      <button id="closeBtn" class="btn">关闭</button>
+    </div>
+
+    <div id="statusMsg" class="fr-status" aria-live="polite"></div>
+  </div>
+
+  <div id="resultPanel" class="fr-result hidden">
+    <h3>注册结果</h3>
+    <div id="resultContent"></div>
+  </div>
+</div>
+
+<script src="../../node_modules/face-api.js/dist/face-api.min.js"></script>
+<script src="face-register.js"></script>
+</body>
+</html>

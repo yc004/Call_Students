@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>作业上报</title>
+  <link rel="stylesheet" href="homework-board.css?v=2">
+  <link rel="stylesheet" href="../shared/ui.css?v=5">
+</head>
+<body class="touch-board">
+  <header class="board-toolbar">
+    <div class="board-brand">
+      <span class="board-kicker">班级作业</span>
+      <h1>作业上报</h1>
+    </div>
+    <div class="board-context">
+      <strong id="boardInfo">正在读取班级信息</strong>
+      <label class="date-control" for="boardDateFilter"><span>日期</span><input type="date" id="boardDateFilter"></label>
+    </div>
+    <div class="board-actions">
+      <button class="touch-button secondary" id="refreshBtn" type="button">刷新数据</button>
+    </div>
+  </header>
+
+  <main class="board-main">
+    <section class="workflow-section assignment-section" aria-labelledby="assignmentHeading">
+      <div class="section-heading">
+        <span class="step-number">1</span>
+        <div><h2 id="assignmentHeading">选择要上报的作业</h2><p>轻触一张作业卡片，切换本次上报对象</p></div>
+      </div>
+      <div id="assignmentRail" class="assignment-rail" aria-label="作业列表"></div>
+    </section>
+
+    <section id="reportPanel" class="report-panel" hidden>
+      <div class="report-title-row">
+        <div>
+          <p id="selectedAssignmentSubject" class="assignment-subject"></p>
+          <h2 id="selectedAssignmentTitle"></h2>
+        </div>
+        <div class="progress-pill"><strong id="progressCount">0 / 0</strong><span>已上报</span></div>
+      </div>
+
+      <div class="workflow-section status-section" aria-labelledby="statusHeading">
+        <div class="section-heading compact">
+          <span class="step-number">2</span>
+          <div><h2 id="statusHeading">选择状态</h2><p>然后点按下方学生姓名；可随时更换状态</p></div>
+        </div>
+        <div id="statusActions" class="status-actions" aria-label="上报状态"></div>
+      </div>
+
+      <div class="students-heading">
+        <div class="section-heading compact">
+          <span class="step-number">3</span>
+          <div><h2>点按学生姓名完成上报</h2><p id="tapHint">当前将标记为「已提交」</p></div>
+        </div>
+        <div id="studentFilters" class="student-filters" aria-label="按状态查看学生"></div>
+      </div>
+      <div id="studentGrid" class="student-grid" aria-live="polite"></div>
+    </section>
+
+    <section id="boardEmpty" class="board-empty" hidden>
+      <div class="empty-icon">作业</div>
+      <h2>这一天还没有作业</h2>
+      <p>暂无进入提交统计阶段的作业，请等待任课教师在教师端布置。</p>
+    </section>
+  </main>
+
+  <div id="boardToast" class="board-toast" role="status" aria-live="polite"></div>
+
+  <script src="homework-board.js?v=2"></script>
+</body>
+</html>

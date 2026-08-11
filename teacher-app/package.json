@@ -4,7 +4,9 @@
   "description": "教师端 —— 呼叫控制台",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "unset ELECTRON_RUN_AS_NODE && electron .",
+    "verify:syntax": "node ../scripts/verify-js-syntax.js teacher-app",
+    "test:account": "node test/account-auth.test.js",
     "build": "electron-builder --win",
     "build:portable": "electron-builder --win portable"
   },
@@ -16,9 +18,11 @@
     },
     "files": [
       "main.js",
+      "account-auth.js",
       "preload.js",
       "index.html",
       "style.css",
+      "ui.css",
       "app.js",
       "node_modules/**/*",
       "!node_modules/electron/**",
@@ -42,7 +46,7 @@
     }
   },
   "devDependencies": {
-    "electron": "^28.0.0",
+    "electron": "^42.4.0",
     "electron-builder": "^24.9.0"
   }
 }

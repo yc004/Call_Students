@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>呼叫通知</title>
+  <link rel="stylesheet" href="popup.css">
+  <link rel="stylesheet" href="../shared/ui.css">
+</head>
+<body>
+
+<div class="popup-container">
+  <div class="call-card" id="callCard">
+    <button class="close-btn" id="closeBtn" title="关闭" aria-label="关闭通知">✕</button>
+    <div class="call-class" id="callClass"></div>
+    <div class="call-student" id="callStudent"></div>
+    <div class="call-message" id="callMessage">请到办公室</div>
+    <div class="call-timer">
+      <span class="timer-bar" id="timerBar"></span>
+    </div>
+  </div>
+</div>
+
+<script src="popup.js"></script>
+</body>
+</html>

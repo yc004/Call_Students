@@ -5,187 +5,298 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>教师端 — 教室呼叫系统</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="ui.css?v=9">
 </head>
 <body>
 
-<!-- 背景装饰 -->
-<div class="bg-decor">
-  <div class="bg-blob bg-blob-1"></div>
-  <div class="bg-blob bg-blob-2"></div>
-  <div class="bg-blob bg-blob-3"></div>
-</div>
-
 <div class="app">
-  <!-- ══════════ 标题栏（通用组件：拖拽 + 窗口控制） ══════════ -->
-  <header class="title-bar">
-    <div class="title-bar-left">
-      <span class="title-bar-icon">🏫</span>
-      <span class="title-bar-text">教室呼叫 — 教师端</span>
-    </div>
-    <div class="title-bar-ctrl">
-      <button class="win-btn win-min" onclick="api.winMinimize()" title="最小化"></button>
-      <button class="win-btn win-max" onclick="api.winMaximize()" title="最大化"></button>
-      <button class="win-btn win-close" onclick="api.winClose()" title="关闭"></button>
-    </div>
-  </header>
 
-  <!-- ══════════ 工具栏 ══════════ -->
-  <div class="topbar">
-    <div class="topbar-connect">
-      <input type="text" id="ipInput" placeholder="教室 IP 地址" autofocus>
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h1>教室呼叫</h1>
+      <span class="brand-sub">教师端</span>
+    </div>
+
+    <div class="connect-box">
+      <input type="text" id="ipInput" placeholder="例如 192.168.1.20" inputmode="decimal" autocomplete="off" autofocus>
       <button id="connectBtn" class="btn btn-primary">连接</button>
     </div>
 
-    <div class="topbar-status">
-      <span id="connDot" class="dot offline"></span>
-      <span id="connLabel">未连接</span>
+    <div class="room-section">
+      <div class="section-label">教室列表</div>
+      <ul id="roomList" class="room-list"></ul>
+      <div id="noRooms" class="muted-note">还没有添加教室</div>
     </div>
 
-    <div id="pendingBanner" class="pending-banner hidden">
-      ⏳ 等待管理员审核…
-      <button id="pendingReconnectBtn">🔄 重新检查</button>
+    <div class="sidebar-footer">
+      <button id="accountMenuBtn" class="account-session hidden" type="button" title="账户管理">
+        <span class="account-avatar" id="accountAvatar">教</span>
+        <span class="account-session-text"><strong id="teacherInfo"></strong><small>账户管理</small></span>
+        <span class="account-chevron">›</span>
+      </button>
+      <div class="status-row">
+        <span id="connDot" class="dot offline"></span>
+        <span id="connLabel">未连接</span>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <div id="roomHeader" class="room-header hidden">
+      <div>
+        <span class="workspace-kicker">当前教室</span>
+        <h2 id="roomTitle"></h2>
+      </div>
+      <div class="room-header-actions"><span id="studentCount" class="badge"></span></div>
     </div>
 
-    <div class="topbar-acct">
-      <span class="teacher-name" id="teacherInfo"></span>
-      <button class="acct-btn-sm" id="acctGearBtn" title="账户管理">⚙</button>
+    <!-- Tab 导航 -->
+    <div id="mainTabs" class="main-tabs hidden" role="tablist" aria-label="教师端功能">
+      <button class="main-tab active" role="tab" aria-selected="true" aria-controls="tab-call" data-tab="call">呼叫</button>
+      <button class="main-tab" role="tab" aria-selected="false" aria-controls="tab-homework" data-tab="homework">作业</button>
+      <button class="main-tab" role="tab" aria-selected="false" aria-controls="tab-attendance" data-tab="attendance">出勤</button>
+      <button id="classroomTabBtn" class="main-tab hidden" role="tab" aria-selected="false" aria-controls="tab-classroom" data-tab="classroom">班级管理</button>
     </div>
-  </div>
 
-  <div class="app-body">
-    <!-- ══════════ 侧边栏 — 教室列表 ══════════ -->
-    <aside class="sidebar">
-      <div class="sidebar-panel">
-        <div class="sidebar-label">教室列表</div>
-        <ul id="roomList" class="room-list"></ul>
-        <div id="noRooms" class="muted-note">输入 IP 并点击连接</div>
+    <!-- ══════════ 呼叫 Tab ══════════ -->
+    <div class="main-tab-content" id="tab-call" role="tabpanel">
+      <div id="callFlow" class="call-flow hidden">
+        <div class="flow-heading"><span>1</span><div><strong>编辑呼叫内容</strong><small>学生姓名会在发送时自动替换</small></div></div>
+      <div id="msgRow" class="msg-row hidden">
+        <label for="msgEditor">消息</label>
+        <div id="msgEditor" class="msg-editor" contenteditable="true" spellcheck="false"></div>
+        <input type="hidden" id="callMessage" value="{name}同学，请到办公室">
       </div>
 
-      <div class="sidebar-panel" id="historySection">
-        <div class="sidebar-label">呼叫记录</div>
+        <div class="flow-heading flow-heading-students"><span>2</span><div><strong>选择要呼叫的学生</strong><small>点击学生卡片中的呼叫按钮即可发送</small></div></div>
+      <div id="searchRow" class="search-row hidden">
+        <input type="text" id="searchInput" class="search-input" placeholder="搜索学生姓名…" autocomplete="off">
+        <span id="searchResult" class="search-result"></span>
+      </div>
+
+      <div id="studentGrid" class="student-grid"></div>
+      </div>
+
+      <div id="emptyState" class="empty-state">
+        <div class="empty-icon">—</div>
+        <p>连接一间教室开始使用</p>
+        <p class="muted-note">在左侧输入教室电脑的局域网 IP</p>
+      </div>
+
+      <details id="historySection" class="history-section">
+        <summary>最近呼叫记录</summary>
         <div id="historyTableWrap" class="history-table-wrap">
           <table id="historyTable" class="history-table">
-            <thead><tr><th>时间</th><th>教室</th><th>学生</th><th>状态</th></tr></thead>
+            <thead>
+              <tr><th>时间</th><th>教室</th><th>学生</th><th>状态</th></tr>
+            </thead>
             <tbody></tbody>
           </table>
         </div>
         <div id="noHistory" class="muted-note">暂无记录</div>
-      </div>
-    </aside>
+      </details>
+    </div>
 
-    <!-- ══════════ 主区域 ══════════ -->
-    <main class="main">
-
-      <!-- Tab 导航 -->
-      <nav id="mainTabs" class="main-tabs hidden">
-        <button class="main-tab active" data-tab="call">📢 呼叫学生</button>
-        <button class="main-tab" data-tab="homework">📋 作业管理</button>
-      </nav>
-
-      <!-- ══════ 呼叫 Tab ══════ -->
-      <div class="main-tab-content" id="tab-call">
-
-        <!-- 教室信息卡片 -->
-        <div id="roomHeader" class="room-header hidden">
-          <div class="room-header-glass">
-            <div class="room-header-left">
-              <span class="room-header-icon">🏫</span>
-              <div>
-                <h2 id="roomTitle"></h2>
-                <span class="room-header-sub">已连接教室</span>
-              </div>
-            </div>
-            <div class="room-header-right">
-              <span id="studentCount" class="badge"></span>
-            </div>
-          </div>
+    <!-- ══════════ 人脸识别 Tab ══════════ -->
+    <div class="main-tab-content hidden" id="tab-attendance" role="tabpanel">
+      <div id="faceSection" class="face-section">
+        <div class="face-header">
+          <h2 id="faceRoomName">人脸识别</h2>
+          <span id="faceSummary" class="face-summary"></span>
         </div>
-
-        <!-- 快捷操作栏：消息 + 搜索 -->
-        <div id="msgRow" class="call-bar msg-row hidden">
-          <div class="call-bar-msg">
-            <span class="call-bar-label">📝</span>
-            <div id="msgEditor" class="msg-editor" contenteditable="true" spellcheck="false"></div>
-            <input type="hidden" id="callMessage" value="{name}同学，请到办公室">
-          </div>
-          <div id="searchRow" class="call-bar-search search-row">
-            <input type="text" id="searchInput" class="search-input" placeholder="搜索学生…" autocomplete="off">
-            <span id="searchResult" class="search-result"></span>
-          </div>
+        <!-- 子标签：未标注 / 已入库 -->
+        <div class="face-subtabs" role="tablist" aria-label="人脸状态">
+          <button class="face-subtab active" role="tab" aria-selected="true" aria-controls="faceGridUnknown" data-subtab="unknown">未标注 <span id="unknownCount" class="subtab-count"></span></button>
+          <button class="face-subtab" role="tab" aria-selected="false" aria-controls="faceGridRegistered" data-subtab="registered">已入库 <span id="registeredCount" class="subtab-count"></span></button>
         </div>
-
-        <!-- 批量操作栏 -->
-        <div id="batchBar" class="batch-bar hidden">
-          <span id="batchCount" class="batch-count"></span>
-          <button id="batchSelectAll" class="btn btn-sm">全选</button>
-          <button id="batchClear" class="btn btn-sm">取消</button>
-          <button id="batchCallBtn" class="btn btn-primary btn-sm">📢 批量呼叫</button>
+        <div class="face-hint-row" id="faceHintUnknown">
+          <span>教室端检测到的陌生人脸会保存在待标注库中，仅班主任可匹配学生姓名。</span>
         </div>
-
-        <!-- 学生卡片网格 -->
-        <div id="studentGrid" class="student-grid"></div>
-
-        <!-- 空态 -->
-        <div id="emptyState" class="empty-state">
-          <div class="empty-state-card">
-            <div class="empty-icon">🏫</div>
-            <h3>未连接教室</h3>
-            <p>在顶部输入教室 IP 地址并点击连接</p>
-            <p class="muted-note">连接后将自动同步班级学生名单</p>
-          </div>
+        <div class="face-hint-row hidden" id="faceHintRegistered">
+          <span>彩色表示在教室中，灰色表示当前不在。</span>
+        </div>
+        <!-- 未标注人脸网格 -->
+        <div id="faceGridUnknown" class="face-grid">
+          <div class="muted-note">等待教室端采集人脸上传…</div>
+        </div>
+        <!-- 已入库学生网格（默认隐藏） -->
+        <div id="faceGridRegistered" class="face-grid hidden">
+          <div class="muted-note">暂无已入库学生</div>
         </div>
       </div>
+    </div>
 
-      <!-- ══════ 作业管理 Tab ══════ -->
-      <div class="main-tab-content hidden" id="tab-homework">
-        <div id="hwSection" class="hw-section">
-          <div class="hw-toolbar">
-            <div class="hw-toolbar-left">
-              <div class="ms-wrap" id="hwSubjectMs">
-                <button class="ms-btn" id="hwSubjectBtn">全部学科 ▾</button>
-                <div class="ms-drop hidden" id="hwSubjectDrop"></div>
-              </div>
-              <div class="ms-wrap" id="hwAssignMs">
-                <button class="ms-btn" id="hwAssignBtn">全部作业 ▾</button>
-                <div class="ms-drop hidden" id="hwAssignDrop"></div>
-              </div>
-              <select id="hwStatusFilter" class="hw-filter-select">
-                <option value="">全部状态</option>
-              </select>
-              <input type="date" id="hwDateFrom" class="hw-date-input" title="开始日期">
-              <span class="hw-date-sep">~</span>
-              <input type="date" id="hwDateTo" class="hw-date-input" title="结束日期">
-            </div>
-            <div class="hw-toolbar-right">
-              <button id="addSubjectBtn" class="btn btn-sm">＋ 学科</button>
-              <button id="delSubjectBtn" class="btn btn-sm btn-danger">删学科</button>
-              <button id="addAssignmentBtn2" class="btn btn-primary btn-sm">＋ 作业</button>
-            </div>
-          </div>
-          <div id="hwContent" class="hw-content"></div>
+    <!-- 人脸标注弹窗 -->
+    <div id="labelModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="标注学生姓名">
+      <div class="modal-card">
+        <h3>匹配学生姓名</h3>
+        <div id="labelPreview" class="label-preview"></div>
+        <label class="field-label">选择学生</label>
+        <select id="labelStudentSelect" class="field-select">
+          <option value="">-- 选择已有学生 --</option>
+        </select>
+        <div class="label-or">— 或输入新姓名 —</div>
+        <input type="text" id="labelNewName" placeholder="输入新学生姓名" maxlength="20">
+        <div class="modal-actions">
+          <button id="labelCancel" class="btn">取消</button>
+          <button id="labelConfirm" class="btn btn-primary">确认标注</button>
         </div>
       </div>
+    </div>
 
-    </main>
+    <!-- ══════════ 作业管理 Tab ══════════ -->
+    <div class="main-tab-content hidden" id="tab-homework" role="tabpanel">
+      <div id="hwSection" class="hw-section">
+        <div class="hw-toolbar">
+          <div class="hw-toolbar-left">
+            <div class="ms-wrap" id="hwSubjectMs">
+              <button class="ms-btn" id="hwSubjectBtn">全部学科 ▾</button>
+              <div class="ms-drop hidden" id="hwSubjectDrop"></div>
+            </div>
+            <div class="ms-wrap" id="hwAssignMs">
+              <button class="ms-btn" id="hwAssignBtn">全部作业 ▾</button>
+              <div class="ms-drop hidden" id="hwAssignDrop"></div>
+            </div>
+            <select id="hwStatusFilter" class="hw-filter-select">
+              <option value="">全部状态</option>
+            </select>
+            <input type="date" id="hwDateFrom" class="hw-date-input" title="开始日期">
+            <span class="hw-date-sep">~</span>
+            <input type="date" id="hwDateTo" class="hw-date-input" title="结束日期">
+          </div>
+          <div class="hw-toolbar-right">
+            <button id="addAssignmentBtn2" class="btn btn-primary btn-sm">＋ 布置作业</button>
+          </div>
+        </div>
+        <div id="hwContent" class="hw-content"></div>
+      </div>
+    </div>
+
+    <!-- ══════════ 班主任管理 Tab ══════════ -->
+    <div class="main-tab-content hidden" id="tab-classroom" role="tabpanel">
+      <div class="classroom-manage-grid">
+        <section class="manage-card class-config-card">
+          <div class="manage-card-head"><div><span class="workspace-kicker">班级资料</span><h2>教室与学生名单</h2></div><span id="configStateBadge" class="manage-badge">已配置</span></div>
+          <label class="field-label" for="manageClassName">班级名称</label>
+          <input id="manageClassName" class="manage-input" maxlength="40" placeholder="例如：高一（3）班">
+          <label class="field-label" for="manageStudents">学生名单</label>
+          <textarea id="manageStudents" class="manage-textarea" rows="12" placeholder="每行一名学生，例如：&#10;张三&#10;李四"></textarea>
+          <p class="field-hint">每行填写一名学生。保存时会保留姓名未变化学生的作业和人脸数据关联。</p>
+          <button id="saveClassroomBtn" class="btn btn-primary" type="button">保存班级配置</button>
+        </section>
+
+        <section class="manage-card teacher-access-card">
+          <div class="manage-card-head"><div><span class="workspace-kicker">接入权限</span><h2>教师管理</h2></div><button id="refreshTeachersBtn" class="btn btn-sm" type="button">刷新</button></div>
+          <div class="teacher-group">
+            <div class="teacher-group-title"><strong>等待审核</strong><span id="pendingTeacherCount" class="subtab-count">0</span></div>
+            <div id="pendingTeacherList" class="teacher-manage-list"></div>
+          </div>
+          <div class="teacher-group">
+            <div class="teacher-group-title"><strong>已加入教师</strong><span id="approvedTeacherCount" class="subtab-count">0</span></div>
+            <div id="approvedTeacherList" class="teacher-manage-list"></div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- 登录 / 首次注册 -->
+<div id="accountOverlay" class="account-overlay" role="dialog" aria-modal="true" aria-labelledby="accountTitle">
+  <div class="account-card">
+    <div class="account-brand"><span>教</span></div>
+    <h2 id="accountTitle">教师登录</h2>
+    <p id="accountDesc" class="account-desc">登录后才能连接教室和使用教学功能。</p>
+
+    <form id="loginForm" class="account-form">
+      <label for="loginName">教师姓名</label>
+      <input id="loginName" type="text" maxlength="20" autocomplete="username" placeholder="输入教师姓名">
+      <label for="loginPassword">密码</label>
+      <input id="loginPassword" type="password" maxlength="64" autocomplete="current-password" placeholder="输入密码">
+      <p id="loginError" class="account-error hidden" aria-live="polite"></p>
+      <button id="loginBtn" class="btn btn-primary account-primary" type="submit">登录</button>
+      <p class="account-switch">首次在这台电脑使用？<button id="showRegister" type="button">创建本机账户</button></p>
+    </form>
+
+    <form id="registerForm" class="account-form hidden">
+      <label for="regName">教师姓名</label>
+      <input id="regName" type="text" maxlength="20" autocomplete="username" placeholder="输入真实姓名">
+      <label for="regSubjects">授课科目</label>
+      <input id="regSubjects" type="text" maxlength="100" placeholder="例如：数学, 物理">
+      <span class="account-field-hint">多个科目用逗号分隔，供教室管理员审核。</span>
+      <label for="regPassword">设置密码</label>
+      <input id="regPassword" type="password" maxlength="64" autocomplete="new-password" placeholder="至少 6 位">
+      <label for="regPassword2">确认密码</label>
+      <input id="regPassword2" type="password" maxlength="64" autocomplete="new-password" placeholder="再次输入密码">
+      <p id="regError" class="account-error hidden" aria-live="polite"></p>
+      <button id="regBtn" class="btn btn-primary account-primary" type="submit">创建并登录</button>
+      <p class="account-switch">本机已有账户？<button id="showLogin" type="button">返回登录</button></p>
+    </form>
   </div>
 </div>
 
-<!-- ══════════ 弹窗 ══════════ -->
+<!-- 教室审批状态 -->
+<div id="approvalOverlay" class="approval-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="approvalTitle">
+  <div class="approval-card">
+    <span class="approval-state">等待审核</span>
+    <h2 id="approvalTitle">已向教室发送加入请求</h2>
+    <p id="approvalDesc">教室管理员批准后即可使用学生、作业和出勤功能。</p>
+    <div class="approval-actions">
+      <button id="approvalRetryBtn" class="btn btn-primary">重新检查</button>
+      <button id="approvalCancelBtn" class="btn">返回教室列表</button>
+    </div>
+  </div>
+</div>
 
-<!-- 添加学科弹窗 -->
-<div id="hwSubjectModal" class="modal hidden">
+<!-- 班主任首次绑定后的强制教室配置 -->
+<div id="classroomSetupOverlay" class="classroom-setup-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="classroomSetupTitle">
+  <div class="classroom-setup-card">
+    <span class="approval-state">班主任初始化</span>
+    <h2 id="classroomSetupTitle">完成教室配置</h2>
+    <p>你已成功绑定为本教室班主任。完成班级名称和学生名单后，教室端才会启用作业、呼叫和人脸识别功能。</p>
+    <label class="field-label" for="setupClassName">班级名称</label>
+    <input id="setupClassName" class="manage-input" maxlength="40" placeholder="例如：高一（3）班">
+    <label class="field-label" for="setupStudents">学生名单</label>
+    <textarea id="setupStudents" class="manage-textarea" rows="10" placeholder="每行一名学生，例如：&#10;张三&#10;李四"></textarea>
+    <p id="setupError" class="account-error hidden" role="alert"></p>
+    <button id="completeSetupBtn" class="btn btn-primary setup-primary" type="button">保存并启用教室</button>
+    <small>此步骤无法跳过；以后可在“班级管理”中继续修改。</small>
+  </div>
+</div>
+
+<!-- 任课教师科目授权 -->
+<div id="teacherEditModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="teacherEditTitle">
   <div class="modal-card">
-    <h3>添加学科</h3>
-    <input type="text" id="hwSubjectName" placeholder="学科名称，例如：数学" maxlength="20">
+    <h3 id="teacherEditTitle">设置授课科目</h3>
+    <p id="teacherEditName" class="field-hint"></p>
+    <label class="field-label" for="teacherEditSubjects">授课科目</label>
+    <input id="teacherEditSubjects" type="text" maxlength="120" placeholder="例如：数学, 物理">
+    <p class="field-hint">多个科目使用逗号分隔。学科列表将由已加入教师的授课科目自动生成。</p>
+    <div class="modal-actions"><button id="teacherEditCancel" class="btn" type="button">取消</button><button id="teacherEditSave" class="btn btn-primary" type="button">保存授权</button></div>
+  </div>
+</div>
+
+<!-- 账户管理 -->
+<div id="accountModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="accountModalTitle">
+  <div class="modal-card account-modal-card">
+    <h3 id="accountModalTitle">账户管理</h3>
+    <div class="account-summary">
+      <span class="account-avatar account-avatar-lg" id="accountModalAvatar">教</span>
+      <div><strong id="accountModalName"></strong><small id="accountModalSubjects"></small></div>
+    </div>
+    <div class="account-id-row"><span>连接 ID</span><code id="accountConnectionId"></code></div>
+    <p class="account-field-hint">教室管理员可通过此身份批准你的设备。</p>
     <div class="modal-actions">
-      <button id="hwSubjectModalCancel" class="btn">取消</button>
-      <button id="hwSubjectModalConfirm" class="btn btn-primary">确定</button>
+      <button id="accountModalClose" class="btn">关闭</button>
+      <button id="logoutBtn" class="btn btn-danger-outline">退出登录</button>
     </div>
   </div>
 </div>
 
 <!-- 添加/编辑作业弹窗 -->
-<div id="hwModal" class="modal hidden">
+<div id="hwModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="hwModalTitleLabel">
   <div class="modal-card modal-wide">
     <h3 id="hwModalTitleLabel">添加作业</h3>
     <label class="field-label">学科</label>
@@ -194,6 +305,9 @@
     <input type="text" id="hwModalTitle" placeholder="例如：第一章练习" maxlength="50">
     <label class="field-label">日期</label>
     <input type="date" id="hwModalDate">
+    <label class="field-label">提交截止时间</label>
+    <input type="datetime-local" id="hwModalDeadline">
+    <p class="field-hint">截止前会显示在学生的“今日作业”组件中；到达该时间后自动进入课代表提交统计。</p>
     <div class="modal-actions">
       <button id="hwModalCancel" class="btn">取消</button>
       <button id="hwModalConfirm" class="btn btn-primary">确定</button>
@@ -201,119 +315,6 @@
   </div>
 </div>
 
-<!-- 账户覆盖层 -->
-<div id="accountOverlay" class="account-overlay hidden">
-  <div class="account-card">
-
-    <!-- 装饰头部 -->
-    <div class="acct-header">
-      <div class="acct-header-icon">👨‍🏫</div>
-      <h2 id="accountTitle">欢迎使用教室呼叫</h2>
-      <p class="acct-header-desc" id="accountDesc">登录以同步你的教学数据</p>
-    </div>
-
-    <!-- 登录表单 -->
-    <div id="loginForm" class="acct-form">
-      <div class="acct-input-group">
-        <span class="acct-input-icon">👤</span>
-        <input type="text" id="loginName" placeholder="教师姓名" maxlength="20" autofocus>
-      </div>
-      <div class="acct-input-group">
-        <span class="acct-input-icon">🔑</span>
-        <input type="password" id="loginPassword" placeholder="登录密码" maxlength="32">
-      </div>
-      <p id="loginError" class="acct-error hidden"></p>
-      <button id="loginBtn" class="btn btn-primary acct-btn">登 录</button>
-      <p class="acct-switch">首次使用？<a id="showRegister">创建教师账户</a></p>
-    </div>
-
-    <!-- 注册表单 -->
-    <div id="registerForm" class="acct-form hidden">
-      <div class="acct-input-group">
-        <span class="acct-input-icon">👤</span>
-        <input type="text" id="regName" placeholder="你的姓名" maxlength="20">
-      </div>
-      <div class="acct-input-group">
-        <span class="acct-input-icon">🔑</span>
-        <input type="password" id="regPassword" placeholder="设置密码（至少3位）" maxlength="32">
-      </div>
-      <div class="acct-input-group">
-        <span class="acct-input-icon">🔑</span>
-        <input type="password" id="regPassword2" placeholder="再次输入密码" maxlength="32">
-      </div>
-      <div class="acct-field">
-        <label class="acct-label">📚 授课科目</label>
-        <input type="text" id="regSubjects" placeholder="数学, 语文, 英语…" maxlength="100">
-        <span class="acct-hint">用逗号分隔，帮助管理员了解你的教学范围</span>
-      </div>
-      <p id="regError" class="acct-error hidden"></p>
-      <button id="regBtn" class="btn btn-primary acct-btn">创建账户</button>
-      <p class="acct-switch">已有账户？<a id="showLogin">返回登录</a></p>
-    </div>
-
-    <!-- 导出身份信息 -->
-    <div id="exportSection" class="acct-export hidden">
-      <div class="acct-export-divider"></div>
-      <p class="acct-export-title">📤 导出连接信息</p>
-      <p class="acct-hint">将下方信息发送给教室管理员，可免审核直接导入</p>
-      <div class="acct-export-row">
-        <input type="text" id="exportInfo" readonly>
-        <button id="copyExportBtn" class="btn btn-sm">📋 复制</button>
-      </div>
-    </div>
-
-  </div>
-</div>
-
-<!-- 账户管理弹窗 -->
-<div id="acctModal" class="b-modal hidden">
-  <div class="b-modal-card">
-    <h3>账户管理</h3>
-    <div class="acct-mgmt-info">
-      <p><strong>姓名</strong><span id="acctMgmtName"></span></p>
-      <p><strong>连接 ID</strong><span id="acctMgmtId" class="acct-mgmt-mono"></span></p>
-      <p><strong>授课科目</strong><span id="acctMgmtSubjects"></span></p>
-    </div>
-    <div class="acct-mgmt-export">
-      <p class="acct-hint">导出给教室管理员导入：</p>
-      <div class="acct-export-row">
-        <input type="text" id="acctMgmtExport" readonly>
-        <button id="acctMgmtCopy" class="btn btn-sm">📋</button>
-      </div>
-    </div>
-    <div class="acct-mgmt-actions">
-      <button id="acctMgmtLogout" class="btn btn-danger-outline">🚪 退出登录</button>
-      <button id="acctMgmtDelete" class="btn btn-danger">🗑 删除账户</button>
-    </div>
-    <div class="b-modal-acts">
-      <button id="acctMgmtClose" class="b-btn">关闭</button>
-    </div>
-  </div>
-</div>
-
-<!-- 加入教室覆盖层 -->
-<div id="joinOverlay" class="join-overlay hidden">
-  <div class="join-card">
-    <div class="join-icon">🔗</div>
-    <h2>加入教室</h2>
-    <p class="join-desc" id="joinDesc"></p>
-
-    <div id="joinRequestView" class="hidden">
-      <p class="join-hint">首次连接到该教室，需要申请加入才能使用功能。</p>
-      <button id="joinRequestBtn" class="btn btn-primary join-btn">📨 申请加入</button>
-      <p class="join-hint" style="margin-top:14px">也可以将连接信息导出后发给管理员直接导入。</p>
-      <button id="joinReconnectBtn" class="btn">🔄 重新连接</button>
-    </div>
-
-    <div id="joinWaitingView" class="hidden">
-      <div class="join-spinner">⏳</div>
-      <p class="join-wait-msg">申请已提交，等待教室管理员审核…</p>
-      <p class="join-hint">审核通过后点击下方按钮重新连接。</p>
-      <button id="joinCheckBtn" class="btn btn-primary join-btn">🔄 重新连接检查状态</button>
-    </div>
-  </div>
-</div>
-
-<script src="app.js"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>

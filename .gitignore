@@ -12,3 +12,17 @@ data/
 *.db-shm
 *.db-wal
 *.bak
+
+.DS_Store
+*.log
+*.tmp
+
+# Native addon build artifacts (C++ / ONNX Runtime)
+native/build/
+native/deps/onnxruntime/include/
+native/deps/onnxruntime/lib/
+.cache/
+
+# Native models are reproducibly downloaded and checksum-verified from models.json
+classroom-app/models/onnx/*.onnx
+classroom-app/models/onnx/*.part

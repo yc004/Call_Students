@@ -1,6 +1,6 @@
 /* ══════════════════════════════════════════
-   教师端 — 简化的连接流程
-   输入 IP → 自动连接 → 班级名由教室端回传
+   教师端 — 登录与连接流程
+   本地账户登录 → 输入教室 IP → 管理员审核 → 同步教室数据
    ══════════════════════════════════════════ */
 
 (function () {
@@ -10,25 +10,38 @@
 
   // ── DOM ──
   let ipInput, connectBtn, roomList, noRooms, connDot, connLabel;
-  let roomHeader, roomTitle, studentCount, msgRow, callMessageInp;
+  let roomHeader, roomTitle, studentCount, msgRow, callMessageInp, callFlow;
   let studentGrid, emptyState, historyTbody, noHistory;
   let searchInput, searchRow, searchResult;
   let msgEditor;
   let mainTabs, mainTabBtns, mainTabContents;
-  let hwSection, addSubjectBtn, delSubjectBtn;
+  let hwSection;
   let hwStatusFilter, hwDateFrom, hwDateTo, addAssignmentBtn2;
   // 多选
   let hwSubjectMs, hwSubjectBtn, hwSubjectDrop, selectedSubjects = [];
   let hwAssignMs, hwAssignBtn, hwAssignDrop, selectedAssigns = [];
   let hwContent;
-  let hwSubjectModal, hwSubjectName, hwSubjectModalCancel, hwSubjectModalConfirm;
-  let hwModal, hwModalTitleLabel, hwModalSubject, hwModalTitle, hwModalDate, hwModalCancel, hwModalConfirm;
-  // 批量呼叫
-  let batchBar, batchCount, batchSelectAll, batchClear, batchCallBtn;
+  let hwModal, hwModalTitleLabel, hwModalSubject, hwModalTitle, hwModalDate, hwModalDeadline, hwModalCancel, hwModalConfirm;
+  // 人脸识别 DOM
+  let faceSection, faceRoomName, faceSummary;
+  let faceGridUnknown, faceGridRegistered;
+  let faceSubtabActive = 'unknown'; // 当前活跃的子标签
+  // 标注弹窗 DOM
+  let labelModal, labelPreview, labelStudentSelect, labelNewName;
+  let labelCancel, labelConfirm;
+  // 账户与审批 DOM
+  let accountOverlay, accountTitle, accountDesc, loginForm, registerForm;
+  let loginName, loginPassword, loginError, regName, regSubjects, regPassword, regPassword2, regError;
+  let teacherInfo, accountMenuBtn, accountModal, approvalOverlay, approvalDesc;
+  let classroomTabBtn, manageClassName, manageStudents, saveClassroomBtn;
+  let classroomSetupOverlay, setupClassName, setupStudents, setupError, completeSetupBtn;
+  let pendingTeacherList, approvedTeacherList, pendingTeacherCount, approvedTeacherCount, refreshTeachersBtn;
+  let teacherEditModal, teacherEditName, teacherEditSubjects, teacherEditCancel, teacherEditSave;
+  let editingTeacherId = '';
 
   // ── 状态 ──
   const state = {
-    rooms:        [],       // { ip, name (from sync), password? }
+    rooms:        [],       // { id, ip, name (from sync) }
     callHistory:  [],
     currentRoom:  null,
     ws:           null,
@@ -41,9 +54,15 @@
     subjects:     [],
     assignments:  [],
     editingAssignmentId: null,
-    account:      null,       // { name, role, subjects, connectionId }
-    teacherStatus: null,      // 'approved' | 'pending' | null
-    selectedStudents: new Set(),
+    studentStatus: [],  // [{ studentId, name, status, lastSeen, similarity }]
+    faceDetections: [], // 当前检测到的人脸 [{ faceId, cropBase64, descriptor, studentId, name, similarity, isRecognized }]
+    pendingFaces: [],   // 教室端持久化的待标注人脸库，仅班主任可匹配姓名
+    pendingLabelFace: null, // 待标注的人脸 { faceId, descriptor }
+    account: null,      // 登录后才存在：{ name, subjects, connectionId }
+    teacherStatus: null,
+    classroomConfigured: false,
+    teachers: { approved: [], pending: [] },
+    pendingRoomIp: '',
   };
   const MAX_HISTORY = 500;
 
@@ -55,8 +74,165 @@
     if (!api.getData) return { rooms: [], callHistory: [], account: null };
     try {
       const d = await api.getData();
-      return { account: d.account || null, rooms: d.rooms || [], callHistory: d.callHistory || [] };
+      return { rooms: d.rooms || [], callHistory: d.callHistory || [], account: d.account || null };
     } catch (e) { return { rooms: [], callHistory: [], account: null }; }
+  }
+
+  // ═══════════════════════════════════
+  //  账户
+  // ═══════════════════════════════════
+
+  function showAccountOverlay(mode, account) {
+    if (!accountOverlay) return;
+    accountOverlay.classList.remove('hidden');
+    accountOverlay.classList.toggle('register-mode', mode === 'register');
+    document.body.classList.add('account-locked');
+    const appRoot = document.querySelector('.app');
+    if (appRoot) appRoot.setAttribute('inert', '');
+    const isLogin = mode === 'login';
+    loginForm && loginForm.classList.toggle('hidden', !isLogin);
+    registerForm && registerForm.classList.toggle('hidden', isLogin);
+    if (accountTitle) accountTitle.textContent = isLogin ? '教师登录' : '创建教师账户';
+    if (accountDesc) {
+      accountDesc.textContent = isLogin
+        ? '登录后才能连接教室和使用教学功能。'
+        : '账户保存在这台教师电脑上，创建后需由教室管理员批准。';
+    }
+    clearAccountErrors();
+    if (isLogin && loginName) {
+      loginName.value = account && account.name ? account.name : loginName.value;
+      setTimeout(() => (loginPassword || loginName).focus(), 0);
+    } else if (regName) {
+      setTimeout(() => regName.focus(), 0);
+    }
+  }
+
+  function hideAccountOverlay() {
+    accountOverlay && accountOverlay.classList.add('hidden');
+    document.body.classList.remove('account-locked');
+    const appRoot = document.querySelector('.app');
+    if (appRoot) appRoot.removeAttribute('inert');
+  }
+
+  function clearAccountErrors() {
+    [loginError, regError].forEach(el => {
+      if (!el) return;
+      el.textContent = '';
+      el.classList.add('hidden');
+    });
+  }
+
+  function showAccountError(el, message) {
+    if (!el) return;
+    el.textContent = message;
+    el.classList.remove('hidden');
+  }
+
+  function setSignedInAccount(account) {
+    state.account = account;
+    if (teacherInfo) teacherInfo.textContent = account.name;
+    const avatarText = (account.name || '教').trim().slice(0, 1);
+    const sidebarAvatar = document.getElementById('accountAvatar');
+    const modalAvatar = document.getElementById('accountModalAvatar');
+    if (sidebarAvatar) sidebarAvatar.textContent = avatarText;
+    if (modalAvatar) modalAvatar.textContent = avatarText;
+    accountMenuBtn && accountMenuBtn.classList.remove('hidden');
+    hideAccountOverlay();
+  }
+
+  async function handleLogin(event) {
+    event && event.preventDefault();
+    const name = loginName ? loginName.value.trim() : '';
+    const password = loginPassword ? loginPassword.value : '';
+    clearAccountErrors();
+    if (!name || !password) {
+      showAccountError(loginError, '请输入教师姓名和密码');
+      return;
+    }
+    if (!api.loginAccount) {
+      showAccountError(loginError, '请在教师端应用中登录');
+      return;
+    }
+    let result;
+    try {
+      result = await api.loginAccount(name, password);
+    } catch (error) {
+      showAccountError(loginError, '登录服务暂时不可用，请重试');
+      return;
+    }
+    if (!result || !result.ok) {
+      showAccountError(loginError, result && result.message ? result.message : '登录失败');
+      loginPassword && loginPassword.select();
+      return;
+    }
+    if (loginPassword) loginPassword.value = '';
+    setSignedInAccount(result.account);
+  }
+
+  async function handleRegister(event) {
+    event && event.preventDefault();
+    const name = regName ? regName.value.trim() : '';
+    const password = regPassword ? regPassword.value : '';
+    const password2 = regPassword2 ? regPassword2.value : '';
+    const subjects = (regSubjects ? regSubjects.value : '')
+      .split(/[,，]+/).map(value => value.trim()).filter(Boolean);
+    clearAccountErrors();
+    if (!name) { showAccountError(regError, '请输入教师姓名'); return; }
+    if (password.length < 6) { showAccountError(regError, '密码至少需要 6 位'); return; }
+    if (password !== password2) { showAccountError(regError, '两次输入的密码不一致'); return; }
+    if (!api.registerAccount) { showAccountError(regError, '请在教师端应用中创建账户'); return; }
+    let result;
+    try {
+      result = await api.registerAccount({ name, password, subjects });
+    } catch (error) {
+      showAccountError(regError, '账户创建失败，请重试');
+      return;
+    }
+    if (!result || !result.ok) {
+      showAccountError(regError, result && result.message ? result.message : '创建账户失败');
+      return;
+    }
+    if (regPassword) regPassword.value = '';
+    if (regPassword2) regPassword2.value = '';
+    setSignedInAccount(result.account);
+  }
+
+  function openAccountModal() {
+    if (!state.account || !accountModal) return;
+    const name = document.getElementById('accountModalName');
+    const subjects = document.getElementById('accountModalSubjects');
+    const connectionId = document.getElementById('accountConnectionId');
+    if (name) name.textContent = state.account.name;
+    if (subjects) subjects.textContent = (state.account.subjects || []).join('、') || '未填写授课科目';
+    if (connectionId) connectionId.textContent = state.account.connectionId;
+    accountModal.classList.remove('hidden');
+  }
+
+  function handleLogout() {
+    disconnect();
+    hideApprovalOverlay();
+    accountModal && accountModal.classList.add('hidden');
+    const savedAccount = state.account;
+    state.account = null;
+    state.teacherStatus = null;
+    accountMenuBtn && accountMenuBtn.classList.add('hidden');
+    showAccountOverlay('login', savedAccount);
+  }
+
+  function showApprovalOverlay(className, message) {
+    if (approvalDesc) {
+      approvalDesc.textContent = message || `${className || '该教室'}的管理员批准后，即可使用学生、作业和出勤功能。`;
+    }
+    approvalOverlay && approvalOverlay.classList.remove('hidden');
+    const appRoot = document.querySelector('.app');
+    if (appRoot) appRoot.setAttribute('inert', '');
+    hideRoomUI();
+  }
+
+  function hideApprovalOverlay() {
+    approvalOverlay && approvalOverlay.classList.add('hidden');
+    const appRoot = document.querySelector('.app');
+    if (appRoot && (!accountOverlay || accountOverlay.classList.contains('hidden'))) appRoot.removeAttribute('inert');
   }
 
   async function saveToDisk() {
@@ -69,195 +245,17 @@
   }
 
   // ═══════════════════════════════════
-  //  账户管理
+  //  连接
   // ═══════════════════════════════════
-
-  // DOM refs for account overlay
-  let accountOverlay, accountTitle, loginForm, registerForm;
-  let loginName, loginPassword, loginError, loginBtn;
-  let regName, regPassword, regPassword2, regRole, regSubjectsGroup, regSubjects, regError, regBtn;
-  let showRegister, showLogin;
-  let teacherInfo, joinOverlay, joinDesc, joinRequestView, joinWaitingView;
-
-  function showAccountOverlay(mode) {
-    if (accountOverlay) accountOverlay.classList.remove('hidden');
-    if (loginForm) loginForm.classList.toggle('hidden', mode !== 'login');
-    if (registerForm) registerForm.classList.toggle('hidden', mode !== 'register');
-    if (accountTitle) accountTitle.textContent = mode === 'login' ? '欢迎回来' : '创建教师账户';
-    var desc = document.getElementById('accountDesc');
-    if (desc) desc.textContent = mode === 'login' ? '登录以同步你的教学数据' : '注册后即可连接教室并使用全部功能';
-    if (mode === 'login' && loginName) loginName.focus();
-    if (mode === 'register' && regName) regName.focus();
-  }
-
-  function hideAccountOverlay() {
-    if (accountOverlay) accountOverlay.classList.add('hidden');
-  }
-
-  async function handleRegister() {
-    var name = regName ? regName.value.trim() : '';
-    var pwd  = regPassword ? regPassword.value : '';
-    var pwd2 = regPassword2 ? regPassword2.value : '';
-    var subjStr = regSubjects ? regSubjects.value.trim() : '';
-
-    if (!name) { showAcctError('regError', '请输入教师姓名'); return; }
-    if (!pwd || pwd.length < 3) { showAcctError('regError', '密码至少3位'); return; }
-    if (pwd !== pwd2) { showAcctError('regError', '两次输入的密码不一致'); return; }
-
-    var subjects = subjStr.split(/[,，]+/).map(function (s) { return s.trim(); }).filter(Boolean);
-
-    var account = {
-      name: name, password: pwd, subjects: subjects,
-      connectionId: genId(),
-    };
-
-    if (api.saveAccount) {
-      await api.saveAccount(account);
-      console.log('[account] saved:', account.name, account.connectionId);
-    }
-    state.account = { name: account.name, subjects: account.subjects, connectionId: account.connectionId };
-    hideAccountOverlay();
-    updateTeacherInfo();
-  }
-
-  async function handleLogin() {
-    var name = loginName ? loginName.value.trim() : '';
-    var pwd  = loginPassword ? loginPassword.value : '';
-    if (!name) { showAcctError('loginError', '请输入教师姓名'); return; }
-    if (!pwd)  { showAcctError('loginError', '请输入密码'); return; }
-
-    var data = await loadFromDisk();
-    var acct = data.account;
-    if (!acct || acct.name !== name || acct.password !== pwd) {
-      showAcctError('loginError', '姓名或密码不正确');
-      return;
-    }
-    state.account = { name: acct.name, role: acct.role, subjects: acct.subjects || [], connectionId: acct.connectionId };
-    hideAccountOverlay();
-    updateTeacherInfo();
-  }
-
-  function showAcctError(id, msg) {
-    var el = document.getElementById(id);
-    if (!el) return;
-    el.textContent = msg;
-    el.classList.remove('hidden');
-  }
-
-  // ═══════════════════════════════
-  //  加入教室流程
-  // ═══════════════════════════════
-
-  function showJoinOverlay(mode, className) {
-    if (joinOverlay) joinOverlay.classList.remove('hidden');
-    if (joinDesc) joinDesc.textContent = '教室：' + (className || '未知');
-    if (joinRequestView) joinRequestView.classList.toggle('hidden', mode !== 'request');
-    if (joinWaitingView) joinWaitingView.classList.toggle('hidden', mode !== 'waiting');
-    // 确保主 UI 隐藏
-    hideMainUI();
-  }
-
-  function hideJoinOverlay() {
-    if (joinOverlay) joinOverlay.classList.add('hidden');
-  }
-
-  function hideMainUI() {
-    if (mainTabs)   mainTabs.classList.add('hidden');
-    if (roomHeader) roomHeader.classList.add('hidden');
-    if (msgRow)     msgRow.classList.add('hidden');
-    if (searchRow)  searchRow.classList.add('hidden');
-    if (emptyState) emptyState.style.display = '';
-  }
-
-  function showMainUI() {
-    if (mainTabs)   mainTabs.classList.remove('hidden');
-    if (roomHeader) roomHeader.classList.remove('hidden');
-    if (msgRow)     msgRow.classList.remove('hidden');
-    if (searchRow)  searchRow.classList.remove('hidden');
-    if (emptyState) emptyState.style.display = 'none';
-  }
-
-  function sendJoinRequest() {
-    if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
-    state.ws.send(JSON.stringify({ type: 'join-request' }));
-    showJoinOverlay('waiting', state.className);
-  }
-
-  // ═══════════════════════════════
-  //  账户管理
-  // ═══════════════════════════════
-
-  let acctModal, acctMgmtName, acctMgmtId, acctMgmtSubjects, acctMgmtExport;
-
-  function openAcctModal() {
-    console.log('[acct] openAcctModal, modal:', !!acctModal, 'account:', !!state.account);
-    if (!acctModal || !state.account) return;
-    if (acctMgmtName) acctMgmtName.textContent = state.account.name;
-    if (acctMgmtId) acctMgmtId.textContent = state.account.connectionId;
-    if (acctMgmtSubjects) acctMgmtSubjects.textContent = (state.account.subjects || []).join(', ') || '未设置';
-    if (acctMgmtExport) acctMgmtExport.value = JSON.stringify({ connectionId: state.account.connectionId, name: state.account.name, subjects: state.account.subjects || [] });
-    acctModal.classList.remove('hidden');
-  }
-
-  function closeAcctModal() {
-    if (acctModal) acctModal.classList.add('hidden');
-  }
-
-  async function handleLogout() {
-    if (!confirm('确定退出登录吗？')) return;
-    if (api.saveAccount) await api.saveAccount(null);
-    state.account = null;
-    state.teacherStatus = null;
-    closeAcctModal();
-    hideJoinOverlay();
-    hideMainUI();
-    if (teacherInfo) teacherInfo.innerHTML = '';
-    var exp = document.getElementById('exportSection');
-    if (exp) exp.classList.add('hidden');
-    showAccountOverlay('login');
-    disconnect();
-  }
-
-  async function handleDeleteAccount() {
-    if (!confirm('确定删除账户吗？此操作不可撤销，所有本地数据将被清除。')) return;
-    // 清空 data.json
-    if (api.saveData) await api.saveData({ account: null, rooms: [], callHistory: [] });
-    state.account = null;
-    state.teacherStatus = null;
-    state.rooms = [];
-    state.callHistory = [];
-    closeAcctModal();
-    hideJoinOverlay();
-    hideMainUI();
-    if (teacherInfo) teacherInfo.innerHTML = '';
-    var exp = document.getElementById('exportSection');
-    if (exp) exp.classList.add('hidden');
-    renderRooms();
-    renderHistory();
-    disconnect();
-    showAccountOverlay('register');
-  }
-
-  function updateTeacherInfo() {
-    if (!teacherInfo || !state.account) return;
-    var acct = state.account;
-    var t = state.teacherStatus;
-    var roleStr = t && t.role ? ' · ' + esc(t.role) : '';
-    teacherInfo.innerHTML = esc(acct.name) + roleStr;
-
-    // 显示导出区域
-    var exp = document.getElementById('exportSection');
-    var expInput = document.getElementById('exportInfo');
-    if (exp && expInput) {
-      exp.classList.remove('hidden');
-      expInput.value = JSON.stringify({ connectionId: acct.connectionId, name: acct.name, subjects: acct.subjects || [] });
-    }
-  }
-
 
   function connect(ip) {
     ip = ip.trim();
     if (!ip) return;
+    if (!state.account) {
+      showAccountOverlay('login');
+      return;
+    }
+    if (ipInput) ipInput.value = ip;
 
     // 断开旧连接 & 清除重连
     if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
@@ -273,13 +271,12 @@
     state.ws = ws;
 
     ws.onopen = () => {
-      setStatus('online', '已连接');
-      const acct = state.account || {};
+      setStatus('connecting', '正在同步…');
       ws.send(JSON.stringify({
         type: 'connect',
-        connectionId: acct.connectionId || '',
-        name: acct.name || '',
-        subjects: acct.subjects || [],
+        connectionId: state.account.connectionId,
+        name: state.account.name,
+        subjects: state.account.subjects || [],
       }));
     };
 
@@ -293,34 +290,81 @@
         state.students  = msg.students || [];
         state.subjects  = msg.subjects || [];
         state.assignments = msg.assignments || [];
+        state.studentStatus = msg.attendance || [];
+        state.pendingFaces = msg.pendingFaces || [];
+        state.classroomConfigured = msg.classroomConfigured !== false;
+        state.teachers = msg.teachers || { approved: [], pending: [] };
         selectedSubjects = [];
         selectedAssigns  = [];
-
-        // 教师身份（来自教室端）
-        if (msg.teacher) {
-          state.teacherStatus = msg.teacher;
-          updateTeacherInfo();
-        }
+        state.teacherStatus = msg.teacher || null;
+        state.pendingRoomIp = '';
+        hideApprovalOverlay();
 
         // 自动添加到教室列表
         addOrUpdateRoom(ip, name);
         state.currentRoom = state.rooms.find(r => r.ip === ip) || null;
         renderRooms();
+        applyTeacherPermissions();
 
-        // 待审核状态
-        if (msg.teacher && msg.teacher.status === 'pending') {
-          showJoinOverlay('request', name);
-        } else {
-          hideJoinOverlay();
-          showRoomUI(name);
-          renderStudents();
-          renderHomework();
-        }
-      } else if (msg.type === 'join-ack') {
-        // 教室端确认收到加入请求
-        showJoinOverlay('waiting', state.className);
+        setStatus('online', '已连接');
+        showRoomUI(name);
+        renderStudents();
+        renderHomework();
+        renderFaceDetections();
+        renderClassroomManagement();
+        if (isHomeroomTeacher() && !state.classroomConfigured) showClassroomSetup();
+        else hideClassroomSetup();
+      } else if (msg.type === 'approval-required') {
+        const name = msg.className || ip;
+        state.teacherStatus = msg.teacher || { status: 'pending' };
+        state.pendingRoomIp = ip;
+        awaitRoomSave(ip, name);
+        setStatus('connecting', '等待管理员审核');
+        showApprovalOverlay(name, msg.message);
+      } else if (msg.type === 'approval-rejected') {
+        setStatus('offline', '审核未通过');
+        showApprovalOverlay(msg.className || ip, msg.message || '管理员未批准此账户，请联系教室管理员。');
+      } else if (msg.type === 'login-required') {
+        setStatus('offline', '身份无效');
+        disconnect();
+        showAccountOverlay('login', state.account);
+        showAccountError(loginError, msg.message || '请重新登录');
       } else if (msg.type === 'auth-required') {
-        alert(msg.message || '操作被拒绝：权限不足');
+        if (classroomSetupOverlay && !classroomSetupOverlay.classList.contains('hidden')) {
+          setupError.textContent = msg.message || '教室配置未保存，请检查后重试';
+          setupError.classList.remove('hidden');
+          completeSetupBtn.disabled = false;
+          completeSetupBtn.textContent = '保存并启用教室';
+        } else {
+          alert(msg.message || '当前账户没有执行此操作的权限');
+        }
+      } else if (msg.type === 'face-detections') {
+        // 诊断：记录接收次数和最近一次收到的脸数
+        state._faceRecvCount = (state._faceRecvCount || 0) + 1;
+        state._faceRecvLast = (msg.detections || []).length;
+        state._faceRecvAt = Date.now();
+        console.log('[teacher] face-detections received #' + state._faceRecvCount + ':', state._faceRecvLast, 'faces');
+        // 教室端已用连续两帧空检测做过防抖；此处直接采用最新结果，
+        // 避免教师端再次等待两次空消息而把离开提示拖慢数秒。
+        state.faceDetections = msg.detections || [];
+        renderFaceDetections();
+      } else if (msg.type === 'face-labeled') {
+        // 标注结果：更新对应人脸并标记为手动标注
+        const f = state.faceDetections.find(d => d.faceId === msg.faceId);
+        if (f) {
+          f.studentId = msg.studentId;
+          f.name = msg.name;
+          f.isRecognized = true;
+          f._manuallyLabeled = true;
+        }
+        state.pendingFaces = (state.pendingFaces || []).filter(face => face.faceId !== msg.faceId);
+        renderFaceDetections();
+      } else if (msg.type === 'pending-face-library') {
+        state.pendingFaces = msg.faces || [];
+        renderFaceDetections();
+      } else if (msg.type === 'face-status') {
+        state.studentStatus = msg.attendance || [];
+        // keep old attendance rendering if needed
       } else if (msg.type === 'ack') {
         updateCallStatus(msg.callId, 'displayed');
       }
@@ -339,6 +383,12 @@
     ws.onerror = () => { /* onclose follows */ };
   }
 
+  async function awaitRoomSave(ip, name) {
+    await addOrUpdateRoom(ip, name);
+    state.currentRoom = state.rooms.find(room => room.ip === ip) || null;
+    renderRooms();
+  }
+
   function disconnect() {
     if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
     state.reconnectAttempts = 0;
@@ -352,10 +402,12 @@
     state.className   = '';
     state.subjects    = [];
     state.assignments = [];
+    state.classroomConfigured = false;
+    state.teachers = { approved: [], pending: [] };
+    state.pendingRoomIp = '';
     state.searchQuery = '';
-    state.selectedStudents.clear();
-    updateBatchBar();
     if (searchInput) searchInput.value = '';
+    hideClassroomSetup();
     hideRoomUI();
     renderStudents();
     setStatus('offline', '未连接');
@@ -384,7 +436,7 @@
     if (existing) {
       existing.name = name;
     } else {
-      state.rooms.push({ ip, name });
+      state.rooms.push({ id: genId(), ip, name });
     }
     await saveToDisk();
   }
@@ -434,22 +486,6 @@
   }
 
   // ═══════════════════════════════════
-  //  密码认证
-  // ═══════════════════════════════════
-
-  async function promptForPassword(ip) {
-    const pwd = prompt(`教室「${state.className || ip}」需要管理密码才能修改数据：\n\n请输入管理密码（取消则仅查看）：`);
-    if (pwd === null || pwd.trim() === '') return; // 取消 → 保持只读
-    // 断开并重新连接，带上密码
-    const room = state.rooms.find(r => r.ip === ip);
-    if (room) room.password = pwd.trim();
-    await saveToDisk();
-    // 重新连接
-    disconnect();
-    setTimeout(() => connect(ip), 300);
-  }
-
-  // ═══════════════════════════════════
   //  主区域
   // ═══════════════════════════════════
 
@@ -458,15 +494,111 @@
     if (roomHeader) roomHeader.classList.remove('hidden');
     if (msgRow)     msgRow.classList.remove('hidden');
     if (searchRow)  searchRow.classList.remove('hidden');
+    if (callFlow)   callFlow.classList.remove('hidden');
     if (emptyState) emptyState.style.display = 'none';
     if (roomTitle)  roomTitle.textContent = name;
   }
 
+  function isHomeroomTeacher() { return !!(state.teacherStatus && state.teacherStatus.role === '班主任'); }
+  function canModifySubject(subject) { return isHomeroomTeacher() || !!(state.teacherStatus && (state.teacherStatus.subjects || []).includes(subject)); }
+
+  function applyTeacherPermissions() {
+    const homeroom = isHomeroomTeacher();
+    if (classroomTabBtn) classroomTabBtn.classList.toggle('hidden', !homeroom);
+    if (!homeroom && document.querySelector('.main-tab.active')?.dataset.tab === 'classroom') switchMainTab('call');
+  }
+
+  function buildStudentsFromText(value) {
+    const names = String(value || '').split(/\r?\n/).map(item => item.trim()).filter(Boolean);
+    if (new Set(names).size !== names.length) return { error: '学生名单中有重复姓名，请整理后再保存' };
+    const existingByName = new Map((state.students || []).map(student => [student.name, student]));
+    return {
+      students: names.map((name, index) => ({
+        id: (existingByName.get(name) || {}).id || ('s' + Date.now().toString(36) + index),
+        name,
+      })),
+    };
+  }
+
+  function submitClassroomConfig(nameInput, studentsInput, forced) {
+    if (!isHomeroomTeacher()) return;
+    const className = nameInput.value.trim();
+    const parsed = buildStudentsFromText(studentsInput.value);
+    const showError = message => {
+      if (forced && setupError) { setupError.textContent = message; setupError.classList.remove('hidden'); }
+      else alert(message);
+    };
+    if (!className) { showError('请输入班级名称'); nameInput.focus(); return; }
+    if (parsed.error) { showError(parsed.error); return; }
+    if (!parsed.students.length) { showError('请至少添加一名学生'); studentsInput.focus(); return; }
+    if (!state.ws || state.ws.readyState !== WebSocket.OPEN) { showError('教室连接已断开，请重新连接后再保存'); return; }
+    if (setupError) setupError.classList.add('hidden');
+    state.ws.send(JSON.stringify({ type: 'update-classroom', classroom: { className, students: parsed.students } }));
+    if (forced && completeSetupBtn) { completeSetupBtn.disabled = true; completeSetupBtn.textContent = '正在启用…'; }
+  }
+
+  function showClassroomSetup() {
+    if (!classroomSetupOverlay) return;
+    if (setupClassName && !setupClassName.value) setupClassName.value = state.className || '';
+    if (setupStudents && !setupStudents.value) setupStudents.value = (state.students || []).map(student => student.name).join('\n');
+    classroomSetupOverlay.classList.remove('hidden');
+    document.querySelector('.app')?.setAttribute('inert', '');
+    setTimeout(() => setupClassName && setupClassName.focus(), 0);
+  }
+
+  function hideClassroomSetup() {
+    if (!classroomSetupOverlay) return;
+    classroomSetupOverlay.classList.add('hidden');
+    if (completeSetupBtn) { completeSetupBtn.disabled = false; completeSetupBtn.textContent = '保存并启用教室'; }
+    const accountHidden = !accountOverlay || accountOverlay.classList.contains('hidden');
+    const approvalHidden = !approvalOverlay || approvalOverlay.classList.contains('hidden');
+    if (accountHidden && approvalHidden) document.querySelector('.app')?.removeAttribute('inert');
+  }
+
+  function renderClassroomManagement() {
+    if (!isHomeroomTeacher()) return;
+    if (manageClassName && document.activeElement !== manageClassName) manageClassName.value = state.className || '';
+    if (manageStudents && document.activeElement !== manageStudents) manageStudents.value = (state.students || []).map(student => student.name).join('\n');
+    renderTeacherManagement();
+  }
+
+  function teacherSubjectText(teacher) {
+    return (teacher.subjects || []).join('、') || '未设置授课科目';
+  }
+
+  function renderTeacherManagement() {
+    if (!pendingTeacherList || !approvedTeacherList) return;
+    const pending = state.teachers.pending || [];
+    const approved = state.teachers.approved || [];
+    pendingTeacherCount.textContent = String(pending.length);
+    approvedTeacherCount.textContent = String(approved.length);
+    pendingTeacherList.innerHTML = pending.length ? pending.map(teacher => `
+      <div class="teacher-manage-item">
+        <div class="teacher-manage-main"><strong>${esc(teacher.name)}</strong><small>${esc(teacherSubjectText(teacher))} · ${esc(teacher.connection_id.slice(-8))}</small></div>
+        <div class="teacher-manage-actions"><button class="btn btn-primary" data-teacher-action="approve" data-id="${esc(teacher.connection_id)}">批准加入</button><button class="btn btn-danger-text" data-teacher-action="reject" data-id="${esc(teacher.connection_id)}">拒绝</button></div>
+      </div>`).join('') : '<div class="teacher-manage-empty">暂无等待审核的教师</div>';
+    approvedTeacherList.innerHTML = approved.length ? approved.map(teacher => {
+      const homeroom = teacher.role === '班主任';
+      return `<div class="teacher-manage-item">
+        <div class="teacher-manage-main"><div class="teacher-role-line"><strong>${esc(teacher.name)}</strong><span class="teacher-role-chip${homeroom ? ' homeroom' : ''}">${esc(teacher.role)}</span></div><small>${homeroom ? '本教室绑定账户' : esc(teacherSubjectText(teacher))} · ${esc(teacher.connection_id.slice(-8))}</small></div>
+        <div class="teacher-manage-actions">${homeroom ? '' : `<button class="btn" data-teacher-action="edit" data-id="${esc(teacher.connection_id)}">科目授权</button><button class="btn btn-danger-text" data-teacher-action="remove" data-id="${esc(teacher.connection_id)}">移除</button>`}</div>
+      </div>`;
+    }).join('') : '<div class="teacher-manage-empty">暂无已加入教师</div>';
+  }
+
+  function sendTeacherManagement(action, connectionId, subjects) {
+    if (!state.ws || state.ws.readyState !== WebSocket.OPEN) { alert('教室连接已断开'); return; }
+    state.ws.send(JSON.stringify({ type: 'manage-teacher', action, connectionId, subjects: subjects || [] }));
+  }
+
   function hideRoomUI() {
-    hideMainUI();
-    hideJoinOverlay();
-    if (roomTitle) roomTitle.textContent = '';
-    state.teacherStatus = null;
+    if (mainTabs)   mainTabs.classList.add('hidden');
+    if (roomHeader) roomHeader.classList.add('hidden');
+    if (msgRow)     msgRow.classList.add('hidden');
+    if (searchRow)  searchRow.classList.add('hidden');
+    if (callFlow)   callFlow.classList.add('hidden');
+    if (emptyState) emptyState.style.display = '';
+    if (roomTitle)  roomTitle.textContent = '';
   }
 
   function renderStudents() {
@@ -492,111 +624,15 @@
     list.forEach(s => {
       const card = document.createElement('div');
       card.className = 'student-card';
-      if (state.selectedStudents.has(s.id)) card.classList.add('selected');
-      const initial = s.name.charAt(0);
-      card.innerHTML = `<div class="stu-avatar">${esc(initial)}</div><div class="stu-name">${esc(s.name)}</div><div class="card-check">✓</div>`;
-
-      // 点击卡片切换选中
-      card.addEventListener('click', (e) => {
-        // 不拦截按钮点击
-        if (e.target.closest('.call-btn')) return;
-        toggleSelect(s.id);
-        renderStudents();
-      });
+      card.innerHTML = `<div class="stu-name">${esc(s.name)}</div>`;
 
       const btn = document.createElement('button');
       btn.className = 'call-btn';
-      btn.textContent = '📢 呼叫';
+      btn.textContent = '呼叫';
       btn.addEventListener('click', () => callStudent(s, btn));
       card.appendChild(btn);
       studentGrid.appendChild(card);
     });
-
-    updateBatchBar();
-  }
-
-  function toggleSelect(id) {
-    if (state.selectedStudents.has(id)) {
-      state.selectedStudents.delete(id);
-    } else {
-      state.selectedStudents.add(id);
-    }
-  }
-
-  function updateBatchBar() {
-    if (!batchBar) return;
-    var count = state.selectedStudents.size;
-    if (count > 0) {
-      batchBar.classList.remove('hidden');
-      if (batchCount) batchCount.textContent = '已选 ' + count + ' 人';
-    } else {
-      batchBar.classList.add('hidden');
-    }
-  }
-
-  function selectAll() {
-    var list = getFilteredStudentList();
-    list.forEach(function (s) { state.selectedStudents.add(s.id); });
-    renderStudents();
-  }
-
-  function clearSelection() {
-    state.selectedStudents.clear();
-    renderStudents();
-  }
-
-  function getFilteredStudentList() {
-    var q = state.searchQuery || '';
-    return q ? state.students.filter(function (s) { return s.name.toLowerCase().includes(q); }) : state.students;
-  }
-
-  function batchCall() {
-    if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
-      alert('未连接到教室');
-      return;
-    }
-    if (state.selectedStudents.size === 0) return;
-
-    // 收集选中学生姓名
-    var names = [];
-    state.selectedStudents.forEach(function (sid) {
-      var student = state.students.find(function (s) { return s.id === sid; });
-      if (student) names.push(student.name);
-    });
-    if (names.length === 0) return;
-
-    var joinedNames = names.join('、');
-    var rawMsg = (callMessageInp && callMessageInp.value.trim()) || '{name}同学，请到办公室';
-    var msg = rawMsg.replace(/\{name\}/g, joinedNames);
-
-    var callId = genId();
-    state.ws.send(JSON.stringify({
-      type: 'call', callId: callId,
-      studentName: joinedNames,
-      className: state.className,
-      message: msg,
-    }));
-
-    state.callHistory.unshift({
-      id: callId,
-      roomName: state.className || (state.currentRoom ? state.currentRoom.ip : ''),
-      studentName: joinedNames,
-      time: new Date().toISOString(),
-      status: 'sent',
-    });
-
-    if (state.callHistory.length > MAX_HISTORY) state.callHistory.length = MAX_HISTORY;
-    renderHistory();
-    saveToDisk();
-
-    // 视觉反馈
-    var cards = studentGrid.querySelectorAll('.student-card.selected');
-    cards.forEach(function (c) { c.classList.add('card-called'); });
-    setTimeout(function () {
-      cards.forEach(function (c) { c.classList.remove('card-called'); });
-    }, 2000);
-
-    clearSelection();
   }
 
   // ═══════════════════════════════════
@@ -633,19 +669,250 @@
 
     btnEl.classList.add('called');
     btnEl.textContent = '✓ 已发送';
-    const card = btnEl.closest('.student-card');
-    if (card) card.classList.add('card-called');
     clearTimeout(state.callTimers[student.name]);
     state.callTimers[student.name] = setTimeout(() => {
       btnEl.classList.remove('called');
-      btnEl.textContent = '📢 呼叫';
-      if (card) card.classList.remove('card-called');
+      btnEl.textContent = '呼叫';
     }, 5000);
   }
 
   function updateCallStatus(callId, status) {
     const r = state.callHistory.find(x => x.id === callId);
     if (r) { r.status = status; renderHistory(); saveToDisk(); }
+  }
+
+  function renderFaceDetections() {
+    const faceGridUnknown = document.getElementById('faceGridUnknown');
+    const faceGridRegistered = document.getElementById('faceGridRegistered');
+    const faceSummary = document.getElementById('faceSummary');
+    const faceRoomName = document.getElementById('faceRoomName');
+    const unknownCountEl = document.getElementById('unknownCount');
+    const registeredCountEl = document.getElementById('registeredCount');
+
+    if (!faceGridUnknown || !faceGridRegistered) return;
+
+    const detections = state.faceDetections || [];
+    const students = state.students || [];
+    if (faceRoomName) faceRoomName.textContent = state.className ? state.className + ' — 人脸识别' : '人脸识别';
+
+    // ── 诊断后缀 ──
+    const recvAgo = state._faceRecvAt ? Math.round((Date.now() - state._faceRecvAt) / 1000) : -1;
+    const diag = ` [收#${state._faceRecvCount || 0}/${recvAgo}s前]`;
+
+    // ── 构建在场学生 ID 集合 ──
+    const presentIds = new Set();
+    for (const d of detections) {
+      if (d.isRecognized && d.studentId) presentIds.add(d.studentId);
+    }
+
+    // ═══════════════════════════════════════
+    //  1. 未标注人脸（未识别的检测结果）
+    // ═══════════════════════════════════════
+    const unknownCards = [];
+    const studentIdSet = new Set(students.map(s => s.id)); // 学生名单 ID 集合
+
+    for (const face of (state.pendingFaces || [])) {
+      unknownCards.push({
+        id: face.faceId,
+        name: '待班主任匹配',
+        status: 'unknown',
+        cropBase64: face.cropBase64 || null,
+        descriptor: face.descriptor,
+        lastSeen: face.lastSeen,
+      });
+    }
+
+    // ═══════════════════════════════════════
+    //  2. 已入库学生（全部注册学生 + 已识别但不在名单中的图库人脸）
+    // ═══════════════════════════════════════
+    const registeredCards = [];
+    const addedStudentIds = new Set(); // 跟踪已添加的学生，避免重复
+
+    for (const s of students) {
+      const isPresent = presentIds.has(s.id);
+      const det = isPresent ? detections.find(d => d.studentId === s.id) : null;
+      addedStudentIds.add(s.id);
+      registeredCards.push({
+        id: s.id,
+        name: s.name,
+        status: isPresent ? 'recognized' : 'absent',
+        cropBase64: det ? det.cropBase64 : null,
+        similarity: det ? det.similarity : 0,
+        isPresent,
+      });
+    }
+
+    // 已识别但不在学生名单中的人脸（纯图库注册，无学生记录）
+    for (const d of detections) {
+      if (d.isRecognized && d.studentId && !addedStudentIds.has(d.studentId)) {
+        addedStudentIds.add(d.studentId);
+        registeredCards.push({
+          id: d.studentId,
+          name: d.name || d.studentId,
+          status: 'recognized',
+          cropBase64: d.cropBase64 || null,
+          similarity: d.similarity || 0,
+          isPresent: true,
+        });
+      }
+    }
+
+    // 更新子标签计数
+    if (unknownCountEl) unknownCountEl.textContent = unknownCards.length;
+    if (registeredCountEl) registeredCountEl.textContent = registeredCards.length;
+
+    // 更新摘要
+    const presentCount = registeredCards.filter(c => c.isPresent).length;
+    const totalRegistered = registeredCards.length;
+    if (faceSummary) {
+      if (totalRegistered > 0) {
+        faceSummary.textContent = `${presentCount}/${totalRegistered} 已到${diag}`;
+      } else if (unknownCards.length > 0) {
+        faceSummary.textContent = `${unknownCards.length} 人待标注${diag}`;
+      } else {
+        faceSummary.textContent = `等待检测${diag}`;
+      }
+    }
+
+    console.log('[teacher] rendered', unknownCards.length, 'unknown +', registeredCards.length, 'registered');
+
+    // ═══════════════════════════════════════
+    //  渲染「未标注」网格
+    // ═══════════════════════════════════════
+    if (unknownCards.length === 0) {
+      faceGridUnknown.innerHTML = '<div class="muted-note">所有检测到的人脸均已标注入库</div>';
+    } else {
+      faceGridUnknown.innerHTML = unknownCards.map(c => {
+        if (c.cropBase64) {
+          return `<div class="face-card unknown" data-face-id="${c.id}">
+            <img class="face-crop" src="${c.cropBase64}" alt="未识别">
+            <div class="face-info">
+              <span class="face-name unknown">待班主任匹配</span>
+              ${state.teacherStatus && state.teacherStatus.role === '班主任' ? `<button class="face-label-btn" data-face-id="${c.id}">匹配姓名</button>` : '<span class="face-presence-badge absent">等待班主任处理</span>'}
+            </div>
+          </div>`;
+        } else {
+          return `<div class="face-card unknown" data-face-id="${c.id}">
+            <div class="face-placeholder">❓</div>
+            <div class="face-info">
+              <span class="face-name unknown">待班主任匹配</span>
+              ${state.teacherStatus && state.teacherStatus.role === '班主任' ? `<button class="face-label-btn" data-face-id="${c.id}">匹配姓名</button>` : '<span class="face-presence-badge absent">等待班主任处理</span>'}
+            </div>
+          </div>`;
+        }
+      }).join('');
+
+      // 绑定标注按钮（仅未标注网格）
+      faceGridUnknown.querySelectorAll('.face-label-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const faceId = btn.dataset.faceId;
+          const face = (state.pendingFaces || []).find(f => f.faceId === faceId);
+          if (face) openLabelModal(face);
+        });
+      });
+    }
+
+    // ═══════════════════════════════════════
+    //  渲染「已入库」网格
+    // ═══════════════════════════════════════
+    if (registeredCards.length === 0) {
+      faceGridRegistered.innerHTML = '<div class="muted-note">暂无已入库学生<br>在「未标注」中标注人脸即可自动入库</div>';
+    } else {
+      faceGridRegistered.innerHTML = registeredCards.map(c => {
+        if (c.isPresent && c.cropBase64) {
+          // 在场 + 有人脸截图：彩色显示
+          return `<div class="face-card recognized" data-face-id="${c.id}">
+            <img class="face-crop" src="${c.cropBase64}" alt="${esc(c.name)}">
+            <div class="face-info">
+              <span class="face-name recognized" title="${esc(c.name)}">${esc(c.name)}</span>
+              <span class="face-presence-badge present">✓ 在教室</span>
+            </div>
+          </div>`;
+        } else if (c.isPresent) {
+          // 在场但缺少截图
+          return `<div class="face-card recognized" data-face-id="${c.id}">
+            <div class="face-placeholder">👤</div>
+            <div class="face-info">
+              <span class="face-name recognized" title="${esc(c.name)}">${esc(c.name)}</span>
+              <span class="face-presence-badge present">✓ 在教室</span>
+            </div>
+          </div>`;
+        } else {
+          // 不在场：灰色
+          return `<div class="face-card absent" data-face-id="${c.id}">
+            <div class="face-placeholder">👤</div>
+            <div class="face-info">
+              <span class="face-name absent" title="${esc(c.name)}">${esc(c.name)}</span>
+              <span class="face-presence-badge absent">不在教室</span>
+            </div>
+          </div>`;
+        }
+      }).join('');
+    }
+  }
+
+  // ═══════════════════════════════════
+  //  人脸标注
+  // ═══════════════════════════════════
+
+  function openLabelModal(face) {
+    if (!labelModal || !labelStudentSelect || !labelNewName || !labelPreview) return;
+
+    state.pendingLabelFace = { faceId: face.faceId, descriptor: face.descriptor };
+
+    // 显示人脸缩略图
+    labelPreview.innerHTML = face.cropBase64
+      ? `<img src="${face.cropBase64}" class="label-crop" alt="人脸">`
+      : '';
+
+    // 填充已有学生列表
+    labelStudentSelect.innerHTML = '<option value="">-- 选择已有学生 --</option>';
+    (state.students || []).forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = s.name;
+      labelStudentSelect.appendChild(opt);
+    });
+
+    labelNewName.value = '';
+    labelModal.classList.remove('hidden');
+  }
+
+  function confirmLabel() {
+    if (!state.pendingLabelFace) return;
+
+    const selectVal = labelStudentSelect ? labelStudentSelect.value : '';
+    const newName = labelNewName ? labelNewName.value.trim() : '';
+
+    let studentId, name;
+
+    if (selectVal) {
+      studentId = selectVal;
+      const s = (state.students || []).find(st => st.id === selectVal);
+      name = s ? s.name : selectVal;
+    } else if (newName) {
+      // 新学生：生成 ID
+      studentId = 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      name = newName;
+    } else {
+      alert('请选择已有学生或输入新姓名');
+      return;
+    }
+
+    // 发送标注到教室端
+    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+      state.ws.send(JSON.stringify({
+        type: 'label-face',
+        faceId: state.pendingLabelFace.faceId,
+        studentId,
+        name,
+        descriptor: state.pendingLabelFace.descriptor,
+      }));
+    }
+
+    labelModal.classList.add('hidden');
+    state.pendingLabelFace = null;
   }
 
   function renderHistory() {
@@ -671,8 +938,23 @@
   // ═══════════════════════════════════
 
   function switchMainTab(name) {
-    mainTabBtns.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    mainTabBtns.forEach(b => {
+      const selected = b.dataset.tab === name;
+      b.classList.toggle('active', selected);
+      b.setAttribute('aria-selected', selected ? 'true' : 'false');
+    });
     mainTabContents.forEach(c => c.classList.toggle('hidden', c.id !== 'tab-' + name));
+  }
+
+  function handleTabKeydown(event, buttons) {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const buttonList = Array.from(buttons).filter(button => !button.classList.contains('hidden'));
+    const current = buttonList.indexOf(event.currentTarget);
+    const offset = event.key === 'ArrowRight' ? 1 : -1;
+    const next = buttonList[(current + offset + buttonList.length) % buttonList.length];
+    next.focus();
+    next.click();
   }
 
   // ═══════════════════════════════════
@@ -699,17 +981,10 @@
     });
   }
 
-  function getTeacherSubjects() {
-    var t = state.teacherStatus;
-    if (!t || t.role === '班主任') return state.subjects;
-    return state.subjects.filter(function (s) { return (t.subjects || []).indexOf(s) !== -1; });
-  }
-
   function buildSubjectDrop() {
     if (!hwSubjectDrop) return;
     let html = '';
-    var subs = getTeacherSubjects();
-    subs.forEach(sub => {
+    state.subjects.forEach(sub => {
       const chk = selectedSubjects.length === 0 || selectedSubjects.includes(sub) ? 'checked' : '';
       html += `<label><input type="checkbox" value="${esc(sub)}" ${chk}> ${esc(sub)}</label>`;
     });
@@ -727,7 +1002,7 @@
     });
     hwSubjectDrop.querySelectorAll('button[data-ms-action]').forEach(b => {
       b.addEventListener('click', () => {
-        if (b.dataset.msAction === 'all') selectedSubjects = [...getTeacherSubjects()];
+        if (b.dataset.msAction === 'all') selectedSubjects = [...state.subjects];
         else selectedSubjects = [];
         buildSubjectDrop(); updateSubjectBtn(); applyFilters();
       });
@@ -736,8 +1011,7 @@
 
   function updateSubjectBtn() {
     if (!hwSubjectBtn) return;
-    var teacherSubs = getTeacherSubjects();
-    if (selectedSubjects.length === 0 || selectedSubjects.length === teacherSubs.length) {
+    if (selectedSubjects.length === 0 || selectedSubjects.length === state.subjects.length) {
       hwSubjectBtn.textContent = '全部学科 ▾';
     } else if (selectedSubjects.length <= 2) {
       hwSubjectBtn.textContent = selectedSubjects.join(', ') + ' ▾';
@@ -749,13 +1023,6 @@
   function buildAssignDrop() {
     if (!hwAssignDrop) return;
     let hws = state.assignments;
-
-    // 授课教师只能看到自己学科的作业
-    var t = state.teacherStatus;
-    if (t && t.role !== '班主任' && (t.subjects || []).length > 0) {
-      hws = hws.filter(function (a) { return t.subjects.indexOf(a.subject) !== -1; });
-    }
-
     const from = hwDateFrom ? hwDateFrom.value : '';
     const to = hwDateTo ? hwDateTo.value : '';
     if (from) hws = hws.filter(a => a.date >= from);
@@ -816,19 +1083,10 @@
 
   function renderHomework() {
     if (!hwSubjectBtn) return;
-    if (delSubjectBtn) delSubjectBtn.disabled = state.subjects.length === 0;
+    applyTeacherPermissions();
 
-    // 授课教师：隐藏学科筛选 + 学科管理按钮（角色来自教室端 sync）
-    var t = state.teacherStatus;
-    var isHR = !t || t.role === '班主任';
-    if (hwSubjectMs)     hwSubjectMs.style.display     = isHR ? '' : 'none';
-    if (addSubjectBtn)   addSubjectBtn.style.display   = isHR ? '' : 'none';
-    if (delSubjectBtn)   delSubjectBtn.style.display   = isHR ? '' : 'none';
-
-    if (isHR) {
-      buildSubjectDrop();
-      updateSubjectBtn();
-    }
+    buildSubjectDrop();
+    updateSubjectBtn();
     buildAssignDrop();
     updateAssignBtn();
 
@@ -864,17 +1122,16 @@
     html += '<th class="hw-matrix-name">姓名</th>';
     html += `<th class="hw-matrix-hw"><div class="hw-matrix-hw-title">${esc(a.title)}</div>`;
     html += `<div class="hw-matrix-hw-date">${esc(a.subject)} · ${esc(a.date)}</div>`;
-    html += `<select class="hw-batch-sel" data-batch-aid="${a.id}"><option value="">批量▼</option>`;
-    html += '<option value="已提交">全部已提交</option><option value="未提交">全部未提交</option>';
-    html += '<option value="迟交">全部迟交</option><option value="免交">全部免交</option></select>';
+    const editable = canModifySubject(a.subject);
+    if (editable) html += `<select class="hw-batch-sel" data-batch-aid="${a.id}"><option value="">批量▼</option><option value="已提交">全部已提交</option><option value="未提交">全部未提交</option><option value="迟交">全部迟交</option><option value="免交">全部免交</option></select>`;
     html += '<div class="hw-matrix-hw-acts">';
-    html += `<button class="btn-ico" data-edit-hw="${a.id}">✎</button>`;
-    html += `<button class="btn-ico" data-del-hw="${a.id}">×</button></div></th></tr></thead><tbody>`;
+    if (editable) html += `<button class="btn-ico" data-edit-hw="${a.id}">✎</button><button class="btn-ico" data-del-hw="${a.id}">×</button>`;
+    html += '</div></th></tr></thead><tbody>';
     state.students.forEach(s => {
       const st = (a.submissions && a.submissions[s.id]) || '未提交';
       if (filterStatus && st !== filterStatus) return;
       html += `<tr><td class="hw-matrix-name">${esc(s.name)}</td><td class="hw-matrix-cell">`;
-      html += `<select class="hw-grid-status-select ${hwStatusClass(st)}" data-aid="${a.id}" data-sid="${s.id}" data-prev="${esc(st)}">`;
+      html += `<select class="hw-grid-status-select ${hwStatusClass(st)}" data-aid="${a.id}" data-sid="${s.id}" data-prev="${esc(st)}" ${editable ? '' : 'disabled'}>`;
       builtin.forEach(x => { html += `<option value="${x}" ${st===x?'selected':''}>${x}</option>`; });
       if (customs.length > 0) {
         html += '<optgroup label="自定义">';
@@ -906,58 +1163,17 @@
     });
   }
 
-  // ── 学科弹窗 ──
-
-  function openAddSubject() {
-    if (!hwSubjectModal || !hwSubjectName) return;
-    hwSubjectName.value = '';
-    hwSubjectModal.classList.remove('hidden');
-    hwSubjectName.focus();
-  }
-
-  function confirmAddSubject() {
-    if (!hwSubjectName || !hwSubjectModal) return;
-    const name = hwSubjectName.value.trim();
-    if (!name) { hwSubjectName.focus(); return; }
-    if (state.subjects.includes(name)) { alert('该学科已存在'); return; }
-    state.subjects.push(name);
-    state.subjects.sort();
-    // 自动选中新学科
-    if (!selectedSubjects.includes(name)) selectedSubjects.push(name);
-    hwSubjectModal.classList.add('hidden');
-    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-      state.ws.send(JSON.stringify({ type: 'update-subjects', action: 'add', subject: name }));
-    }
-    renderHomework();
-  }
-
-  function deleteCurrentSubject() {
-    if (selectedSubjects.length === 0) { alert('请先在学科多选中选择一个学科'); return; }
-    const subject = selectedSubjects[0];
-    const cnt = state.assignments.filter(a => a.subject === subject).length;
-    const msg = cnt ? `学科「${subject}」下有 ${cnt} 项作业，删除学科将同时删除这些作业，确定吗？` : `确定删除学科「${subject}」吗？`;
-    if (!confirm(msg)) return;
-    state.subjects = state.subjects.filter(s => s !== subject);
-    state.assignments = state.assignments.filter(a => a.subject !== subject);
-    selectedSubjects = selectedSubjects.filter(s => s !== subject);
-    selectedAssigns = selectedAssigns.filter(id => { const a = state.assignments.find(x => x.id === id); return a && a.subject !== subject; });
-    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-      state.ws.send(JSON.stringify({ type: 'update-subjects', action: 'delete', subject }));
-    }
-    renderHomework();
-  }
-
   // ── 作业列表 ──
 
   function updateHwSubjectSelect() {
     if (!hwModalSubject) return;
     hwModalSubject.innerHTML = '';
-    var subs = getTeacherSubjects();
-    if (subs.length === 0) {
-      hwModalSubject.innerHTML = '<option value="">-- 请先添加学科 --</option>';
+    const availableSubjects = state.subjects.filter(canModifySubject);
+    if (availableSubjects.length === 0) {
+      hwModalSubject.innerHTML = '<option value="">-- 没有可管理的学科 --</option>';
       return;
     }
-    subs.forEach(sub => {
+    availableSubjects.forEach(sub => {
       const opt = document.createElement('option');
       opt.value = sub; opt.textContent = sub;
       hwModalSubject.appendChild(opt);
@@ -966,13 +1182,6 @@
 
   function getFilteredAssignments(subject) {
     let hws = state.assignments;
-
-    // 授课教师只能看到自己学科的作业
-    var t = state.teacherStatus;
-    if (t && t.role !== '班主任' && (t.subjects || []).length > 0) {
-      hws = hws.filter(function (a) { return t.subjects.indexOf(a.subject) !== -1; });
-    }
-
     if (subject) hws = hws.filter(a => a.subject === subject);
     if (selectedSubjects.length > 0) hws = hws.filter(a => selectedSubjects.includes(a.subject));
     if (selectedAssigns.length > 0) hws = hws.filter(a => selectedAssigns.includes(a.id));
@@ -1002,19 +1211,21 @@
     let html = '<div class="hw-table-wrap"><table class="hw-matrix"><thead><tr>';
     html += '<th class="hw-matrix-name">姓名</th>';
     hws.forEach(a => {
+      const editable = canModifySubject(a.subject);
       html += `<th class="hw-matrix-hw">`;
       html += `<div class="hw-matrix-hw-title" title="${esc(a.title)}">${esc(a.title)}</div>`;
       html += `<div class="hw-matrix-hw-date">${esc(a.date)}</div>`;
-      html += `<select class="hw-batch-sel" data-batch-aid="${a.id}">`;
-      html += `<option value="">批量▼</option>`;
-      html += `<option value="已提交">全部已提交</option>`;
-      html += `<option value="未提交">全部未提交</option>`;
-      html += `<option value="迟交">全部迟交</option>`;
-      html += `<option value="免交">全部免交</option>`;
-      html += `</select>`;
+      html += `<div class="hw-matrix-hw-date">${a.deadline ? ('截止 ' + esc(formatDeadline(a.deadline))) : '未设置截止时间'}</div>`;
+      if (editable) {
+        html += `<select class="hw-batch-sel" data-batch-aid="${a.id}">`;
+        html += `<option value="">批量▼</option>`;
+        html += `<option value="已提交">全部已提交</option>`;
+        html += `<option value="未提交">全部未提交</option>`;
+        html += `<option value="迟交">全部迟交</option>`;
+        html += `<option value="免交">全部免交</option></select>`;
+      }
       html += `<div class="hw-matrix-hw-acts">`;
-      html += `<button class="btn-ico" data-edit-hw="${a.id}" title="编辑">✎</button>`;
-      html += `<button class="btn-ico" data-del-hw="${a.id}" title="删除">×</button>`;
+      if (editable) html += `<button class="btn-ico" data-edit-hw="${a.id}" title="编辑">✎</button><button class="btn-ico" data-del-hw="${a.id}" title="删除">×</button>`;
       html += `</div></th>`;
     });
     html += '</tr></thead><tbody>';
@@ -1032,8 +1243,9 @@
       html += `<td class="hw-matrix-name">${esc(s.name)}</td>`;
       hws.forEach(a => {
         const status = (a.submissions && a.submissions[s.id]) || '未提交';
+        const editable = canModifySubject(a.subject);
         html += `<td class="hw-matrix-cell">`;
-        html += `<select class="hw-grid-status-select ${hwStatusClass(status)}" data-aid="${a.id}" data-sid="${s.id}" data-prev="${esc(status)}">`;
+        html += `<select class="hw-grid-status-select ${hwStatusClass(status)}" data-aid="${a.id}" data-sid="${s.id}" data-prev="${esc(status)}" ${editable ? '' : 'disabled'}>`;
         builtin.forEach(st => {
           html += `<option value="${st}" ${status === st ? 'selected' : ''}>${st}</option>`;
         });
@@ -1062,8 +1274,7 @@
   function getHwCustomStatuses() {
     const set = new Set();
     const builtin = ['已提交', '未提交', '迟交', '免交'];
-    var assignments = getFilteredAssignments(null);  // 授课教师只看自己学科的
-    assignments.forEach(a => {
+    state.assignments.forEach(a => {
       if (!a.submissions) return;
       Object.values(a.submissions).forEach(v => {
         if (v && !builtin.includes(v)) set.add(v);
@@ -1133,11 +1344,16 @@
   // ── 作业弹窗 ──
 
   function openAddHw() {
-    if (state.subjects.length === 0) { alert('请先添加学科'); return; }
+    if (state.subjects.filter(canModifySubject).length === 0) { alert('你没有可布置作业的授权学科，请联系班主任'); return; }
     state.editingAssignmentId = null;
     if (hwModalTitleLabel) hwModalTitleLabel.textContent = '添加作业';
     if (hwModalTitle) hwModalTitle.value = '';
     if (hwModalDate) hwModalDate.value = new Date().toISOString().slice(0, 10);
+    if (hwModalDeadline) {
+      const later = new Date(Date.now() + 60 * 60 * 1000);
+      later.setMinutes(0, 0, 0);
+      hwModalDeadline.value = toDateTimeLocal(later);
+    }
     updateHwSubjectSelect();
     // 默认选中已选的学科
     if (hwModalSubject && selectedSubjects.length > 0) {
@@ -1158,6 +1374,7 @@
     if (hwModalSubject) hwModalSubject.value = a.subject;
     if (hwModalTitle) hwModalTitle.value = a.title;
     if (hwModalDate) hwModalDate.value = a.date;
+    if (hwModalDeadline) hwModalDeadline.value = a.deadline || '';
     hwModal.classList.remove('hidden');
     if (hwModalTitle) hwModalTitle.focus();
   }
@@ -1169,15 +1386,17 @@
     const title = hwModalTitle.value.trim();
     if (!title) { hwModalTitle.focus(); return; }
     const date = hwModalDate.value || new Date().toISOString().slice(0, 10);
+    const deadline = hwModalDeadline && hwModalDeadline.value ? hwModalDeadline.value : '';
+    if (!deadline) { alert('请设置提交截止时间'); return; }
 
     const isEdit = !!state.editingAssignmentId;
     if (isEdit) {
       const a = state.assignments.find(x => x.id === state.editingAssignmentId);
-      if (a) { a.subject = subject; a.title = title; a.date = date; }
+      if (a) { a.subject = subject; a.title = title; a.date = date; a.deadline = deadline; }
     } else {
       const subs = {};
       state.students.forEach(s => { subs[s.id] = '未提交'; });
-      state.assignments.push({ id: genId(), subject, title, date, submissions: subs });
+      state.assignments.push({ id: genId(), subject, title, date, deadline, submissions: subs });
     }
 
     const savedId = state.editingAssignmentId;
@@ -1289,10 +1508,9 @@
   //  工具
   // ═══════════════════════════════════
 
-  // 基于时间戳的唯一 ID：毫秒时间戳(36进制) + 4位随机数
-  function genId() {
-    return Date.now().toString(36) + Math.floor(Math.random() * 46656).toString(36);
-  }
+  function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 9); }
+  function toDateTimeLocal(date) { return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0') + 'T' + String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0'); }
+  function formatDeadline(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit', hour12:false }); }
   function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 
   // ═══════════════════════════════════
@@ -1315,7 +1533,10 @@
     initEditor();
 
     // Tab 切换
-    mainTabBtns.forEach(btn => btn.addEventListener('click', () => switchMainTab(btn.dataset.tab)));
+    mainTabBtns.forEach(btn => {
+      btn.addEventListener('click', () => switchMainTab(btn.dataset.tab));
+      btn.addEventListener('keydown', event => handleTabKeydown(event, mainTabBtns));
+    });
 
     // 多选组件初始化
     initMultiSelects();
@@ -1336,24 +1557,41 @@
     if (hwDateTo)   hwDateTo.addEventListener('change', onDateChange);
 
     // 学科按钮
-    if (addSubjectBtn)       addSubjectBtn.addEventListener('click', openAddSubject);
-    if (delSubjectBtn)       delSubjectBtn.addEventListener('click', deleteCurrentSubject);
     if (addAssignmentBtn2)   addAssignmentBtn2.addEventListener('click', () => openAddHw());
-
-    // 学科弹窗
-    if (hwSubjectModalCancel)  hwSubjectModalCancel.addEventListener('click', () => hwSubjectModal && hwSubjectModal.classList.add('hidden'));
-    if (hwSubjectModalConfirm) hwSubjectModalConfirm.addEventListener('click', confirmAddSubject);
-    if (hwSubjectName) {
-      hwSubjectName.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') confirmAddSubject();
-        if (e.key === 'Escape') hwSubjectModal && hwSubjectModal.classList.add('hidden');
-      });
-    }
-    if (hwSubjectModal) {
-      hwSubjectModal.addEventListener('click', (e) => {
-        if (e.target === hwSubjectModal) hwSubjectModal.classList.add('hidden');
-      });
-    }
+    if (saveClassroomBtn) saveClassroomBtn.addEventListener('click', () => submitClassroomConfig(manageClassName, manageStudents, false));
+    if (completeSetupBtn) completeSetupBtn.addEventListener('click', () => submitClassroomConfig(setupClassName, setupStudents, true));
+    if (refreshTeachersBtn) refreshTeachersBtn.addEventListener('click', () => {
+      if (state.ws && state.ws.readyState === WebSocket.OPEN) state.ws.send(JSON.stringify({ type: 'request-sync' }));
+    });
+    const handleTeacherListClick = event => {
+      const button = event.target.closest('[data-teacher-action]');
+      if (!button) return;
+      const action = button.dataset.teacherAction;
+      const connectionId = button.dataset.id;
+      if (action === 'edit') {
+        const teacher = (state.teachers.approved || []).find(item => item.connection_id === connectionId);
+        if (!teacher) return;
+        editingTeacherId = connectionId;
+        teacherEditName.textContent = teacher.name;
+        teacherEditSubjects.value = (teacher.subjects || []).join(', ');
+        teacherEditModal.classList.remove('hidden');
+        teacherEditSubjects.focus();
+      } else if ((action === 'remove' || action === 'reject') && !confirm(action === 'remove' ? '确定移除这位任课教师吗？' : '确定拒绝这条加入请求吗？')) {
+        return;
+      } else {
+        sendTeacherManagement(action, connectionId);
+      }
+    };
+    if (pendingTeacherList) pendingTeacherList.addEventListener('click', handleTeacherListClick);
+    if (approvedTeacherList) approvedTeacherList.addEventListener('click', handleTeacherListClick);
+    if (teacherEditCancel) teacherEditCancel.addEventListener('click', () => teacherEditModal.classList.add('hidden'));
+    if (teacherEditSave) teacherEditSave.addEventListener('click', () => {
+      const subjects = teacherEditSubjects.value.split(/[,，]/).map(item => item.trim()).filter(Boolean);
+      if (!subjects.length) { alert('请至少填写一个授课科目'); teacherEditSubjects.focus(); return; }
+      sendTeacherManagement('update', editingTeacherId, subjects);
+      teacherEditModal.classList.add('hidden');
+    });
+    if (teacherEditModal) teacherEditModal.addEventListener('click', event => { if (event.target === teacherEditModal) teacherEditModal.classList.add('hidden'); });
 
     // 作业弹窗
     if (hwModalCancel)  hwModalCancel.addEventListener('click', () => hwModal && hwModal.classList.add('hidden'));
@@ -1370,35 +1608,75 @@
       });
     }
 
-    // 账户事件
-    if (showRegister) showRegister.addEventListener('click', function (e) { e.preventDefault(); showAccountOverlay('register'); });
-    if (showLogin)    showLogin.addEventListener('click',    function (e) { e.preventDefault(); showAccountOverlay('login'); });
-    if (regBtn) regBtn.addEventListener('click', handleRegister);
-    if (loginBtn) loginBtn.addEventListener('click', handleLogin);
-    // Enter 键登录/注册
-    if (loginPassword) loginPassword.addEventListener('keydown', function (e) { if (e.key === 'Enter') handleLogin(); });
-    if (regPassword2)  regPassword2.addEventListener('keydown',  function (e) { if (e.key === 'Enter') handleRegister(); });
-    // 导出复制
-    var copyBtn = document.getElementById('copyExportBtn');
-    if (copyBtn) copyBtn.addEventListener('click', function () {
-      var inp = document.getElementById('exportInfo');
-      if (inp) { inp.select(); document.execCommand('copy'); }
-    });
-    // 加入教室
-    // ── 批量呼叫 ──
-    if (batchSelectAll) batchSelectAll.addEventListener('click', selectAll);
-    if (batchClear)     batchClear.addEventListener('click', clearSelection);
-    if (batchCallBtn)   batchCallBtn.addEventListener('click', batchCall);
+    // 人脸标注弹窗
+    if (labelCancel)  labelCancel.addEventListener('click', () => labelModal && labelModal.classList.add('hidden'));
+    if (labelConfirm) labelConfirm.addEventListener('click', confirmLabel);
+    if (labelNewName) {
+      labelNewName.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') confirmLabel();
+        if (e.key === 'Escape') labelModal && labelModal.classList.add('hidden');
+      });
+    }
+    if (labelModal) {
+      labelModal.addEventListener('click', (e) => {
+        if (e.target === labelModal) labelModal.classList.add('hidden');
+      });
+    }
 
-    var joinRequestBtn = document.getElementById('joinRequestBtn');
-    if (joinRequestBtn) joinRequestBtn.addEventListener('click', sendJoinRequest);
-    // 重新连接检查（共用）
-    var reconnectBtns = document.querySelectorAll('#joinReconnectBtn, #joinCheckBtn');
-    reconnectBtns.forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        if (state.currentRoom) {
-          disconnect();
-          setTimeout(function () { connect(state.currentRoom.ip); }, 300);
+    if (loginForm) loginForm.addEventListener('submit', handleLogin);
+    if (registerForm) registerForm.addEventListener('submit', handleRegister);
+    const showRegister = document.getElementById('showRegister');
+    const showLogin = document.getElementById('showLogin');
+    if (showRegister) showRegister.addEventListener('click', () => showAccountOverlay('register'));
+    if (showLogin) showLogin.addEventListener('click', () => showAccountOverlay('login'));
+    if (accountMenuBtn) accountMenuBtn.addEventListener('click', openAccountModal);
+    const accountModalClose = document.getElementById('accountModalClose');
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (accountModalClose) accountModalClose.addEventListener('click', () => accountModal && accountModal.classList.add('hidden'));
+    if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
+    if (accountModal) accountModal.addEventListener('click', event => {
+      if (event.target === accountModal) accountModal.classList.add('hidden');
+    });
+    const approvalRetryBtn = document.getElementById('approvalRetryBtn');
+    const approvalCancelBtn = document.getElementById('approvalCancelBtn');
+    if (approvalRetryBtn) approvalRetryBtn.addEventListener('click', () => {
+      const ip = state.pendingRoomIp || (state.currentRoom && state.currentRoom.ip);
+      if (ip) connect(ip);
+    });
+    if (approvalCancelBtn) approvalCancelBtn.addEventListener('click', () => {
+      hideApprovalOverlay();
+      disconnect();
+    });
+
+    // 人脸子标签切换（未标注 / 已入库）
+    const faceSubtabs = document.querySelectorAll('.face-subtab');
+    const faceGridUnknownEl = document.getElementById('faceGridUnknown');
+    const faceGridRegisteredEl = document.getElementById('faceGridRegistered');
+    const faceHintUnknown = document.getElementById('faceHintUnknown');
+    const faceHintRegistered = document.getElementById('faceHintRegistered');
+
+    faceSubtabs.forEach(tab => {
+      tab.addEventListener('keydown', event => handleTabKeydown(event, Array.from(faceSubtabs)));
+      tab.addEventListener('click', () => {
+        faceSubtabs.forEach(t => {
+          t.classList.remove('active');
+          t.setAttribute('aria-selected', 'false');
+        });
+        tab.classList.add('active');
+        tab.setAttribute('aria-selected', 'true');
+        const target = tab.dataset.subtab;
+        faceSubtabActive = target;
+
+        if (target === 'unknown') {
+          if (faceGridUnknownEl) faceGridUnknownEl.classList.remove('hidden');
+          if (faceGridRegisteredEl) faceGridRegisteredEl.classList.add('hidden');
+          if (faceHintUnknown) faceHintUnknown.classList.remove('hidden');
+          if (faceHintRegistered) faceHintRegistered.classList.add('hidden');
+        } else {
+          if (faceGridUnknownEl) faceGridUnknownEl.classList.add('hidden');
+          if (faceGridRegisteredEl) faceGridRegisteredEl.classList.remove('hidden');
+          if (faceHintUnknown) faceHintUnknown.classList.add('hidden');
+          if (faceHintRegistered) faceHintRegistered.classList.remove('hidden');
         }
       });
     });
@@ -1429,21 +1707,35 @@
     roomTitle      = document.getElementById('roomTitle');
     studentCount   = document.getElementById('studentCount');
     msgRow         = document.getElementById('msgRow');
+    callFlow       = document.getElementById('callFlow');
     callMessageInp = document.getElementById('callMessage');
     msgEditor      = document.getElementById('msgEditor');
     studentGrid    = document.getElementById('studentGrid');
     emptyState     = document.getElementById('emptyState');
-    // 批量呼叫
-    batchBar       = document.getElementById('batchBar');
-    batchCount     = document.getElementById('batchCount');
-    batchSelectAll = document.getElementById('batchSelectAll');
-    batchClear     = document.getElementById('batchClear');
-    batchCallBtn   = document.getElementById('batchCallBtn');
     searchInput    = document.getElementById('searchInput');
     searchRow      = document.getElementById('searchRow');
     searchResult   = document.getElementById('searchResult');
     historyTbody   = document.querySelector('#historyTable tbody');
     noHistory      = document.getElementById('noHistory');
+
+    accountOverlay = document.getElementById('accountOverlay');
+    accountTitle   = document.getElementById('accountTitle');
+    accountDesc    = document.getElementById('accountDesc');
+    loginForm      = document.getElementById('loginForm');
+    registerForm   = document.getElementById('registerForm');
+    loginName      = document.getElementById('loginName');
+    loginPassword  = document.getElementById('loginPassword');
+    loginError     = document.getElementById('loginError');
+    regName        = document.getElementById('regName');
+    regSubjects    = document.getElementById('regSubjects');
+    regPassword    = document.getElementById('regPassword');
+    regPassword2   = document.getElementById('regPassword2');
+    regError       = document.getElementById('regError');
+    teacherInfo    = document.getElementById('teacherInfo');
+    accountMenuBtn = document.getElementById('accountMenuBtn');
+    accountModal   = document.getElementById('accountModal');
+    approvalOverlay= document.getElementById('approvalOverlay');
+    approvalDesc   = document.getElementById('approvalDesc');
 
     // Tab
     mainTabs      = document.getElementById('mainTabs');
@@ -1460,83 +1752,61 @@
     hwAssignBtn    = document.getElementById('hwAssignBtn');
     hwAssignDrop   = document.getElementById('hwAssignDrop');
 
-    addSubjectBtn        = document.getElementById('addSubjectBtn');
-    delSubjectBtn        = document.getElementById('delSubjectBtn');
     hwStatusFilter       = document.getElementById('hwStatusFilter');
     hwDateFrom           = document.getElementById('hwDateFrom');
     hwDateTo             = document.getElementById('hwDateTo');
     addAssignmentBtn2    = document.getElementById('addAssignmentBtn2');
     hwContent            = document.getElementById('hwContent');
-    hwSubjectModal        = document.getElementById('hwSubjectModal');
-    hwSubjectName         = document.getElementById('hwSubjectName');
-    hwSubjectModalCancel  = document.getElementById('hwSubjectModalCancel');
-    hwSubjectModalConfirm = document.getElementById('hwSubjectModalConfirm');
     hwModal               = document.getElementById('hwModal');
     hwModalTitleLabel     = document.getElementById('hwModalTitleLabel');
     hwModalSubject        = document.getElementById('hwModalSubject');
     hwModalTitle          = document.getElementById('hwModalTitle');
     hwModalDate           = document.getElementById('hwModalDate');
+    hwModalDeadline       = document.getElementById('hwModalDeadline');
     hwModalCancel         = document.getElementById('hwModalCancel');
     hwModalConfirm        = document.getElementById('hwModalConfirm');
+    classroomTabBtn       = document.getElementById('classroomTabBtn');
+    manageClassName       = document.getElementById('manageClassName');
+    manageStudents        = document.getElementById('manageStudents');
+    saveClassroomBtn      = document.getElementById('saveClassroomBtn');
+    classroomSetupOverlay = document.getElementById('classroomSetupOverlay');
+    setupClassName        = document.getElementById('setupClassName');
+    setupStudents         = document.getElementById('setupStudents');
+    setupError            = document.getElementById('setupError');
+    completeSetupBtn      = document.getElementById('completeSetupBtn');
+    pendingTeacherList    = document.getElementById('pendingTeacherList');
+    approvedTeacherList   = document.getElementById('approvedTeacherList');
+    pendingTeacherCount   = document.getElementById('pendingTeacherCount');
+    approvedTeacherCount  = document.getElementById('approvedTeacherCount');
+    refreshTeachersBtn    = document.getElementById('refreshTeachersBtn');
+    teacherEditModal      = document.getElementById('teacherEditModal');
+    teacherEditName       = document.getElementById('teacherEditName');
+    teacherEditSubjects   = document.getElementById('teacherEditSubjects');
+    teacherEditCancel     = document.getElementById('teacherEditCancel');
+    teacherEditSave       = document.getElementById('teacherEditSave');
 
-    // 账户
-    accountOverlay   = document.getElementById('accountOverlay');
-    accountTitle     = document.getElementById('accountTitle');
-    loginForm        = document.getElementById('loginForm');
-    registerForm     = document.getElementById('registerForm');
-    loginName        = document.getElementById('loginName');
-    loginPassword    = document.getElementById('loginPassword');
-    loginError       = document.getElementById('loginError');
-    loginBtn         = document.getElementById('loginBtn');
-    regName          = document.getElementById('regName');
-    regPassword      = document.getElementById('regPassword');
-    regPassword2     = document.getElementById('regPassword2');
-    regSubjects      = document.getElementById('regSubjects');
-    regError         = document.getElementById('regError');
-    regBtn           = document.getElementById('regBtn');
-    showRegister     = document.getElementById('showRegister');
-    showLogin        = document.getElementById('showLogin');
-    teacherInfo      = document.getElementById('teacherInfo');
-    joinOverlay      = document.getElementById('joinOverlay');
-    joinDesc         = document.getElementById('joinDesc');
-    joinRequestView  = document.getElementById('joinRequestView');
-    joinWaitingView  = document.getElementById('joinWaitingView');
-
-    // 账户管理
-    acctModal        = document.getElementById('acctModal');
-    acctMgmtName     = document.getElementById('acctMgmtName');
-    acctMgmtId       = document.getElementById('acctMgmtId');
-    acctMgmtSubjects = document.getElementById('acctMgmtSubjects');
-    acctMgmtExport   = document.getElementById('acctMgmtExport');
-
-    // 账户设置按钮（直接绑定，不走 bindEvents）
-    var gearBtn = document.getElementById('acctGearBtn');
-    if (gearBtn) { gearBtn.onclick = openAcctModal; }
-    if (acctModal) { acctModal.addEventListener('click', function (e) { if (e.target === acctModal) closeAcctModal(); }); }
-    var acctClose = document.getElementById('acctMgmtClose');
-    if (acctClose) { acctClose.onclick = closeAcctModal; }
-    var acctLogout = document.getElementById('acctMgmtLogout');
-    if (acctLogout) { acctLogout.onclick = handleLogout; }
-    var acctDelete = document.getElementById('acctMgmtDelete');
-    if (acctDelete) { acctDelete.onclick = handleDeleteAccount; }
-    var acctCopy = document.getElementById('acctMgmtCopy');
-    if (acctCopy) { acctCopy.onclick = function () { if (acctMgmtExport) { acctMgmtExport.select(); document.execCommand('copy'); } }; }
+    // 人脸识别 DOM
+    faceSection        = document.getElementById('faceSection');
+    faceRoomName       = document.getElementById('faceRoomName');
+    faceSummary        = document.getElementById('faceSummary');
+    faceGridUnknown    = document.getElementById('faceGridUnknown');
+    faceGridRegistered = document.getElementById('faceGridRegistered');
+    // 标注弹窗 DOM
+    labelModal        = document.getElementById('labelModal');
+    labelPreview      = document.getElementById('labelPreview');
+    labelStudentSelect = document.getElementById('labelStudentSelect');
+    labelNewName      = document.getElementById('labelNewName');
+    labelCancel       = document.getElementById('labelCancel');
+    labelConfirm      = document.getElementById('labelConfirm');
 
     bindEvents();
     loadFromDisk().then(data => {
       state.rooms       = data.rooms;
       state.callHistory = data.callHistory;
-      // 账户检查：有账户直接进入，无账户显示注册
-      if (data.account && data.account.connectionId) {
-        state.account = { name: data.account.name, subjects: data.account.subjects || [], connectionId: data.account.connectionId };
-        updateTeacherInfo();
-        // 账号已存在 → 直接进入主页，无需登录
-        hideAccountOverlay();
-      } else {
-        showAccountOverlay('register');
-      }
       renderRooms();
       renderHistory();
+      // 不恢复登录会话：每次启动都要求教师重新输入密码。
+      showAccountOverlay(data.account ? 'login' : 'register', data.account);
     });
   }
 

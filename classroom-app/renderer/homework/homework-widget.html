@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>今日作业</title>
+  <link rel="stylesheet" href="homework-widget.css">
+</head>
+<body>
+  <header class="widget-header">
+    <div class="drag-zone"><span class="widget-kicker">班级作业</span><h1>今日作业</h1></div>
+    <button id="closeWidget" class="close-button" type="button" aria-label="收起作业组件">×</button>
+  </header>
+  <main>
+    <div id="dateLabel" class="date-label"></div>
+    <section id="assignmentList" class="assignment-list" aria-live="polite"></section>
+    <section id="emptyState" class="empty-state" hidden><div>✓</div><h2>今天暂时没有待完成作业</h2><p>老师布置新作业后会自动显示在这里。</p></section>
+  </main>
+  <footer><span id="classLabel">正在同步班级数据</span><button id="refreshWidget" type="button">刷新</button></footer>
+  <script src="homework-widget.js"></script>
+</body>
+</html>

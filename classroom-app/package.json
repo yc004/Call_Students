@@ -4,31 +4,56 @@
   "description": "教室端 —— 大屏呼叫显示",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
-    "build": "electron-builder --win",
-    "build:portable": "electron-builder --win portable"
+    "start": "unset ELECTRON_RUN_AS_NODE && electron .",
+    "verify:syntax": "node ../scripts/verify-js-syntax.js classroom-app",
+    "prepare:models": "node scripts/prepare-native-models.js",
+    "verify:models": "node scripts/prepare-native-models.js --verify-only",
+    "build:native": "npm run verify:models && cmake-js build --directory native",
+    "build:native:clean": "cmake-js clean --directory native",
+    "test:native": "node native/test/test_bindings.js && node native/test/test_gallery.js",
+    "build": "npm run build:native && electron-builder --win",
+    "build:portable": "npm run build:native && electron-builder --win portable"
+  },
+  "cmake-js": {
+    "runtime": "electron",
+    "runtimeVersion": "42.4.0"
   },
   "build": {
     "appId": "com.schoolcall.classroom",
     "productName": "教室呼叫-教室端",
+    "afterPack": "scripts/verify-packaged-native.js",
     "directories": {
       "output": "dist"
     },
     "files": [
       "main.js",
       "preload.js",
-      "manage.html",
-      "manage.css",
-      "manage.js",
-      "popup.html",
-      "popup.css",
-      "popup.js",
-      "homework-board.html",
-      "homework-board.css",
-      "homework-board.js",
+      "face-gallery.js",
+      "icon.png",
+      "renderer/**/*",
+      "models/**/*",
+      "!models/onnx/**",
       "node_modules/**/*",
       "!node_modules/electron/**",
       "!data/*"
+    ],
+    "extraResources": [
+      {
+        "from": "native/build/Release",
+        "to": "native",
+        "filter": ["*.node", "*.dll", "*.dylib", "*.so"]
+      },
+      {
+        "from": "models/onnx",
+        "to": "models/onnx",
+        "filter": ["*.onnx", "models.json"]
+      }
+    ],
+    "asarUnpack": [
+      "native/build/Release/*.node",
+      "native/build/Release/*.dll",
+      "native/build/Release/*.dylib",
+      "native/build/Release/*.so"
     ],
     "win": {
       "target": [
@@ -40,6 +65,9 @@
         }
       ]
     },
+    "mac": {
+      "icon": "node_modules/electron/dist/Electron.app/Contents/Resources/electron.icns"
+    },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
@@ -48,11 +76,14 @@
     }
   },
   "devDependencies": {
-    "electron": "^28.0.0",
-    "electron-builder": "^24.9.0"
+    "cmake-js": "^7.3.0",
+    "electron": "^42.4.0",
+    "electron-builder": "^24.9.0",
+    "node-addon-api": "^8.3.0"
   },
   "dependencies": {
-    "better-sqlite3": "^11.10.0",
+    "better-sqlite3": "^12.11.1",
+    "face-api.js": "^0.22.2",
     "ws": "^8.16.0"
   }
 }

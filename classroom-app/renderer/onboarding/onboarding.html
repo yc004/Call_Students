@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>首次设置 — 绑定班主任</title>
+  <link rel="stylesheet" href="../shared/ui.css">
+  <link rel="stylesheet" href="onboarding.css">
+</head>
+<body>
+  <main class="setup-shell">
+    <header class="setup-header">
+      <div class="brand-mark">教</div>
+      <div>
+        <p class="eyebrow">首次安装设置</p>
+        <h1>绑定班主任，启用教室端</h1>
+        <p>为保障班级资料安全，教室端必须先绑定一位班主任才能使用。</p>
+      </div>
+    </header>
+
+    <ol class="steps" aria-label="设置进度">
+      <li class="done"><span>1</span><div><strong>安装教师端</strong><small>在班主任电脑登录账户</small></div></li>
+      <li class="active"><span>2</span><div><strong>连接本教室</strong><small>使用下方局域网地址</small></div></li>
+      <li><span>3</span><div><strong>确认绑定</strong><small>之后前往教师端配置</small></div></li>
+    </ol>
+
+    <section class="setup-grid">
+      <div class="guide-panel">
+        <div class="section-heading">
+          <span class="section-number">1</span>
+          <div><h2>让班主任连接教室</h2><p>在班主任电脑的教师端完成以下操作。</p></div>
+        </div>
+        <ol class="guide-list">
+          <li><span>1</span><p>打开教师端，创建或登录班主任的本机账户。</p></li>
+          <li><span>2</span><p>在左侧“连接教室”中输入以下任一局域网 IP。</p></li>
+          <li><span>3</span><p>点击“连接”，教师姓名会自动出现在右侧等待绑定。</p></li>
+        </ol>
+        <div class="address-box">
+          <span class="address-label">本教室局域网地址</span>
+          <div id="addressList" class="address-list"><code>正在读取…</code></div>
+          <small>教师电脑与教室电脑必须连接同一个局域网。</small>
+        </div>
+      </div>
+
+      <div class="bind-panel">
+        <div class="section-heading">
+          <span class="section-number">2</span>
+          <div><h2>确认班主任</h2><p>只绑定你认识且正在操作的教师账户。</p></div>
+        </div>
+
+        <div class="candidate-heading">
+          <span class="field-label">等待绑定的教师</span>
+          <button id="refreshBtn" class="text-button" type="button">刷新</button>
+        </div>
+        <div id="candidateList" class="candidate-list" aria-live="polite"></div>
+        <p id="errorText" class="error-text hidden" role="alert"></p>
+        <button id="bindBtn" class="primary-button" type="button" disabled>确认绑定班主任</button>
+        <p class="security-note">绑定后该账户将成为班主任，可管理班级资料、学生名单和人脸标注。</p>
+      </div>
+    </section>
+  </main>
+
+  <div id="successOverlay" class="success-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="successTitle">
+    <div class="success-card">
+      <div class="success-icon">✓</div>
+      <h2 id="successTitle">班主任绑定成功</h2>
+      <p id="successDesc"></p>
+      <p class="success-next">请回到班主任教师端，按照弹出的引导完成班级名称和学生名单配置。</p>
+      <button id="enterBtn" class="primary-button" type="button">完成，等待班主任配置</button>
+    </div>
+  </div>
+
+  <script src="onboarding.js"></script>
+</body>
+</html>
