@@ -15,6 +15,7 @@ function Invoke-SmokeTest([string]$Executable, [string]$Label) {
   $safeLabel = $Label -replace '[^A-Za-z0-9_-]', '-'
   $stdoutPath = Join-Path $env:RUNNER_TEMP "$safeLabel.stdout.log"
   $stderrPath = Join-Path $env:RUNNER_TEMP "$safeLabel.stderr.log"
+  $env:CLASSROOM_SMOKE_LOG = Join-Path $env:RUNNER_TEMP 'classroom-smoke.log'
   $process = Start-Process -FilePath $Executable -ArgumentList @('--ci-smoke-test', '--enable-logging') `
     -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru
   if (-not $process.WaitForExit(120000)) {

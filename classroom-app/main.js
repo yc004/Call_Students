@@ -27,8 +27,10 @@ function getDatabaseConstructor() {
 
 function logCISmokeStage(message) {
   if (!CI_SMOKE_TEST) return;
+  console.log(`[smoke-stage] ${message}`);
   try {
-    fs.appendFileSync(path.join(os.tmpdir(), 'classroom-smoke.log'), `${message}\n`, 'utf8');
+    const smokeLogPath = process.env.CLASSROOM_SMOKE_LOG || path.join(os.tmpdir(), 'classroom-smoke.log');
+    fs.appendFileSync(smokeLogPath, `${message}\n`, 'utf8');
   } catch (_) {}
 }
 
