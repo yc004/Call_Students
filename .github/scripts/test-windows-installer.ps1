@@ -12,12 +12,24 @@ $installDir = Join-Path $env:RUNNER_TEMP $InstallFolderName
 
 function Invoke-SmokeTest([string]$Executable, [string]$Label) {
   Write-Host "[smoke] starting ${Label}: $Executable"
-  $process = Start-Process -FilePath $Executable -ArgumentList '--ci-smoke-test' -PassThru
+  $safeLabel = $Label -replace '[^A-Za-z0-9_-]', '-'
+  $stdoutPath = Join-Path $env:RUNNER_TEMP "$safeLabel.stdout.log"
+  $stderrPath = Join-Path $env:RUNNER_TEMP "$safeLabel.stderr.log"
+  $process = Start-Process -FilePath $Executable -ArgumentList @('--ci-smoke-test', '--enable-logging') `
+    -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru
   if (-not $process.WaitForExit(120000)) {
     $process.Kill()
     throw "$Label did not exit within 120 seconds"
   }
-  if ($process.ExitCode -ne 0) { throw "$Label failed with exit code $($process.ExitCode)" }
+  if ($process.ExitCode -ne 0) {
+    foreach ($logPath in @($stdoutPath, $stderrPath, (Join-Path $env:RUNNER_TEMP 'classroom-smoke.log'))) {
+      if (Test-Path $logPath) {
+        Write-Host "[smoke] diagnostic log: $logPath"
+        Get-Content $logPath | Write-Host
+      }
+    }
+    throw "$Label failed with exit code $($process.ExitCode)"
+  }
   Write-Host "[smoke] $Label passed"
 }
 

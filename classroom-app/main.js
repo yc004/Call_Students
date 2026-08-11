@@ -3,7 +3,7 @@ const WebSocket = require('ws');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const Database = require('better-sqlite3');
+let Database = null;
 
 const APP_ICON_PATH = path.join(__dirname, 'icon.png');
 
@@ -19,6 +19,18 @@ let NATIVE_AVAILABLE = false;
 let ACTIVE_EMBEDDING_MODEL = LEGACY_EMBEDDING_MODEL;
 const SFACE_COSINE_THRESHOLD = 0.363;
 const CI_SMOKE_TEST = process.argv.includes('--ci-smoke-test');
+
+function getDatabaseConstructor() {
+  if (!Database) Database = require('better-sqlite3');
+  return Database;
+}
+
+function logCISmokeStage(message) {
+  if (!CI_SMOKE_TEST) return;
+  try {
+    fs.appendFileSync(path.join(os.tmpdir(), 'classroom-smoke.log'), `${message}\n`, 'utf8');
+  } catch (_) {}
+}
 
 function getNativeAddonPath() {
   if (app.isPackaged) {
@@ -65,6 +77,7 @@ async function runCISmokeTest() {
   let smokeWindow = null;
   let exitCode = 0;
   try {
+    logCISmokeStage('electron ready; starting renderer check');
     if (!app.isPackaged) throw new Error('smoke test must run from a packaged application');
     smokeWindow = new BrowserWindow({
       show: false,
@@ -77,12 +90,15 @@ async function runCISmokeTest() {
     await smokeWindow.loadFile('renderer/onboarding/onboarding.html');
     const title = await smokeWindow.webContents.executeJavaScript('document.title');
     if (!title.includes('绑定班主任')) throw new Error(`unexpected renderer title: ${title}`);
-    smokeDb = new Database(':memory:');
+    logCISmokeStage('renderer loaded; loading better-sqlite3');
+    const DatabaseConstructor = getDatabaseConstructor();
+    smokeDb = new DatabaseConstructor(':memory:');
     smokeDb.exec('CREATE TABLE smoke_test (value TEXT NOT NULL)');
     smokeDb.prepare('INSERT INTO smoke_test VALUES (?)').run('ok');
     if (smokeDb.prepare('SELECT value FROM smoke_test').pluck().get() !== 'ok') {
       throw new Error('better-sqlite3 read/write verification failed');
     }
+    logCISmokeStage('better-sqlite3 ready; loading native face engine');
     loadNativeFaceEngine();
     if (!NATIVE_AVAILABLE || !nativeFaceEngine) {
       throw new Error('packaged native face engine failed to initialize');
@@ -91,6 +107,7 @@ async function runCISmokeTest() {
     if (!status || status.loaded !== true || !status.embeddingModel) {
       throw new Error('native face engine returned an invalid status');
     }
+    logCISmokeStage('native face engine ready; smoke test passed');
     console.log(`[smoke] classroom package ready (${status.embeddingModel})`);
   } catch (error) {
     console.error(`[smoke] classroom package failed: ${error.stack || error.message}`);
@@ -152,7 +169,8 @@ let db = null;
 function getDb() {
   if (db) return db;
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  db = new Database(DB_FILE);
+  const DatabaseConstructor = getDatabaseConstructor();
+  db = new DatabaseConstructor(DB_FILE);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.exec(`
