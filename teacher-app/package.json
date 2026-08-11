@@ -8,6 +8,7 @@
     "verify:syntax": "node ../scripts/verify-js-syntax.js teacher-app",
     "test:account": "node test/account-auth.test.js",
     "build": "electron-builder --win",
+    "build:win:ci": "electron-builder --win nsis --x64 --publish never",
     "build:portable": "electron-builder --win portable"
   },
   "build": {
@@ -24,11 +25,14 @@
       "style.css",
       "ui.css",
       "app.js",
+      "icon.png",
       "node_modules/**/*",
       "!node_modules/electron/**",
       "!data/*"
     ],
     "win": {
+      "icon": "icon.png",
+      "artifactName": "ClassroomCall-Teacher-${version}-Setup-${arch}.${ext}",
       "target": [
         {
           "target": "nsis",
@@ -41,7 +45,8 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
       "shortcutName": "教室呼叫-教师端"
     }
   },

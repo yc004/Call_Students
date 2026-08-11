@@ -18,13 +18,15 @@
 
 ## 发布门禁
 
-GitHub Actions 在 Windows x64、macOS 宿主架构和 Linux x64 上分别：
+当前部署目标为 Windows x64。GitHub Actions 固定使用 Windows Server 2022 与 Visual Studio 2022：
 
 1. 用 `npm ci` 还原锁定依赖；
 2. 准备 ONNX Runtime 和校验过的模型；
 3. 编译并运行不可跳过的原生测试；
-4. 构建 Electron 包；
-5. 由 `scripts/verify-packaged-native.js` 检查发布目录中的 `.node`、ONNX Runtime 动态库、两个 ONNX 模型及其 SHA-256。
+4. 构建 x64 NSIS 安装包；
+5. 由 `scripts/verify-packaged-native.js` 检查发布目录中的 `.node`、ONNX Runtime 动态库、两个 ONNX 模型及其 SHA-256；
+6. 分别启动解包应用和静默安装后的应用，实际加载 `better-sqlite3`、原生插件、ONNX Runtime 与模型；
+7. 生成安装包 SHA-256；推送 `v*` 标签时自动发布 GitHub Release。
 
 任何模型缺失、模型被替换、动态库未复制或原生插件不能加载都会使构建失败。
 

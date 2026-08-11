@@ -106,6 +106,7 @@ ipcMain.handle('import-login-key', (_, loginKey, replaceExisting = false) => {
 // ═══════════════════════════════════════
 
 let mainWin = null;
+const CI_SMOKE_TEST = process.argv.includes('--ci-smoke-test');
 
 function createWindow() {
   mainWin = new BrowserWindow({
@@ -122,6 +123,31 @@ function createWindow() {
     },
   });
   mainWin.loadFile('index.html');
+}
+
+async function runCISmokeTest() {
+  try {
+    if (!app.isPackaged) throw new Error('smoke test must run from a packaged application');
+    const smokeAccount = makeStoredAccount({ name: 'CI', password: 'smoke-test', subjects: ['测试'] });
+    if (!verifyAccountPassword(smokeAccount, 'smoke-test')) throw new Error('account crypto verification failed');
+    const win = new BrowserWindow({
+      show: false,
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+    await win.loadFile('index.html');
+    const title = await win.webContents.executeJavaScript('document.title');
+    if (!title.includes('教师端')) throw new Error(`unexpected renderer title: ${title}`);
+    win.destroy();
+    console.log('[smoke] teacher package ready');
+    app.exit(0);
+  } catch (error) {
+    console.error(`[smoke] teacher package failed: ${error.stack || error.message}`);
+    app.exit(1);
+  }
 }
 
 // ── 窗口控制 ──
@@ -141,6 +167,7 @@ ipcMain.on('win-close', (e) => {
 // ═══════════════════════════════════════
 
 app.whenReady().then(() => {
+  if (CI_SMOKE_TEST) return runCISmokeTest();
   Menu.setApplicationMenu(null);
   createWindow();
 });

@@ -18,6 +18,7 @@ let nativeFaceEngine = null;
 let NATIVE_AVAILABLE = false;
 let ACTIVE_EMBEDDING_MODEL = LEGACY_EMBEDDING_MODEL;
 const SFACE_COSINE_THRESHOLD = 0.363;
+const CI_SMOKE_TEST = process.argv.includes('--ci-smoke-test');
 
 function getNativeAddonPath() {
   if (app.isPackaged) {
@@ -56,6 +57,37 @@ function loadNativeFaceEngine() {
     NATIVE_AVAILABLE = false;
     nativeFaceEngine = null;
     logToFile('native', `Addon load failed: ${e.message} — using face-api.js fallback`);
+  }
+}
+
+async function runCISmokeTest() {
+  let smokeDb = null;
+  try {
+    if (!app.isPackaged) throw new Error('smoke test must run from a packaged application');
+    smokeDb = new Database(':memory:');
+    smokeDb.exec('CREATE TABLE smoke_test (value TEXT NOT NULL)');
+    smokeDb.prepare('INSERT INTO smoke_test VALUES (?)').run('ok');
+    if (smokeDb.prepare('SELECT value FROM smoke_test').pluck().get() !== 'ok') {
+      throw new Error('better-sqlite3 read/write verification failed');
+    }
+    loadNativeFaceEngine();
+    if (!NATIVE_AVAILABLE || !nativeFaceEngine) {
+      throw new Error('packaged native face engine failed to initialize');
+    }
+    const status = nativeFaceEngine.getStatus();
+    if (!status || status.loaded !== true || !status.embeddingModel) {
+      throw new Error('native face engine returned an invalid status');
+    }
+    console.log(`[smoke] classroom package ready (${status.embeddingModel})`);
+    app.exit(0);
+  } catch (error) {
+    console.error(`[smoke] classroom package failed: ${error.stack || error.message}`);
+    app.exit(1);
+  } finally {
+    if (smokeDb) smokeDb.close();
+    if (nativeFaceEngine) {
+      try { nativeFaceEngine.destroy(); } catch (_) {}
+    }
   }
 }
 
@@ -1724,6 +1756,7 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 app.whenReady().then(() => {
+  if (CI_SMOKE_TEST) return runCISmokeTest();
   // 注册自定义协议用于加载模型文件（绕过 file:// fetch 限制）
   protocol.handle('face-models', (request) => {
     // request.url 可能是各种格式: face-models://models/xxx, face-models:/models/xxx

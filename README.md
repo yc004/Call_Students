@@ -43,11 +43,23 @@ cd classroom-app && npm run build    # 输出 dist/教室呼叫-教室端 Setup 
 cd teacher-app   && npm run build    # 输出 dist/教室呼叫-教师端 Setup 1.0.0.exe
 ```
 
+### GitHub 自动构建
+
+`.github/workflows/build.yml` 使用 Windows Server 2022 原生构建两端的 x64 NSIS 安装包：
+
+- 推送到 `master`、向 `master` 提交 Pull Request 或手动运行工作流时，生成可下载的 Actions Artifacts；
+- 推送 `v*` 标签时，在全部验证通过后自动创建 GitHub Release；
+- 每个安装包同时生成 `.sha256` 校验文件；
+- 教室端必须通过原生插件、ONNX Runtime、模型校验和 `better-sqlite3` 测试；
+- 两端都必须通过“解包应用启动”和“NSIS 静默安装后启动”两层冒烟测试。
+
+若要签名 Windows 安装包，在仓库 Actions Secrets 中配置 `WINDOWS_CSC_LINK`（证书文件路径、URL 或 Base64）与 `WINDOWS_CSC_KEY_PASSWORD`。配置后，工作流会拒绝 Authenticode 签名无效的安装包；未配置时仍会生成经过安装测试的无签名安装包，但 Windows 可能显示 SmartScreen 提示。
+
 ## 技术栈
 
 | 层 | 技术 |
 |----|------|
-| 框架 | Electron 28 |
+| 框架 | Electron 42 |
 | 通信 | WebSocket (ws) |
 | 语音 | Web Speech API (系统 TTS) |
 | 打包 | electron-builder (NSIS) |

@@ -12,6 +12,7 @@
     "build:native:clean": "cmake-js clean --directory native",
     "test:native": "node native/test/test_bindings.js && node native/test/test_gallery.js",
     "build": "npm run build:native && electron-builder --win",
+    "build:win:ci": "electron-builder --win nsis --x64 --publish never",
     "build:portable": "npm run build:native && electron-builder --win portable"
   },
   "cmake-js": {
@@ -56,6 +57,8 @@
       "native/build/Release/*.so"
     ],
     "win": {
+      "icon": "icon.png",
+      "artifactName": "ClassroomCall-Classroom-${version}-Setup-${arch}.${ext}",
       "target": [
         {
           "target": "nsis",
@@ -71,7 +74,8 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
       "shortcutName": "教室呼叫-教室端"
     }
   },
