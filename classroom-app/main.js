@@ -48,7 +48,9 @@ function loadNativeFaceEngine() {
       logToFile('native', `Addon not found at ${addonPath}, using face-api.js fallback`);
       return;
     }
+    logCISmokeStage(`requiring native addon: ${addonPath}`);
     nativeFaceEngine = require(addonPath);
+    logCISmokeStage('native addon required; checking model directory');
     const modelDir = app.isPackaged
       ? path.join(process.resourcesPath, 'models', 'onnx')
       : path.join(__dirname, 'models', 'onnx');
@@ -57,7 +59,9 @@ function loadNativeFaceEngine() {
       nativeFaceEngine = null;
       return;
     }
+    logCISmokeStage(`model directory ready; initializing ONNX: ${modelDir}`);
     const status = nativeFaceEngine.init(modelDir, { threads: 2 });
+    logCISmokeStage('native init returned');
     if (status && status.success) {
       NATIVE_AVAILABLE = true;
       const engineStatus = nativeFaceEngine.getStatus();
