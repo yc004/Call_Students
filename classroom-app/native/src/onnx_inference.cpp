@@ -1,5 +1,6 @@
 #include "onnx_inference.h"
 #include <onnxruntime_cxx_api.h>
+#include <filesystem>
 #include <string>
 #include <stdexcept>
 
@@ -24,7 +25,8 @@ bool OnnxModel::load(const std::string& modelPath, int intraOpThreads) {
         opts.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
         // Load model
-        m_session = std::make_unique<Ort::Session>(*m_env, modelPath.c_str(), opts);
+        const auto nativeModelPath = std::filesystem::u8path(modelPath);
+        m_session = std::make_unique<Ort::Session>(*m_env, nativeModelPath.c_str(), opts);
 
         // Allocator
         m_allocator = std::make_unique<Ort::AllocatorWithDefaultOptions>();

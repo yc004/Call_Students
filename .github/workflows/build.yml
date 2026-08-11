@@ -28,10 +28,10 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -54,17 +54,17 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: classroom-app/package-lock.json
 
       - name: Cache Electron toolchains
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~\AppData\Local\electron\Cache
@@ -72,7 +72,7 @@ jobs:
           key: windows-electron-classroom-${{ hashFiles('classroom-app/package-lock.json') }}
 
       - name: Cache ONNX Runtime and verified models
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             classroom-app/.cache/onnxruntime
@@ -99,11 +99,20 @@ jobs:
           npm run build:native
           npm run test:native
 
+      - name: Configure optional Windows signing
+        env:
+          WINDOWS_CSC_LINK_SECRET: ${{ secrets.WINDOWS_CSC_LINK }}
+          WINDOWS_CSC_KEY_PASSWORD_SECRET: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+        run: |
+          if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_CSC_LINK_SECRET)) {
+            "CSC_LINK=$env:WINDOWS_CSC_LINK_SECRET" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "CSC_KEY_PASSWORD=$env:WINDOWS_CSC_KEY_PASSWORD_SECRET" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          } else {
+            Write-Host '[signing] no certificate configured; building unsigned installer'
+          }
+
       - name: Build NSIS installer
         working-directory: classroom-app
-        env:
-          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
         run: npm run build:win:ci
 
       - name: Smoke-test unpacked app and installer
@@ -117,7 +126,7 @@ jobs:
             -InstallFolderName 'ClassroomCall-Classroom-CI'
 
       - name: Upload classroom installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: classroom-windows-x64-${{ github.sha }}
           path: |
@@ -139,17 +148,17 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: teacher-app/package-lock.json
 
       - name: Cache Electron toolchains
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~\AppData\Local\electron\Cache
@@ -163,11 +172,20 @@ jobs:
           npm config set replace-registry-host always
           npm ci
 
+      - name: Configure optional Windows signing
+        env:
+          WINDOWS_CSC_LINK_SECRET: ${{ secrets.WINDOWS_CSC_LINK }}
+          WINDOWS_CSC_KEY_PASSWORD_SECRET: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+        run: |
+          if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_CSC_LINK_SECRET)) {
+            "CSC_LINK=$env:WINDOWS_CSC_LINK_SECRET" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "CSC_KEY_PASSWORD=$env:WINDOWS_CSC_KEY_PASSWORD_SECRET" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          } else {
+            Write-Host '[signing] no certificate configured; building unsigned installer'
+          }
+
       - name: Build NSIS installer
         working-directory: teacher-app
-        env:
-          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
         run: npm run build:win:ci
 
       - name: Smoke-test unpacked app and installer
@@ -181,7 +199,7 @@ jobs:
             -InstallFolderName 'ClassroomCall-Teacher-CI'
 
       - name: Upload teacher installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: teacher-windows-x64-${{ github.sha }}
           path: |
@@ -200,7 +218,7 @@ jobs:
 
     steps:
       - name: Download verified installers
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: '*-windows-x64-*'
           path: release
