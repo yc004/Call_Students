@@ -50,8 +50,6 @@ jobs:
       run:
         shell: pwsh
     env:
-      ELECTRON_CACHE: ${{ runner.temp }}\electron-cache
-      ELECTRON_BUILDER_CACHE: ${{ runner.temp }}\electron-builder-cache
       WINDOWS_SIGNING_ENABLED: ${{ secrets.WINDOWS_CSC_LINK != '' }}
 
     steps:
@@ -69,8 +67,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ${{ env.ELECTRON_CACHE }}
-            ${{ env.ELECTRON_BUILDER_CACHE }}
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
           key: windows-electron-classroom-${{ hashFiles('classroom-app/package-lock.json') }}
 
       - name: Cache ONNX Runtime and verified models
@@ -137,8 +135,6 @@ jobs:
       run:
         shell: pwsh
     env:
-      ELECTRON_CACHE: ${{ runner.temp }}\electron-cache
-      ELECTRON_BUILDER_CACHE: ${{ runner.temp }}\electron-builder-cache
       WINDOWS_SIGNING_ENABLED: ${{ secrets.WINDOWS_CSC_LINK != '' }}
 
     steps:
@@ -156,8 +152,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ${{ env.ELECTRON_CACHE }}
-            ${{ env.ELECTRON_BUILDER_CACHE }}
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
           key: windows-electron-teacher-${{ hashFiles('teacher-app/package-lock.json') }}
 
       - name: Install locked dependencies
