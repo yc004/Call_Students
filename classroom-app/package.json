@@ -42,12 +42,20 @@
       {
         "from": "native/build/Release",
         "to": "native",
-        "filter": ["*.node", "*.dll", "*.dylib", "*.so"]
+        "filter": [
+          "*.node",
+          "*.dll",
+          "*.dylib",
+          "*.so"
+        ]
       },
       {
         "from": "models/onnx",
         "to": "models/onnx",
-        "filter": ["*.onnx", "models.json"]
+        "filter": [
+          "*.onnx",
+          "models.json"
+        ]
       }
     ],
     "asarUnpack": [
@@ -82,7 +90,7 @@
   "devDependencies": {
     "cmake-js": "^7.3.0",
     "electron": "^42.4.0",
-    "electron-builder": "^24.9.0",
+    "electron-builder": "26.15.3",
     "node-addon-api": "^8.3.0"
   },
   "dependencies": {
