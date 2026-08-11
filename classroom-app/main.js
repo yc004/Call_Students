@@ -62,8 +62,21 @@ function loadNativeFaceEngine() {
 
 async function runCISmokeTest() {
   let smokeDb = null;
+  let smokeWindow = null;
+  let exitCode = 0;
   try {
     if (!app.isPackaged) throw new Error('smoke test must run from a packaged application');
+    smokeWindow = new BrowserWindow({
+      show: false,
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+    await smokeWindow.loadFile('renderer/onboarding/onboarding.html');
+    const title = await smokeWindow.webContents.executeJavaScript('document.title');
+    if (!title.includes('绑定班主任')) throw new Error(`unexpected renderer title: ${title}`);
     smokeDb = new Database(':memory:');
     smokeDb.exec('CREATE TABLE smoke_test (value TEXT NOT NULL)');
     smokeDb.prepare('INSERT INTO smoke_test VALUES (?)').run('ok');
@@ -79,16 +92,17 @@ async function runCISmokeTest() {
       throw new Error('native face engine returned an invalid status');
     }
     console.log(`[smoke] classroom package ready (${status.embeddingModel})`);
-    app.exit(0);
   } catch (error) {
     console.error(`[smoke] classroom package failed: ${error.stack || error.message}`);
-    app.exit(1);
+    exitCode = 1;
   } finally {
+    if (smokeWindow && !smokeWindow.isDestroyed()) smokeWindow.destroy();
     if (smokeDb) smokeDb.close();
     if (nativeFaceEngine) {
       try { nativeFaceEngine.destroy(); } catch (_) {}
     }
   }
+  app.exit(exitCode);
 }
 
 // ── 常量 ──
