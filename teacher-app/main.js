@@ -1,12 +1,14 @@
 const { app, BrowserWindow, ipcMain, Menu } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const QRCode = require('qrcode');
 const {
   publicAccount,
   verifyAccountPassword,
   makeStoredAccount,
   generateLoginKey,
   parseLoginKey,
+  generateMiniProgramLoginPayload,
 } = require('./account-auth');
 
 // 禁用磁盘缓存
@@ -81,6 +83,22 @@ ipcMain.handle('generate-login-key', () => {
     return { ok: true, loginKey: generateLoginKey(stored) };
   } catch (error) {
     return { ok: false, message: error.message || '登录密钥生成失败' };
+  }
+});
+ipcMain.handle('generate-mini-program-qr', async () => {
+  const stored = loadAllData();
+  if (!stored.account) return { ok: false, message: '请先登录教师账户' };
+  try {
+    const payload = generateMiniProgramLoginPayload(stored.account, stored.rooms);
+    const qrDataUrl = await QRCode.toDataURL(payload, {
+      width: 360,
+      margin: 2,
+      errorCorrectionLevel: 'M',
+      color: { dark: '#172033', light: '#FFFFFF' },
+    });
+    return { ok: true, qrDataUrl, roomCount: stored.rooms.length };
+  } catch (error) {
+    return { ok: false, message: error.message || '二维码生成失败' };
   }
 });
 ipcMain.handle('import-login-key', (_, loginKey, replaceExisting = false) => {

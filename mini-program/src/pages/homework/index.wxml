@@ -1,0 +1,49 @@
+<view class="page homework-page">
+  <view class="page-toolbar">
+    <view class="page-heading"><text class="page-kicker">{{className || roomName || statusMessage}}</text><text class="page-title">作业</text></view>
+    <button class="header-action compose-button" size="mini" bindtap="openComposer" wx:if="{{canCompose}}">布置作业</button>
+  </view>
+
+  <view class="overview surface">
+    <view class="overview-item"><text>{{assignmentCount}}</text><text>全部作业</text></view>
+    <view class="overview-item"><text>{{pendingCount}}</text><text>待统计</text></view>
+    <view class="overview-item"><text>{{subjectCount}}</text><text>涉及学科</text></view>
+  </view>
+
+  <view class="subject-filter" wx:if="{{subjects.length}}">
+    <scroll-view scroll-x enhanced show-scrollbar="{{false}}">
+      <view class="filter-inner"><view class="filter-chip {{selectedSubject === '' ? 'active' : ''}}" data-subject="" bindtap="selectSubject">全部</view><view class="filter-chip {{selectedSubject === item ? 'active' : ''}}" wx:for="{{subjects}}" wx:key="*this" data-subject="{{item}}" bindtap="selectSubject">{{item}}</view></view>
+    </scroll-view>
+  </view>
+
+  <view class="assignment-groups" wx:if="{{visibleAssignments.length}}">
+    <view class="date-section" wx:for="{{visibleAssignments}}" wx:key="date">
+      <view class="section-heading date-heading"><view><text class="section-title">{{item.dateLabel}}</text><text class="section-note">共 {{item.total}} 项作业</text></view></view>
+      <view class="subject-group surface" wx:for="{{item.subjects}}" wx:key="subject" wx:for-item="group">
+        <view class="subject-header"><view class="subject-dot"></view><text>{{group.subject}}</text><text>{{group.items.length}} 项</text></view>
+        <view class="assignment-cell" wx:for="{{group.items}}" wx:key="id" wx:for-item="assignment">
+          <view class="assignment-main"><text class="assignment-title">{{assignment.title}}</text><text class="assignment-deadline">{{assignment.deadlineText}}</text></view>
+          <view class="submission"><text>{{assignment.submitted}}/{{studentCount}}</text><text>已提交</text></view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="surface empty assignment-empty" wx:else>
+    <view class="empty-mark">✓</view><text class="empty-title">{{selectedSubject ? '该学科暂无作业' : '暂时没有作业'}}</text><text class="empty-desc">{{canCompose ? '点击右上角“布置作业”开始安排。' : '老师布置的新作业会显示在这里。'}}</text>
+  </view>
+
+  <page-container show="{{composerOpen}}" position="bottom" round overlay close-on-slide-down bind:clickoverlay="closeComposer" bind:afterleave="closeComposer">
+    <view class="bottom-sheet composer-sheet">
+      <view class="sheet-handle"></view>
+      <view class="sheet-title"><view><text>布置作业</text><text class="sheet-subtitle">截止后自动进入提交统计</text></view><text class="sheet-close" bindtap="closeComposer">×</text></view>
+      <text class="label">授课学科</text>
+      <picker mode="selector" range="{{allowedSubjects}}" value="{{draftSubjectIndex}}" bindchange="setDraftSubject"><view class="picker-field"><text>{{allowedSubjects[draftSubjectIndex] || '请选择学科'}}</text><text class="picker-arrow">›</text></view></picker>
+      <text class="label">作业内容</text>
+      <textarea class="assignment-input" maxlength="80" auto-height placeholder="例如：完成练习册第 12—14 页" value="{{draftTitle}}" bindinput="setDraftTitle"></textarea>
+      <text class="label">提交截止时间</text>
+      <view class="deadline-row"><picker mode="date" value="{{draftDate}}" start="{{today}}" bindchange="setDraftDate"><view class="picker-field">{{draftDate}}</view></picker><picker mode="time" value="{{draftTime}}" bindchange="setDraftTime"><view class="picker-field">{{draftTime}}</view></picker></view>
+      <button class="primary submit-assignment" bindtap="submitAssignment" disabled="{{!draftTitle || !allowedSubjects.length}}">确认布置</button>
+    </view>
+  </page-container>
+</view>

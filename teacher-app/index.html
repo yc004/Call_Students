@@ -312,6 +312,16 @@
         </div>
       </div>
     </section>
+    <section class="mini-login-section" aria-labelledby="miniLoginTitle">
+      <div class="login-key-heading">
+        <div><strong id="miniLoginTitle">微信小程序登录</strong><small>使用微信扫描后，将自动登录并记住已保存的教室</small></div>
+        <button id="generateMiniProgramQrBtn" class="btn btn-sm" type="button">生成二维码</button>
+      </div>
+      <div id="miniProgramQrResult" class="mini-login-result hidden">
+        <img id="miniProgramQrImage" alt="微信小程序登录二维码">
+        <div><strong>打开配套小程序扫码</strong><p id="miniProgramQrHint">二维码等同于登录凭证，请勿拍照转发给他人。</p></div>
+      </div>
+    </section>
     <div class="modal-actions">
       <button id="accountModalClose" class="btn">关闭</button>
       <button id="logoutBtn" class="btn btn-danger-outline">退出登录</button>

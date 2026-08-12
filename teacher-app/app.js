@@ -267,6 +267,29 @@
     if (loginKeyStatus) loginKeyStatus.textContent = copied ? '已复制，可在其他教师端直接粘贴登录。' : '复制失败，请手动选择并复制。';
   }
 
+  async function handleGenerateMiniProgramQr() {
+    if (!api.generateMiniProgramQr) return;
+    const button = document.getElementById('generateMiniProgramQrBtn');
+    const resultBox = document.getElementById('miniProgramQrResult');
+    const image = document.getElementById('miniProgramQrImage');
+    const hint = document.getElementById('miniProgramQrHint');
+    if (button) { button.disabled = true; button.textContent = '生成中…'; }
+    try {
+      const result = await api.generateMiniProgramQr();
+      if (!result || !result.ok) { alert(result && result.message ? result.message : '二维码生成失败'); return; }
+      if (image) image.src = result.qrDataUrl;
+      if (hint) hint.textContent = result.roomCount
+        ? `二维码包含当前账户和 ${result.roomCount} 个已保存教室。请勿拍照转发给他人。`
+        : '当前还没有已保存教室；扫码后可在小程序中手动添加教室 IP。请勿转发二维码。';
+      resultBox && resultBox.classList.remove('hidden');
+      if (button) button.textContent = '刷新二维码';
+    } catch (_error) {
+      alert('二维码生成失败，请重试');
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
   function openAccountModal() {
     if (!state.account || !accountModal) return;
     const name = document.getElementById('accountModalName');
@@ -278,6 +301,7 @@
     if (generatedLoginKey) generatedLoginKey.value = '';
     if (loginKeyStatus) loginKeyStatus.textContent = '密钥等同于登录凭证，请勿发送给他人。';
     loginKeyResult && loginKeyResult.classList.add('hidden');
+    document.getElementById('miniProgramQrResult')?.classList.add('hidden');
     const generateButton = document.getElementById('generateLoginKeyBtn');
     if (generateButton) generateButton.textContent = '生成密钥';
     accountModal.classList.remove('hidden');
@@ -1715,8 +1739,10 @@
     if (backToPasswordLogin) backToPasswordLogin.addEventListener('click', () => showAccountOverlay('login'));
     const generateLoginKeyBtn = document.getElementById('generateLoginKeyBtn');
     const copyLoginKeyBtn = document.getElementById('copyLoginKeyBtn');
+    const generateMiniProgramQrBtn = document.getElementById('generateMiniProgramQrBtn');
     if (generateLoginKeyBtn) generateLoginKeyBtn.addEventListener('click', handleGenerateLoginKey);
     if (copyLoginKeyBtn) copyLoginKeyBtn.addEventListener('click', handleCopyLoginKey);
+    if (generateMiniProgramQrBtn) generateMiniProgramQrBtn.addEventListener('click', handleGenerateMiniProgramQr);
     if (accountMenuBtn) accountMenuBtn.addEventListener('click', openAccountModal);
     const accountModalClose = document.getElementById('accountModalClose');
     const logoutBtn = document.getElementById('logoutBtn');

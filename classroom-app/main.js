@@ -899,13 +899,18 @@ let _broadcastCount = 0;
 let _lastBroadcastSig = '';
 function broadcastFaceDetections(detections) {
   if (!wss) return;
-  const msg = JSON.stringify({ type: 'face-detections', detections });
+  const allFacesMessage = JSON.stringify({ type: 'face-detections', detections });
+  const recognizedFacesMessage = JSON.stringify({
+    type: 'face-detections',
+    detections: detections.filter(det => det.isRecognized && det.studentId),
+  });
   let openClients = 0;
   let sent = 0;
   wss.clients.forEach(ws => {
     openClients++;
     if (ws.readyState === WebSocket.OPEN && ws._teacher && ws._teacher.status === 'approved') {
-      ws.send(msg);
+      // 未匹配人脸属于班级敏感配置数据，只发送给班主任。
+      ws.send(ws._teacher.role === '班主任' ? allFacesMessage : recognizedFacesMessage);
       sent++;
     }
   });
@@ -1010,7 +1015,7 @@ function broadcastPendingFaces() {
   if (!wss) return;
   const msg = JSON.stringify({ type: 'pending-face-library', faces: getPendingFaces() });
   wss.clients.forEach(ws => {
-    if (ws.readyState === WebSocket.OPEN && ws._teacher && ws._teacher.status === 'approved') ws.send(msg);
+    if (ws.readyState === WebSocket.OPEN && ws._teacher && ws._teacher.status === 'approved' && ws._teacher.role === '班主任') ws.send(msg);
   });
 }
 
@@ -1176,6 +1181,7 @@ function startWSServer() {
             if (idx >= 0) data.assignments[idx] = msg.assignment;
           } else { return; }
           saveData(data);
+          broadcastSync(data);
           break;
         }
 
@@ -1369,7 +1375,7 @@ function sendTeacherSync(ws, data) {
     subjects: data.subjects,
     assignments: data.assignments,
     attendance: getAttendanceData(),
-    pendingFaces: getPendingFaces(),
+    pendingFaces: ws._teacher.role === '班主任' ? getPendingFaces() : [],
     classroomConfigured: isClassroomConfigured(),
     teachers: ws._teacher.role === '班主任' ? { approved: getApprovedTeachers(), pending: getPendingRequests() } : null,
     teacher: {

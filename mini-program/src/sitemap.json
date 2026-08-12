@@ -1,0 +1,4 @@
+{
+  "desc": "教室呼叫系统仅供已授权教师使用",
+  "rules": [{ "action": "disallow", "page": "*" }]
+}

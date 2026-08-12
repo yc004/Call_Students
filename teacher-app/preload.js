@@ -12,5 +12,6 @@ contextBridge.exposeInMainWorld('api', {
   registerAccount: (account) => ipcRenderer.invoke('register-account', account),
   loginAccount: (name, password) => ipcRenderer.invoke('login-account', name, password),
   generateLoginKey: () => ipcRenderer.invoke('generate-login-key'),
+  generateMiniProgramQr: () => ipcRenderer.invoke('generate-mini-program-qr'),
   importLoginKey: (loginKey, replaceExisting = false) => ipcRenderer.invoke('import-login-key', loginKey, replaceExisting),
 });

@@ -114,6 +114,11 @@
 .login-key-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:9px; }
 .login-key-actions span { flex:1; color:#a15c08; font-size:11px; line-height:1.45; }
 .login-key-actions .btn { flex:0 0 auto; }
+.mini-login-section { margin-top:12px; padding:15px; border:1px solid var(--border); border-radius:13px; background:#fafbfe; }
+.mini-login-result { display:grid; grid-template-columns:154px 1fr; align-items:center; gap:18px; margin-top:13px; padding-top:13px; border-top:1px solid var(--border); }
+.mini-login-result img { display:block; width:154px; height:154px; padding:6px; border:1px solid var(--border); border-radius:12px; background:#fff; }
+.mini-login-result strong { display:block; color:var(--text-1); font-size:14px; }
+.mini-login-result p { margin:7px 0 0; color:#a15c08; font-size:11px; line-height:1.55; }
 
 @media (max-height:780px) {
   .account-card,.approval-card { padding:24px 28px; }

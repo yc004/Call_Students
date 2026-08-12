@@ -1,0 +1,32 @@
+{
+  "pages": [
+    "pages/login/index",
+    "pages/call/index",
+    "pages/homework/index",
+    "pages/attendance/index",
+    "pages/profile/index"
+  ],
+  "window": {
+    "navigationBarBackgroundColor": "#FFFFFF",
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "班达",
+    "backgroundColor": "#F5F5F5",
+    "backgroundTextStyle": "dark"
+  },
+  "tabBar": {
+    "color": "#7A7E83",
+    "selectedColor": "#07C160",
+    "backgroundColor": "#FFFFFF",
+    "borderStyle": "black",
+    "position": "bottom",
+    "list": [
+      { "pagePath": "pages/call/index", "text": "呼叫", "iconPath": "assets/tabbar/call.png", "selectedIconPath": "assets/tabbar/call-active.png" },
+      { "pagePath": "pages/homework/index", "text": "作业", "iconPath": "assets/tabbar/homework.png", "selectedIconPath": "assets/tabbar/homework-active.png" },
+      { "pagePath": "pages/attendance/index", "text": "出勤", "iconPath": "assets/tabbar/attendance.png", "selectedIconPath": "assets/tabbar/attendance-active.png" },
+      { "pagePath": "pages/profile/index", "text": "我的", "iconPath": "assets/tabbar/profile.png", "selectedIconPath": "assets/tabbar/profile-active.png" }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

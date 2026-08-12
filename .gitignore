@@ -14,6 +14,9 @@ data/
 *.bak
 
 .DS_Store
+project.private.config.json
+# 微信小程序正式 AppID 只保存在开发者工具生成的私有配置中。
+mini-program/project.local.config.json
 *.log
 *.tmp
 

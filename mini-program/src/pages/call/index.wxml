@@ -1,0 +1,43 @@
+<view class="page call-page">
+  <view class="class-card surface">
+    <view class="class-main">
+      <text class="class-label">当前教室</text>
+      <text class="class-name">{{className || roomName || '尚未选择教室'}}</text>
+      <view class="class-status"><view class="status-dot {{status}}"></view><text>{{statusMessage}}</text></view>
+    </view>
+    <button class="switch-room" size="mini" bindtap="openRooms">切换教室</button>
+  </view>
+
+  <view class="connection-notice {{status}}" wx:if="{{status !== 'online'}}">
+    <view class="notice-copy"><text>{{statusMessage}}</text><text>{{statusDetail || '请确认手机和教室电脑处于同一局域网。'}}</text></view>
+    <button size="mini" bindtap="reconnect">重试</button>
+  </view>
+
+  <block wx:if="{{status === 'online'}}">
+    <view class="section-heading"><view><text class="section-title">呼叫内容</text><text class="section-note">发送前可切换常用消息</text></view></view>
+    <view class="message-cell surface" hover-class="cell-hover" bindtap="openTemplates">
+      <view class="message-symbol"><view></view><view></view><view></view></view>
+      <text class="message-value">{{templates[templateIndex]}}</text>
+      <text class="cell-arrow">›</text>
+    </view>
+
+    <view class="section-heading"><view><text class="section-title">选择学生</text><text class="section-note">共 {{students.length}} 名学生，点击即可呼叫</text></view></view>
+    <view class="search-box"><view class="search-icon"></view><input placeholder="搜索学生姓名" value="{{query}}" bindinput="search" confirm-type="search"/><text class="search-clear" wx:if="{{query}}" bindtap="clearSearch">×</text></view>
+
+    <view class="student-list surface" wx:if="{{filteredStudents.length}}">
+      <view class="student-cell {{callingId === item.id ? 'sent' : ''}}" hover-class="cell-hover" wx:for="{{filteredStudents}}" wx:key="id" data-id="{{item.id}}" bindtap="callStudent">
+        <view class="student-avatar">{{item.initial}}</view>
+        <view class="student-main"><text class="student-name">{{item.name}}</text><text class="student-desc">{{callingId === item.id ? '呼叫已发送' : '点击发送当前呼叫内容'}}</text></view>
+        <view class="call-button">{{callingId === item.id ? '✓' : '呼叫'}}</view>
+      </view>
+    </view>
+    <view class="surface empty" wx:else><view class="empty-mark">人</view><text class="empty-title">没有找到学生</text><text class="empty-desc">请检查输入的姓名。</text></view>
+  </block>
+
+  <view class="surface empty unavailable" wx:else>
+    <view class="empty-mark offline-symbol">!</view>
+    <text class="empty-title">连接教室后即可呼叫</text>
+    <text class="empty-desc">微信需要获得本地网络访问权限，校园网络还需允许设备互相访问。</text>
+    <button class="primary retry-button" bindtap="reconnect">重新连接</button>
+  </view>
+</view>

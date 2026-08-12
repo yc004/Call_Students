@@ -1,0 +1,24 @@
+<view class="login-page">
+  <view class="login-content">
+    <view class="brand"><view class="brand-mark">班</view><view><text class="brand-name">班达教师端</text><text class="brand-desc">班级事务，一触即达</text></view></view>
+    <view class="welcome">
+      <text class="welcome-title">连接教室，随时处理班级事务</text>
+      <text class="welcome-desc">使用教师端生成的二维码登录，无需输入账号和密码。</text>
+    </view>
+
+    <view class="scan-panel">
+      <view class="scan-icon">
+        <view class="corner c1"></view><view class="corner c2"></view><view class="corner c3"></view><view class="corner c4"></view>
+        <view class="scan-center"></view>
+      </view>
+      <text class="scan-title">扫描教师端二维码</text>
+      <text class="scan-desc">在电脑教师端打开“账户管理”，选择“小程序登录”。</text>
+      <button class="primary scan-button" bindtap="scanLogin" loading="{{scanning}}" disabled="{{scanning}}">{{scanning ? '正在读取' : '开始扫码'}}</button>
+    </view>
+
+    <view class="privacy-row">
+      <view class="privacy-icon">✓</view>
+      <text>登录凭证仅保存在当前微信设备，可在“我的”中退出。</text>
+    </view>
+  </view>
+</view>
