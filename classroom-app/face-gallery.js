@@ -218,6 +218,21 @@ class AdaptiveGalleryManager {
     return best;
   }
 
+  /**
+   * 在完整底库中查找最相似的学生。
+   * 主进程使用它复核渲染进程上报的“未识别”人脸。
+   */
+  findBestMatch(descriptor) {
+    let best = null;
+    for (const id of this.getAllStudentIds()) {
+      const similarity = this.computeBestSimilarity(id, descriptor);
+      if (!best || similarity > best.similarity) {
+        best = { studentId: id, name: this.getStudentName(id), similarity };
+      }
+    }
+    return best;
+  }
+
   // ── 学生管理 ──
 
   addStudent(id, name, descriptors) {

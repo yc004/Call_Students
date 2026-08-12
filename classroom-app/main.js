@@ -940,14 +940,54 @@ function getPendingFaces() {
 }
 
 function faceSimilarity(left, right) {
+  if (!left || !right || left.length !== right.length) return -1;
   let dot = 0; let leftNorm = 0; let rightNorm = 0;
   for (let i = 0; i < left.length; i++) { dot += left[i] * right[i]; leftNorm += left[i] * left[i]; rightNorm += right[i] * right[i]; }
   return leftNorm && rightNorm ? dot / Math.sqrt(leftNorm * rightNorm) : -1;
 }
 
+function getGalleryRecognitionThreshold(galleryManager) {
+  const threshold = galleryManager.getConfig().recognitionThreshold;
+  return Number.isFinite(threshold) ? threshold : SFACE_COSINE_THRESHOLD;
+}
+
+function removePendingFacesMatchingDescriptor(descriptor, threshold, requiredFaceId = null) {
+  const matches = getPendingFaces()
+    .filter(face => face.faceId === requiredFaceId || faceSimilarity(descriptor, face.descriptor) >= threshold)
+    .map(face => face.faceId);
+  if (requiredFaceId && !matches.includes(requiredFaceId)) matches.push(requiredFaceId);
+  if (matches.length === 0) return 0;
+  const d = getDb();
+  const remove = d.prepare('DELETE FROM pending_faces WHERE id=?');
+  d.transaction(ids => ids.forEach(id => remove.run(id)))(matches);
+  return matches.length;
+}
+
+function prunePendingFacesRecognizedByGallery(galleryManager = getGallery()) {
+  const threshold = getGalleryRecognitionThreshold(galleryManager);
+  const staleIds = getPendingFaces()
+    .filter(face => {
+      const match = galleryManager.findBestMatch(new Float32Array(face.descriptor));
+      return match && match.similarity >= threshold;
+    })
+    .map(face => face.faceId);
+  if (staleIds.length === 0) return 0;
+  const d = getDb();
+  const remove = d.prepare('DELETE FROM pending_faces WHERE id=?');
+  d.transaction(ids => ids.forEach(id => remove.run(id)))(staleIds);
+  return staleIds.length;
+}
+
 function storePendingFace(det) {
   if (!Array.isArray(det.descriptor) || det.descriptor.length !== 128 || det.descriptor.some(value => !Number.isFinite(value))) return false;
   const descriptor = det.descriptor.map(Number);
+  // 标注后的短时间内，渲染进程可能仍上报旧的“未识别”追踪；以最新底库为准二次拦截。
+  const galleryManager = getGallery();
+  const knownMatch = galleryManager.findBestMatch(new Float32Array(descriptor));
+  const recognitionThreshold = getGalleryRecognitionThreshold(galleryManager);
+  if (knownMatch && knownMatch.similarity >= recognitionThreshold) {
+    return removePendingFacesMatchingDescriptor(descriptor, recognitionThreshold) > 0;
+  }
   const pending = getPendingFaces();
   const duplicate = pending.find(face => faceSimilarity(descriptor, face.descriptor) >= 0.72);
   const now = new Date().toISOString();
@@ -1247,11 +1287,13 @@ function startWSServer() {
             data.students.push({ id: msg.studentId, name: msg.name });
             saveData(data);
           }
-          removePendingFace(msg.faceId);
+          // 同一个人可能因角度变化产生多条待标注记录；入库后一次清除全部可识别记录。
+          const removedPendingCount = prunePendingFacesRecognizedByGallery(g);
+          if (removedPendingCount === 0) removePendingFace(msg.faceId);
           // 广播标注结果
           broadcastLabelResult(msg.faceId, msg.studentId, msg.name);
           broadcastPendingFaces();
-          console.log(`[face] labeled face ${msg.faceId} as ${msg.name} (${msg.studentId})`);
+          console.log(`[face] labeled face ${msg.faceId} as ${msg.name} (${msg.studentId}); cleared ${Math.max(removedPendingCount, 1)} pending face(s)`);
           break;
         }
       }
@@ -1318,6 +1360,8 @@ function broadcastSync(data) {
 function sendTeacherSync(ws, data) {
   if (!isHomeroomBound() || !ws || ws.readyState !== WebSocket.OPEN || !ws._teacher || ws._teacher.status !== 'approved') return;
   if (!isClassroomConfigured() && ws._teacher.role !== '班主任') return;
+  // 兼容修复前遗留的数据：同步前先过滤已经能被当前底库识别的待标注记录。
+  prunePendingFacesRecognizedByGallery();
   ws.send(JSON.stringify({
     type: 'sync',
     className: data.className,
@@ -1525,6 +1569,7 @@ ipcMain.handle('face:register', async (_, studentId, name, descriptorArray) => {
     const descriptor = new Float32Array(descriptorArray);
     g.addStudent(studentId, name, [descriptor]);
     g.saveNow();
+    if (prunePendingFacesRecognizedByGallery(g) > 0) broadcastPendingFaces();
     return { success: true };
   } catch (e) {
     console.error('[face:register] error:', e.message);
@@ -1542,6 +1587,7 @@ ipcMain.handle('face:save-descriptor', (_, studentId, name, descriptorArray) => 
     const descriptor = new Float32Array(descriptorArray);
     g.addStudent(studentId, name, [descriptor]);
     g.saveNow();
+    if (prunePendingFacesRecognizedByGallery(g) > 0) broadcastPendingFaces();
     return { success: true };
   } catch (e) {
     console.error('[face:save-descriptor] error:', e.message);
@@ -1557,6 +1603,7 @@ ipcMain.handle('face:report-detections', (_, detections) => {
   try {
     // detections: [{ faceId, cropBase64, descriptor, studentId, name, similarity, isRecognized }]
     const g = getGallery();
+    let pendingChanged = false;
     // 对已识别的人脸：记录考勤 + 自适应特征入库（设计方案核心功能，原先缺失）
     for (const det of detections) {
       if (det.isRecognized && det.studentId) {
@@ -1566,10 +1613,13 @@ ipcMain.handle('face:report-detections', (_, detections) => {
           try {
             g.tryAddAdaptiveDescriptor(det.studentId, new Float32Array(det.descriptor), det.similarity);
           } catch (_) { /* 自适应失败不影响主流程 */ }
+          pendingChanged = removePendingFacesMatchingDescriptor(
+            det.descriptor,
+            getGalleryRecognitionThreshold(g)
+          ) > 0 || pendingChanged;
         }
       }
     }
-    let pendingChanged = false;
     for (const det of detections) {
       if (!det.isRecognized || !det.studentId) pendingChanged = storePendingFace(det) || pendingChanged;
     }

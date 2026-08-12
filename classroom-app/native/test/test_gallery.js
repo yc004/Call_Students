@@ -48,7 +48,27 @@ try {
   assert.strictEqual(reloaded.getMetadata().migration.required, true);
   assert.strictEqual(reloaded.getAllStudentIds().length, 0);
 
-  console.log('[test] gallery model migration, backup, and reload passed');
+  const matchingPath = path.join(tempDir, 'matching-gallery.json');
+  const enrolledDescriptor = Array.from({ length: 128 }, (_, index) => index === 0 ? 1 : 0);
+  const otherDescriptor = Array.from({ length: 128 }, (_, index) => index === 1 ? 1 : 0);
+  fs.writeFileSync(matchingPath, JSON.stringify({
+    embeddingModel: SFACE_EMBEDDING_MODEL,
+    students: [{
+      id: 'student-known',
+      name: '已标注学生',
+      registeredDescriptors: [enrolledDescriptor],
+      adaptiveDescriptors: [],
+    }],
+  }));
+  const matching = new AdaptiveGalleryManager(matchingPath, SFACE_EMBEDDING_MODEL);
+  matching.load();
+  const knownMatch = matching.findBestMatch(new Float32Array(enrolledDescriptor));
+  assert.strictEqual(knownMatch.studentId, 'student-known');
+  assert.strictEqual(knownMatch.name, '已标注学生');
+  assert.ok(knownMatch.similarity > 0.999);
+  assert.ok(matching.findBestMatch(new Float32Array(otherDescriptor)).similarity < matching.getConfig().recognitionThreshold);
+
+  console.log('[test] gallery migration, reload, and known-face matching passed');
 } finally {
   fs.rmSync(tempDir, { recursive: true, force: true });
 }
