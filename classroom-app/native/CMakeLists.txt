@@ -46,7 +46,7 @@ include_directories(
 file(GLOB_RECURSE SOURCES src/*.cpp)
 
 # ── Build shared library (.node) ──────────────────────────────
-add_library(${PROJECT_NAME} SHARED ${SOURCES})
+add_library(${PROJECT_NAME} SHARED ${SOURCES} ${CMAKE_JS_SRC})
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE NAPI_CPP_EXCEPTIONS)
 target_link_libraries(${PROJECT_NAME} PRIVATE ${CMAKE_JS_LIB} ${ONNX_LIB})

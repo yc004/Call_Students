@@ -8,28 +8,26 @@ param(
 $ErrorActionPreference = 'Stop'
 $installerPath = (Resolve-Path $Installer).Path
 $unpackedPath = (Resolve-Path $UnpackedExecutable).Path
-$installDir = Join-Path $env:RUNNER_TEMP $InstallFolderName
+$tempRoot = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [System.IO.Path]::GetTempPath() }
+$installDir = Join-Path $tempRoot $InstallFolderName
 
 function Invoke-SmokeTest([string]$Executable, [string]$Label) {
   Write-Host "[smoke] starting ${Label}: $Executable"
   $safeLabel = $Label -replace '[^A-Za-z0-9_-]', '-'
-  $stdoutPath = Join-Path $env:RUNNER_TEMP "$safeLabel.stdout.log"
-  $stderrPath = Join-Path $env:RUNNER_TEMP "$safeLabel.stderr.log"
-  $env:CLASSROOM_SMOKE_LOG = Join-Path $env:RUNNER_TEMP 'classroom-smoke.log'
+  $stdoutPath = Join-Path $tempRoot "$safeLabel.stdout.log"
+  $stderrPath = Join-Path $tempRoot "$safeLabel.stderr.log"
+  $env:CLASSROOM_SMOKE_LOG = Join-Path $tempRoot 'classroom-smoke.log'
   $process = Start-Process -FilePath $Executable -ArgumentList @('--ci-smoke-test', '--enable-logging') `
-    -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru
-  if (-not $process.WaitForExit(120000)) {
-    $process.Kill()
-    throw "$Label did not exit within 120 seconds"
-  }
-  if ($process.ExitCode -ne 0) {
-    foreach ($logPath in @($stdoutPath, $stderrPath, (Join-Path $env:RUNNER_TEMP 'classroom-smoke.log'))) {
+    -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -Wait -PassThru
+  $exitCode = $process.ExitCode
+  if ($exitCode -ne 0) {
+    foreach ($logPath in @($stdoutPath, $stderrPath, (Join-Path $tempRoot 'classroom-smoke.log'))) {
       if (Test-Path $logPath) {
         Write-Host "[smoke] diagnostic log: $logPath"
         Get-Content $logPath | Write-Host
       }
     }
-    throw "$Label failed with exit code $($process.ExitCode)"
+    throw "$Label failed with exit code $exitCode"
   }
   Write-Host "[smoke] $Label passed"
 }

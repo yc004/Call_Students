@@ -121,8 +121,8 @@ jobs:
           if (-not $installer) { throw 'Classroom installer was not generated' }
           .github/scripts/test-windows-installer.ps1 `
             -Installer $installer `
-            -UnpackedExecutable 'classroom-app/dist/win-unpacked/教室呼叫-教室端.exe' `
-            -InstalledExecutableName '教室呼叫-教室端.exe' `
+            -UnpackedExecutable 'classroom-app/dist/win-unpacked/ClassroomCall-Classroom.exe' `
+            -InstalledExecutableName 'ClassroomCall-Classroom.exe' `
             -InstallFolderName 'ClassroomCall-Classroom-CI'
 
       - name: Upload classroom installer
@@ -194,8 +194,8 @@ jobs:
           if (-not $installer) { throw 'Teacher installer was not generated' }
           .github/scripts/test-windows-installer.ps1 `
             -Installer $installer `
-            -UnpackedExecutable 'teacher-app/dist/win-unpacked/教室呼叫-教师端.exe' `
-            -InstalledExecutableName '教室呼叫-教师端.exe' `
+            -UnpackedExecutable 'teacher-app/dist/win-unpacked/ClassroomCall-Teacher.exe' `
+            -InstalledExecutableName 'ClassroomCall-Teacher.exe' `
             -InstallFolderName 'ClassroomCall-Teacher-CI'
 
       - name: Upload teacher installer
