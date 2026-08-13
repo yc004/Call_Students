@@ -1,4 +1,4 @@
-name: Build Windows Installers
+name: Build Desktop Installers
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: windows-installers-${{ github.ref }}
+  group: desktop-installers-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -221,10 +221,248 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  classroom-macos:
+    name: Classroom app (macOS ${{ matrix.arch }})
+    needs: validate
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            machine: x86_64
+            onnx-arch: x86_64
+            runner: macos-15-intel
+          - arch: arm64
+            machine: arm64
+            onnx-arch: arm64
+            runner: macos-15
+    env:
+      MACOS_SIGNING_ENABLED: ${{ secrets.MACOS_CSC_LINK != '' }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Confirm native runner architecture
+        run: |
+          test "$(uname -m)" = "${{ matrix.machine }}"
+          sw_vers
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: classroom-app/package-lock.json
+
+      - name: Cache Electron toolchains
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: macos-${{ matrix.arch }}-electron-classroom-${{ hashFiles('classroom-app/package-lock.json') }}
+
+      - name: Cache ONNX Runtime and verified models
+        uses: actions/cache@v5
+        with:
+          path: |
+            classroom-app/.cache/onnxruntime
+            classroom-app/models/onnx/*.onnx
+          key: macos-${{ matrix.arch }}-native-${{ env.ONNX_RUNTIME_VERSION }}-${{ hashFiles('classroom-app/models/onnx/models.json') }}
+
+      - name: Install locked dependencies
+        working-directory: classroom-app
+        run: |
+          npm config set registry https://registry.npmjs.org
+          npm config set replace-registry-host always
+          npm ci
+
+      - name: Prepare ONNX Runtime
+        run: bash .github/scripts/prepare-onnxruntime-macos.sh "$ONNX_RUNTIME_VERSION" "${{ matrix.onnx-arch }}"
+
+      - name: Download and verify face models
+        working-directory: classroom-app
+        run: npm run prepare:models
+
+      - name: Build and test native face engine
+        working-directory: classroom-app
+        run: |
+          npm run build:native
+          file native/build/Release/face_native_addon.node | grep '${{ matrix.machine }}'
+          npm run test:native
+
+      - name: Configure optional macOS signing
+        env:
+          MACOS_CSC_LINK_SECRET: ${{ secrets.MACOS_CSC_LINK }}
+          MACOS_CSC_KEY_PASSWORD_SECRET: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
+          MACOS_APPLE_ID_SECRET: ${{ secrets.MACOS_APPLE_ID }}
+          MACOS_APPLE_APP_PASSWORD_SECRET: ${{ secrets.MACOS_APPLE_APP_SPECIFIC_PASSWORD }}
+          MACOS_APPLE_TEAM_ID_SECRET: ${{ secrets.MACOS_APPLE_TEAM_ID }}
+        run: |
+          if [[ -n "$MACOS_CSC_LINK_SECRET" ]]; then
+            {
+              echo "CSC_LINK=$MACOS_CSC_LINK_SECRET"
+              echo "CSC_KEY_PASSWORD=$MACOS_CSC_KEY_PASSWORD_SECRET"
+              echo "APPLE_ID=$MACOS_APPLE_ID_SECRET"
+              echo "APPLE_APP_SPECIFIC_PASSWORD=$MACOS_APPLE_APP_PASSWORD_SECRET"
+              echo "APPLE_TEAM_ID=$MACOS_APPLE_TEAM_ID_SECRET"
+            } >> "$GITHUB_ENV"
+            echo '[signing] Developer ID certificate configured'
+          else
+            echo '[signing] no certificate configured; building unsigned packages'
+          fi
+
+      - name: Build DMG and ZIP packages
+        working-directory: classroom-app
+        run: |
+          if [[ "$MACOS_SIGNING_ENABLED" == "true" ]]; then
+            npm run build:mac:ci -- --${{ matrix.arch }} \
+              --config.mac.hardenedRuntime=true
+          else
+            npm run build:mac:ci -- --${{ matrix.arch }}
+          fi
+
+      - name: Smoke-test application and DMG
+        run: |
+          app_path="$(find classroom-app/dist -maxdepth 2 -type d -name '*.app' -print -quit)"
+          dmg_path="$(find classroom-app/dist -maxdepth 1 -type f -name 'ClassroomCall-Classroom-*-macOS-${{ matrix.arch }}.dmg' -print -quit)"
+          bash .github/scripts/test-macos-package.sh \
+            "$app_path" "$dmg_path" 'ClassroomCall-Classroom' '${{ matrix.machine }}'
+
+      - name: Generate package checksums
+        working-directory: classroom-app
+        run: |
+          cd dist
+          shasum -a 256 \
+            ClassroomCall-Classroom-*-macOS-${{ matrix.arch }}.dmg \
+            ClassroomCall-Classroom-*-macOS-${{ matrix.arch }}.zip \
+            > SHA256SUMS-classroom-macOS-${{ matrix.arch }}.txt
+
+      - name: Upload classroom packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: classroom-macos-${{ matrix.arch }}-${{ github.sha }}
+          path: |
+            classroom-app/dist/ClassroomCall-Classroom-*-macOS-${{ matrix.arch }}.dmg
+            classroom-app/dist/ClassroomCall-Classroom-*-macOS-${{ matrix.arch }}.zip
+            classroom-app/dist/SHA256SUMS-classroom-macOS-${{ matrix.arch }}.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  teacher-macos:
+    name: Teacher app (macOS ${{ matrix.arch }})
+    needs: validate
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            machine: x86_64
+            runner: macos-15-intel
+          - arch: arm64
+            machine: arm64
+            runner: macos-15
+    env:
+      MACOS_SIGNING_ENABLED: ${{ secrets.MACOS_CSC_LINK != '' }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Confirm native runner architecture
+        run: |
+          test "$(uname -m)" = "${{ matrix.machine }}"
+          sw_vers
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: teacher-app/package-lock.json
+
+      - name: Cache Electron toolchains
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: macos-${{ matrix.arch }}-electron-teacher-${{ hashFiles('teacher-app/package-lock.json') }}
+
+      - name: Install locked dependencies
+        working-directory: teacher-app
+        run: |
+          npm config set registry https://registry.npmjs.org
+          npm config set replace-registry-host always
+          npm ci
+
+      - name: Configure optional macOS signing
+        env:
+          MACOS_CSC_LINK_SECRET: ${{ secrets.MACOS_CSC_LINK }}
+          MACOS_CSC_KEY_PASSWORD_SECRET: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
+          MACOS_APPLE_ID_SECRET: ${{ secrets.MACOS_APPLE_ID }}
+          MACOS_APPLE_APP_PASSWORD_SECRET: ${{ secrets.MACOS_APPLE_APP_SPECIFIC_PASSWORD }}
+          MACOS_APPLE_TEAM_ID_SECRET: ${{ secrets.MACOS_APPLE_TEAM_ID }}
+        run: |
+          if [[ -n "$MACOS_CSC_LINK_SECRET" ]]; then
+            {
+              echo "CSC_LINK=$MACOS_CSC_LINK_SECRET"
+              echo "CSC_KEY_PASSWORD=$MACOS_CSC_KEY_PASSWORD_SECRET"
+              echo "APPLE_ID=$MACOS_APPLE_ID_SECRET"
+              echo "APPLE_APP_SPECIFIC_PASSWORD=$MACOS_APPLE_APP_PASSWORD_SECRET"
+              echo "APPLE_TEAM_ID=$MACOS_APPLE_TEAM_ID_SECRET"
+            } >> "$GITHUB_ENV"
+            echo '[signing] Developer ID certificate configured'
+          else
+            echo '[signing] no certificate configured; building unsigned packages'
+          fi
+
+      - name: Build DMG and ZIP packages
+        working-directory: teacher-app
+        run: |
+          if [[ "$MACOS_SIGNING_ENABLED" == "true" ]]; then
+            npm run build:mac:ci -- --${{ matrix.arch }} \
+              --config.mac.hardenedRuntime=true
+          else
+            npm run build:mac:ci -- --${{ matrix.arch }}
+          fi
+
+      - name: Smoke-test application and DMG
+        run: |
+          app_path="$(find teacher-app/dist -maxdepth 2 -type d -name '*.app' -print -quit)"
+          dmg_path="$(find teacher-app/dist -maxdepth 1 -type f -name 'ClassroomCall-Teacher-*-macOS-${{ matrix.arch }}.dmg' -print -quit)"
+          bash .github/scripts/test-macos-package.sh \
+            "$app_path" "$dmg_path" 'ClassroomCall-Teacher' '${{ matrix.machine }}'
+
+      - name: Generate package checksums
+        working-directory: teacher-app
+        run: |
+          cd dist
+          shasum -a 256 \
+            ClassroomCall-Teacher-*-macOS-${{ matrix.arch }}.dmg \
+            ClassroomCall-Teacher-*-macOS-${{ matrix.arch }}.zip \
+            > SHA256SUMS-teacher-macOS-${{ matrix.arch }}.txt
+
+      - name: Upload teacher packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: teacher-macos-${{ matrix.arch }}-${{ github.sha }}
+          path: |
+            teacher-app/dist/ClassroomCall-Teacher-*-macOS-${{ matrix.arch }}.dmg
+            teacher-app/dist/ClassroomCall-Teacher-*-macOS-${{ matrix.arch }}.zip
+            teacher-app/dist/SHA256SUMS-teacher-macOS-${{ matrix.arch }}.txt
+          if-no-files-found: error
+          retention-days: 30
+
   release:
     name: Publish tagged release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [classroom-windows, teacher-windows]
+    needs: [classroom-windows, teacher-windows, classroom-macos, teacher-macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -233,7 +471,7 @@ jobs:
       - name: Download verified installers
         uses: actions/download-artifact@v8
         with:
-          pattern: '*-windows-x64-*'
+          pattern: '*-${{ github.sha }}'
           path: release
           merge-multiple: true
 

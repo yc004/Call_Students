@@ -13,6 +13,9 @@
     "test:homework-export": "node test/homework-export.test.js",
     "build": "electron-builder --win",
     "build:win:ci": "electron-builder --win nsis --x64 --publish never",
+    "prepare:mac-icon": "bash ../scripts/prepare-macos-icon.sh .",
+    "build:mac": "npm run prepare:mac-icon && electron-builder --mac dmg zip",
+    "build:mac:ci": "npm run prepare:mac-icon && electron-builder --mac dmg zip --publish never",
     "build:portable": "electron-builder --win portable"
   },
   "build": {
@@ -47,6 +50,28 @@
           "target": "nsis",
           "arch": [
             "x64"
+          ]
+        }
+      ]
+    },
+    "mac": {
+      "icon": "build/icon.icns",
+      "artifactName": "ClassroomCall-Teacher-${version}-macOS-${arch}.${ext}",
+      "category": "public.app-category.education",
+      "hardenedRuntime": false,
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
           ]
         }
       ]

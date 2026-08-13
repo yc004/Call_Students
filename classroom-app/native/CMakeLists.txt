@@ -29,7 +29,7 @@ if(WIN32)
 elseif(APPLE)
     set(ONNX_LIB "${ONNX_RUNTIME_ROOT}/lib/libonnxruntime.dylib")
     set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15")
-    set(ONNX_DYLIB "${ONNX_RUNTIME_ROOT}/lib/libonnxruntime.dylib")
+    file(GLOB ONNX_DYLIBS "${ONNX_RUNTIME_ROOT}/lib/libonnxruntime*.dylib")
 else()
     set(ONNX_LIB "${ONNX_RUNTIME_ROOT}/lib/libonnxruntime.so")
     set(ONNX_SO "${ONNX_RUNTIME_ROOT}/lib/libonnxruntime.so")
@@ -62,7 +62,7 @@ if(APPLE)
     )
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${ONNX_DYLIB} $<TARGET_FILE_DIR:${PROJECT_NAME}>
+            ${ONNX_DYLIBS} $<TARGET_FILE_DIR:${PROJECT_NAME}>
     )
 endif()
 
