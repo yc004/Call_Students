@@ -468,6 +468,9 @@ jobs:
       contents: write
 
     steps:
+      - name: Check out release metadata
+        uses: actions/checkout@v7
+
       - name: Download verified installers
         uses: actions/download-artifact@v8
         with:
@@ -478,9 +481,14 @@ jobs:
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" release/* --clobber
+          if gh release view "$GITHUB_REF_NAME" --repo "$GH_REPO" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" release/* --clobber --repo "$GH_REPO"
           else
-            gh release create "$GITHUB_REF_NAME" release/* --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
+            gh release create "$GITHUB_REF_NAME" release/* \
+              --repo "$GH_REPO" \
+              --verify-tag \
+              --generate-notes \
+              --title "$GITHUB_REF_NAME"
           fi
