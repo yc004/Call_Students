@@ -15,7 +15,7 @@
     "build": "npm run build:native && electron-builder --win",
     "build:win:ci": "electron-builder --win nsis --x64 --publish never",
     "prepare:mac-icon": "bash ../scripts/prepare-macos-icon.sh .",
-    "build:mac": "npm run build:native && npm run prepare:mac-icon && electron-builder --mac dmg zip",
+    "build:mac": "npm run build:native && npm run prepare:mac-icon && electron-builder --mac dmg zip --config.mac.identity=- --config.mac.hardenedRuntime=false",
     "build:mac:ci": "npm run prepare:mac-icon && electron-builder --mac dmg zip --publish never",
     "build:portable": "npm run build:native && electron-builder --win portable"
   },

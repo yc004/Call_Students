@@ -322,7 +322,12 @@ jobs:
             npm run build:mac:ci -- --${{ matrix.arch }} \
               --config.mac.hardenedRuntime=true
           else
-            npm run build:mac:ci -- --${{ matrix.arch }}
+            # Ad-hoc signing gives every nested Electron/native binary a
+            # consistent signature even when no Developer ID certificate is
+            # configured. It is not notarization, but avoids a malformed
+            # unsigned bundle being reported as “damaged” by Gatekeeper.
+            npm run build:mac:ci -- --${{ matrix.arch }} \
+              --config.mac.identity=- --config.mac.hardenedRuntime=false
           fi
 
       - name: Smoke-test application and DMG
@@ -429,7 +434,8 @@ jobs:
             npm run build:mac:ci -- --${{ matrix.arch }} \
               --config.mac.hardenedRuntime=true
           else
-            npm run build:mac:ci -- --${{ matrix.arch }}
+            npm run build:mac:ci -- --${{ matrix.arch }} \
+              --config.mac.identity=- --config.mac.hardenedRuntime=false
           fi
 
       - name: Smoke-test application and DMG

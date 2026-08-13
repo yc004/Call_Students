@@ -30,9 +30,14 @@ if ! file "$executable_path" | grep -q "$expected_arch"; then
   exit 1
 fi
 
+codesign --verify --deep --strict --verbose=2 "$app_path"
+signature_details="$(codesign -dv --verbose=4 "$app_path" 2>&1 || true)"
 if [[ "${MACOS_SIGNING_ENABLED:-false}" == "true" ]]; then
-  codesign --verify --deep --strict --verbose=2 "$app_path"
+  echo "$signature_details" | grep -q 'Authority=Developer ID Application:'
   echo "[package] Developer ID signature is valid"
+else
+  echo "$signature_details" | grep -q 'Signature=adhoc'
+  echo "[package] ad-hoc signature is valid (not notarized)"
 fi
 
 temp_root="${RUNNER_TEMP:-$(mktemp -d)}"
