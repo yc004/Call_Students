@@ -20,7 +20,7 @@
 
     <ol class="steps" aria-label="设置进度">
       <li class="done"><span>1</span><div><strong>安装教师端</strong><small>在班主任电脑登录账户</small></div></li>
-      <li class="active"><span>2</span><div><strong>连接本教室</strong><small>使用下方局域网地址</small></div></li>
+      <li class="active"><span>2</span><div><strong>连接本教室</strong><small>使用下方教室连接码</small></div></li>
       <li><span>3</span><div><strong>确认绑定</strong><small>之后前往教师端配置</small></div></li>
     </ol>
 
@@ -31,14 +31,16 @@
           <div><h2>让班主任连接教室</h2><p>在班主任电脑的教师端完成以下操作。</p></div>
         </div>
         <ol class="guide-list">
-          <li><span>1</span><p>打开教师端，创建或登录班主任的本机账户。</p></li>
-          <li><span>2</span><p>在左侧“连接教室”中输入以下任一局域网 IP。</p></li>
-          <li><span>3</span><p>点击“连接”，教师姓名会自动出现在右侧等待绑定。</p></li>
+          <li><span>1</span><p>打开教师端或微信小程序，登录班主任账户。</p></li>
+          <li><span>2</span><p>扫描下方二维码，或在教师端输入 9 位连接码。</p></li>
+          <li><span>3</span><p>填写至少一个授课科目并点击“连接”，教师姓名会出现在右侧。</p></li>
         </ol>
         <div class="address-box">
-          <span class="address-label">本教室局域网地址</span>
+          <div class="onboarding-network"><label class="address-label" for="networkInterface">用于手机连接的网卡</label><select id="networkInterface"><option value="">自动选择（推荐）</option></select><small id="networkDetail">正在检测网卡…</small></div>
+          <div class="qr-preview"><img id="classroomQrImage" alt="教室连接二维码"><span id="qrPlaceholder">正在生成二维码…</span></div>
+          <span class="address-label">本教室连接码</span>
           <div id="addressList" class="address-list"><code>正在读取…</code></div>
-          <small>教师电脑与教室电脑必须连接同一个局域网。</small>
+          <small>在小程序底部点“扫码”即可添加；手机与教室电脑必须处于同一局域网。</small>
         </div>
       </div>
 

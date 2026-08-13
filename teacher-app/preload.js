@@ -9,9 +9,7 @@ contextBridge.exposeInMainWorld('api', {
   // ── 数据读写 ──
   getData:     ()       => ipcRenderer.invoke('get-data'),
   saveData:    (data)   => ipcRenderer.invoke('save-data', data),
-  registerAccount: (account) => ipcRenderer.invoke('register-account', account),
-  loginAccount: (name, password) => ipcRenderer.invoke('login-account', name, password),
-  generateLoginKey: () => ipcRenderer.invoke('generate-login-key'),
   generateMiniProgramQr: () => ipcRenderer.invoke('generate-mini-program-qr'),
-  importLoginKey: (loginKey, replaceExisting = false) => ipcRenderer.invoke('import-login-key', loginKey, replaceExisting),
+  getMiniProgramLoginStatus: () => ipcRenderer.invoke('get-mini-program-login-status'),
+  exportHomework: (data) => ipcRenderer.invoke('export-homework', data),
 });

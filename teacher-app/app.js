@@ -1,27 +1,35 @@
 /* ══════════════════════════════════════════
    教师端 — 登录与连接流程
-   本地账户登录 → 输入教室 IP → 管理员审核 → 同步教室数据
+   本地账户登录 → 输入教室连接码 → 管理员审核 → 同步教室数据
    ══════════════════════════════════════════ */
 
 (function () {
   'use strict';
 
   const api = window.api || {};
+  const connectionCode = window.ConnectionCode;
+  const homeworkView = window.HomeworkView;
 
   // ── DOM ──
-  let ipInput, connectBtn, roomList, noRooms, connDot, connLabel;
+  let connectionCodeInput, connectBtn, roomList, noRooms, connDot, connLabel;
   let roomHeader, roomTitle, studentCount, msgRow, callMessageInp, callFlow;
   let studentGrid, emptyState, historyTbody, noHistory;
   let searchInput, searchRow, searchResult;
   let msgEditor;
   let mainTabs, mainTabBtns, mainTabContents;
   let hwSection;
-  let hwStatusFilter, hwDateFrom, hwDateTo, addAssignmentBtn2;
+  let hwStatusFilter, hwDateFrom, hwDateTo, addAssignmentBtn2, exportHomeworkBtn;
+  let hwStagePending, hwStageClosed, hwPendingCount, hwClosedCount, hwPendingLabel, hwClosedLabel, hwPendingHint, hwClosedHint;
+  let hwContentHomework, hwContentNotice, publishNoticeBtn;
   // 多选
   let hwSubjectMs, hwSubjectBtn, hwSubjectDrop, selectedSubjects = [];
   let hwAssignMs, hwAssignBtn, hwAssignDrop, selectedAssigns = [];
+  let homeworkStage = 'pending';
+  let homeworkContentType = 'homework';
+  let publishType = 'homework';
   let hwContent;
   let hwModal, hwModalTitleLabel, hwModalSubject, hwModalTitle, hwModalDate, hwModalDeadline, hwModalCancel, hwModalConfirm;
+  let publishTypeHomework, publishTypeNotice, publishContentLabel, publishDeadlineLabel, publishHint;
   // 人脸识别 DOM
   let faceSection, faceRoomName, faceSummary;
   let faceGridUnknown, faceGridRegistered;
@@ -30,15 +38,14 @@
   let labelModal, labelPreview, labelStudentSelect, labelNewName;
   let labelCancel, labelConfirm;
   // 账户与审批 DOM
-  let accountOverlay, accountTitle, accountDesc, loginForm, registerForm, keyLoginForm;
-  let loginName, loginPassword, loginError, regName, regSubjects, regPassword, regPassword2, regError;
-  let loginKeyInput, keyLoginError, generatedLoginKey, loginKeyResult, loginKeyStatus;
+  let accountOverlay, accountTitle, accountDesc;
   let teacherInfo, accountMenuBtn, accountModal, approvalOverlay, approvalDesc;
   let classroomTabBtn, manageClassName, manageStudents, saveClassroomBtn;
   let classroomSetupOverlay, setupClassName, setupStudents, setupError, completeSetupBtn;
   let pendingTeacherList, approvedTeacherList, pendingTeacherCount, approvedTeacherCount, refreshTeachersBtn;
   let teacherEditModal, teacherEditName, teacherEditSubjects, teacherEditCancel, teacherEditSave;
   let editingTeacherId = '';
+  let miniLoginPollTimer = null;
 
   // ── 状态 ──
   const state = {
@@ -51,6 +58,9 @@
     callTimers:   {},
     reconnectTimer: null,
     reconnectAttempts: 0,
+    consecutiveFailures: 0,
+    reconnectPaused: false,
+    failurePromptShown: false,
     searchQuery:  '',
     subjects:     [],
     assignments:  [],
@@ -63,9 +73,11 @@
     teacherStatus: null,
     classroomConfigured: false,
     teachers: { approved: [], pending: [] },
-    pendingRoomIp: '',
+    pendingRoomCode: '',
+    connectingRoomCode: '',
   };
   const MAX_HISTORY = 500;
+  const MAX_CONNECT_ATTEMPTS = 5;
 
   // ═══════════════════════════════════
   //  持久化
@@ -83,57 +95,66 @@
   //  账户
   // ═══════════════════════════════════
 
-  function showAccountOverlay(mode, account) {
+  function showAccountOverlay() {
     if (!accountOverlay) return;
     accountOverlay.classList.remove('hidden');
-    accountOverlay.classList.toggle('register-mode', mode === 'register');
+    accountOverlay.classList.remove('register-mode');
     document.body.classList.add('account-locked');
     const appRoot = document.querySelector('.app');
     if (appRoot) appRoot.setAttribute('inert', '');
-    const isLogin = mode === 'login';
-    const isRegister = mode === 'register';
-    const isKeyLogin = mode === 'key';
-    loginForm && loginForm.classList.toggle('hidden', !isLogin);
-    registerForm && registerForm.classList.toggle('hidden', !isRegister);
-    keyLoginForm && keyLoginForm.classList.toggle('hidden', !isKeyLogin);
-    if (accountTitle) accountTitle.textContent = isLogin ? '教师登录' : (isRegister ? '创建教师账户' : '使用登录密钥');
-    if (accountDesc) {
-      accountDesc.textContent = isLogin
-        ? '登录后才能连接教室和使用教学功能。'
-        : (isRegister
-          ? '账户保存在这台教师电脑上，创建后需由教室管理员批准。'
-          : '粘贴从原教师端生成的密钥，恢复同一个教师身份。');
-    }
-    clearAccountErrors();
-    if (isLogin && loginName) {
-      loginName.value = account && account.name ? account.name : loginName.value;
-      setTimeout(() => (loginPassword || loginName).focus(), 0);
-    } else if (isRegister && regName) {
-      setTimeout(() => regName.focus(), 0);
-    } else if (isKeyLogin && loginKeyInput) {
-      setTimeout(() => loginKeyInput.focus(), 0);
-    }
+    document.getElementById('miniScanLogin')?.classList.remove('hidden');
+    if (accountTitle) accountTitle.textContent = '使用小程序登录';
+    if (accountDesc) accountDesc.textContent = '在小程序中登录或创建教师账户，然后扫描下方二维码。';
+    setTimeout(() => handleTeacherLoginQr(), 0);
   }
 
   function hideAccountOverlay() {
+    stopMiniLoginPolling();
     accountOverlay && accountOverlay.classList.add('hidden');
     document.body.classList.remove('account-locked');
     const appRoot = document.querySelector('.app');
     if (appRoot) appRoot.removeAttribute('inert');
   }
 
-  function clearAccountErrors() {
-    [loginError, regError, keyLoginError].forEach(el => {
-      if (!el) return;
-      el.textContent = '';
-      el.classList.add('hidden');
-    });
+  function stopMiniLoginPolling() {
+    if (miniLoginPollTimer) clearInterval(miniLoginPollTimer);
+    miniLoginPollTimer = null;
   }
 
-  function showAccountError(el, message) {
-    if (!el) return;
-    el.textContent = message;
-    el.classList.remove('hidden');
+  async function handleTeacherLoginQr() {
+    if (!api.generateMiniProgramQr) return;
+    const image = document.getElementById('teacherLoginQrImage');
+    const status = document.getElementById('teacherLoginQrStatus');
+    const button = document.getElementById('refreshTeacherLoginQr');
+    stopMiniLoginPolling();
+    if (button) { button.disabled = true; button.textContent = '生成中…'; }
+    if (status) status.textContent = '正在建立局域网临时登录服务…';
+    try {
+      const result = await api.generateMiniProgramQr();
+      if (!result || !result.ok) { if (status) status.textContent = result && result.message || '二维码生成失败'; return; }
+      if (image) image.src = result.qrDataUrl;
+      if (status) status.textContent = '打开小程序“我的—登录电脑教师端”扫码。二维码 2 分钟内有效。';
+      if (button) button.textContent = '刷新二维码';
+      miniLoginPollTimer = setInterval(checkMiniProgramLoginStatus, 700);
+    } catch (_error) { if (status) status.textContent = '二维码生成失败，请检查局域网后重试。'; }
+    finally { if (button) button.disabled = false; }
+  }
+
+  async function checkMiniProgramLoginStatus() {
+    if (!api.getMiniProgramLoginStatus) return;
+    const result = await api.getMiniProgramLoginStatus();
+    if (!result || !result.ok) return;
+    stopMiniLoginPolling();
+    disconnect();
+    resetRoomWorkspace(false);
+    state.rooms = result.rooms || [];
+    state.callHistory = result.callHistory || [];
+    state.currentRoom = null;
+    state.connectingRoomCode = '';
+    state.pendingRoomCode = '';
+    renderRooms();
+    renderHistory();
+    setSignedInAccount(result.account);
   }
 
   function setSignedInAccount(account) {
@@ -146,125 +167,11 @@
     if (modalAvatar) modalAvatar.textContent = avatarText;
     accountMenuBtn && accountMenuBtn.classList.remove('hidden');
     hideAccountOverlay();
-  }
-
-  async function handleLogin(event) {
-    event && event.preventDefault();
-    const name = loginName ? loginName.value.trim() : '';
-    const password = loginPassword ? loginPassword.value : '';
-    clearAccountErrors();
-    if (!name || !password) {
-      showAccountError(loginError, '请输入教师姓名和密码');
-      return;
+    if (state.pendingRoomCode && connectionCode.isValid(state.pendingRoomCode)) {
+      const code = state.pendingRoomCode;
+      state.pendingRoomCode = '';
+      setTimeout(() => connect(code), 0);
     }
-    if (!api.loginAccount) {
-      showAccountError(loginError, '请在教师端应用中登录');
-      return;
-    }
-    let result;
-    try {
-      result = await api.loginAccount(name, password);
-    } catch (error) {
-      showAccountError(loginError, '登录服务暂时不可用，请重试');
-      return;
-    }
-    if (!result || !result.ok) {
-      showAccountError(loginError, result && result.message ? result.message : '登录失败');
-      loginPassword && loginPassword.select();
-      return;
-    }
-    if (loginPassword) loginPassword.value = '';
-    setSignedInAccount(result.account);
-  }
-
-  async function handleRegister(event) {
-    event && event.preventDefault();
-    const name = regName ? regName.value.trim() : '';
-    const password = regPassword ? regPassword.value : '';
-    const password2 = regPassword2 ? regPassword2.value : '';
-    const subjects = (regSubjects ? regSubjects.value : '')
-      .split(/[,，]+/).map(value => value.trim()).filter(Boolean);
-    clearAccountErrors();
-    if (!name) { showAccountError(regError, '请输入教师姓名'); return; }
-    if (password.length < 6) { showAccountError(regError, '密码至少需要 6 位'); return; }
-    if (password !== password2) { showAccountError(regError, '两次输入的密码不一致'); return; }
-    if (!api.registerAccount) { showAccountError(regError, '请在教师端应用中创建账户'); return; }
-    let result;
-    try {
-      result = await api.registerAccount({ name, password, subjects });
-    } catch (error) {
-      showAccountError(regError, '账户创建失败，请重试');
-      return;
-    }
-    if (!result || !result.ok) {
-      showAccountError(regError, result && result.message ? result.message : '创建账户失败');
-      return;
-    }
-    if (regPassword) regPassword.value = '';
-    if (regPassword2) regPassword2.value = '';
-    setSignedInAccount(result.account);
-  }
-
-  async function handleKeyLogin(event) {
-    event && event.preventDefault();
-    const loginKey = loginKeyInput ? loginKeyInput.value.trim() : '';
-    clearAccountErrors();
-    if (!loginKey) { showAccountError(keyLoginError, '请粘贴完整的登录密钥'); return; }
-    if (!api.importLoginKey) { showAccountError(keyLoginError, '请在教师端应用中使用登录密钥'); return; }
-
-    let result;
-    try {
-      result = await api.importLoginKey(loginKey, false);
-      if (result && result.needsReplace) {
-        const shouldReplace = confirm(`${result.message}\n\n替换只会更改本机教师账户，不会删除教室列表和呼叫记录。是否继续？`);
-        if (!shouldReplace) return;
-        result = await api.importLoginKey(loginKey, true);
-      }
-    } catch (_error) {
-      showAccountError(keyLoginError, '密钥登录服务暂时不可用，请重试');
-      return;
-    }
-    if (!result || !result.ok) {
-      showAccountError(keyLoginError, result && result.message ? result.message : '登录密钥无效');
-      return;
-    }
-    if (loginKeyInput) loginKeyInput.value = '';
-    setSignedInAccount(result.account);
-  }
-
-  async function handleGenerateLoginKey() {
-    if (!api.generateLoginKey) return;
-    const button = document.getElementById('generateLoginKeyBtn');
-    if (button) { button.disabled = true; button.textContent = '生成中…'; }
-    try {
-      const result = await api.generateLoginKey();
-      if (!result || !result.ok) {
-        alert(result && result.message ? result.message : '登录密钥生成失败');
-        return;
-      }
-      if (generatedLoginKey) generatedLoginKey.value = result.loginKey;
-      if (loginKeyStatus) loginKeyStatus.textContent = '密钥等同于登录凭证，请勿发送给他人。';
-      loginKeyResult && loginKeyResult.classList.remove('hidden');
-    } catch (_error) {
-      alert('登录密钥生成失败，请重试');
-    } finally {
-      if (button) { button.disabled = false; button.textContent = '重新生成'; }
-    }
-  }
-
-  async function handleCopyLoginKey() {
-    const value = generatedLoginKey ? generatedLoginKey.value : '';
-    if (!value) return;
-    let copied = false;
-    try {
-      await navigator.clipboard.writeText(value);
-      copied = true;
-    } catch (_error) {
-      generatedLoginKey.focus();
-      generatedLoginKey.select();
-      copied = document.execCommand('copy');
-    }
-    if (loginKeyStatus) loginKeyStatus.textContent = copied ? '已复制，可在其他教师端直接粘贴登录。' : '复制失败，请手动选择并复制。';
   }
 
   async function handleGenerateMiniProgramQr() {
@@ -279,10 +186,12 @@
       if (!result || !result.ok) { alert(result && result.message ? result.message : '二维码生成失败'); return; }
       if (image) image.src = result.qrDataUrl;
       if (hint) hint.textContent = result.roomCount
-        ? `二维码包含当前账户和 ${result.roomCount} 个已保存教室。请勿拍照转发给他人。`
-        : '当前还没有已保存教室；扫码后可在小程序中手动添加教室 IP。请勿转发二维码。';
+        ? `手机与电脑需在同一局域网。扫码后将安全传输 ${result.roomCount} 个已保存教室；二维码 2 分钟内有效，成功后立即失效。`
+        : '手机与电脑需在同一局域网。当前没有已保存教室；二维码 2 分钟内有效，成功后立即失效。';
       resultBox && resultBox.classList.remove('hidden');
       if (button) button.textContent = '刷新二维码';
+      stopMiniLoginPolling();
+      miniLoginPollTimer = setInterval(checkMiniProgramLoginStatus, 700);
     } catch (_error) {
       alert('二维码生成失败，请重试');
     } finally {
@@ -296,14 +205,9 @@
     const subjects = document.getElementById('accountModalSubjects');
     const connectionId = document.getElementById('accountConnectionId');
     if (name) name.textContent = state.account.name;
-    if (subjects) subjects.textContent = (state.account.subjects || []).join('、') || '未填写授课科目';
+    if (subjects) subjects.textContent = '连接教室后确认授课科目';
     if (connectionId) connectionId.textContent = state.account.connectionId;
-    if (generatedLoginKey) generatedLoginKey.value = '';
-    if (loginKeyStatus) loginKeyStatus.textContent = '密钥等同于登录凭证，请勿发送给他人。';
-    loginKeyResult && loginKeyResult.classList.add('hidden');
     document.getElementById('miniProgramQrResult')?.classList.add('hidden');
-    const generateButton = document.getElementById('generateLoginKeyBtn');
-    if (generateButton) generateButton.textContent = '生成密钥';
     accountModal.classList.remove('hidden');
   }
 
@@ -311,11 +215,10 @@
     disconnect();
     hideApprovalOverlay();
     accountModal && accountModal.classList.add('hidden');
-    const savedAccount = state.account;
     state.account = null;
     state.teacherStatus = null;
     accountMenuBtn && accountMenuBtn.classList.add('hidden');
-    showAccountOverlay('login', savedAccount);
+    showAccountOverlay();
   }
 
   function showApprovalOverlay(className, message) {
@@ -347,27 +250,82 @@
   //  连接
   // ═══════════════════════════════════
 
-  function connect(ip) {
-    ip = ip.trim();
-    if (!ip) return;
-    if (!state.account) {
-      showAccountOverlay('login');
+  function connect(codeValue, options = {}) {
+    const formattedCode = connectionCode.format(codeValue);
+    let ip;
+    try { ip = connectionCode.decode(formattedCode); }
+    catch (error) {
+      setStatus('offline', '连接码有误');
+      if (connectionCodeInput) { connectionCodeInput.focus(); connectionCodeInput.select(); }
+      alert(error.message || '连接码有误，请检查后重新输入');
       return;
     }
-    if (ipInput) ipInput.value = ip;
+    if (!state.account) {
+      state.pendingRoomCode = formattedCode;
+      showAccountOverlay();
+      return;
+    }
+    const savedRoom = state.rooms.find(room => room.connectionCode === formattedCode);
+    let requestedSubjects = (savedRoom && savedRoom.subjects || []).map(value => String(value).trim()).filter(Boolean);
+    if (!requestedSubjects.length) {
+      if (options.isRetry) {
+        setStatus('offline', '需要设置授课科目');
+        return;
+      }
+      const answer = prompt('加入教室前请填写你在该教室的授课科目（可多选，用逗号分隔）：', '');
+      if (answer === null) return;
+      requestedSubjects = Array.from(new Set(answer.split(/[,，、\s]+/).map(value => value.trim()).filter(Boolean))).slice(0, 20);
+      if (!requestedSubjects.length) {
+        alert('加入教室前必须至少填写一个授课科目');
+        return;
+      }
+      if (savedRoom) {
+        savedRoom.subjects = requestedSubjects;
+        saveToDisk();
+      }
+    }
+    if (connectionCodeInput) connectionCodeInput.value = formattedCode;
 
-    // 断开旧连接 & 清除重连
+    // 断开旧连接；自动重连时保留本轮失败次数，手动连接时重新计数。
     if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
-    state.reconnectAttempts = 0;
-    disconnect();
+    if (!options.isRetry) resetConnectionFailures();
+    if (state.reconnectPaused && options.isRetry) return;
+    if (state.ws) {
+      state.ws.onclose = null;
+      state.ws.onerror = null;
+      state.ws.close();
+      state.ws = null;
+    }
+    resetRoomWorkspace(false);
+
+    // 连接尚未完成时也立即记录用户选择的教室，避免失败后仍沿用旧教室界面。
+    state.connectingRoomCode = formattedCode;
+    state.currentRoom = state.rooms.find(room => room.connectionCode === formattedCode) || null;
+    renderRooms();
 
     setStatus('connecting', '连接中…');
     const url = `ws://${ip}:3456`;
     let ws;
     try { ws = new WebSocket(url); }
-    catch (e) { setStatus('offline', '连接失败'); return; }
+    catch (error) { state.ws = null; recordConnectionFailure(error, formattedCode); return; }
 
     state.ws = ws;
+    let failureRecorded = false;
+    let verificationTimer = setTimeout(() => failAttempt(new Error('教室端身份验证超时')), 8000);
+
+    function failAttempt(error) {
+      if (failureRecorded || state.ws !== ws) return;
+      failureRecorded = true;
+      if (verificationTimer) clearTimeout(verificationTimer);
+      verificationTimer = null;
+      state.ws = null;
+      ws.onclose = null;
+      ws.onerror = null;
+      try { ws.close(); } catch (_error) {}
+      resetRoomWorkspace(true);
+      renderRooms();
+      recordConnectionFailure(error, formattedCode);
+    }
 
     ws.onopen = () => {
       setStatus('connecting', '正在同步…');
@@ -375,16 +333,19 @@
         type: 'connect',
         connectionId: state.account.connectionId,
         name: state.account.name,
-        subjects: state.account.subjects || [],
+        subjects: requestedSubjects,
       }));
     };
 
     ws.onmessage = (event) => {
       let msg;
       try { msg = JSON.parse(event.data); } catch { return; }
+      if (verificationTimer) clearTimeout(verificationTimer);
+      verificationTimer = null;
+      resetConnectionFailures();
 
       if (msg.type === 'sync') {
-        const name = msg.className || ip;
+        const name = msg.className || `教室 ${formattedCode}`;
         state.className = name;
         state.students  = msg.students || [];
         state.subjects  = msg.subjects || [];
@@ -395,13 +356,16 @@
         state.teachers = msg.teachers || { approved: [], pending: [] };
         selectedSubjects = [];
         selectedAssigns  = [];
+        homeworkStage = 'pending';
+        homeworkContentType = 'homework';
         state.teacherStatus = msg.teacher || null;
-        state.pendingRoomIp = '';
+        state.pendingRoomCode = '';
+        state.connectingRoomCode = formattedCode;
         hideApprovalOverlay();
 
         // 自动添加到教室列表
-        addOrUpdateRoom(ip, name);
-        state.currentRoom = state.rooms.find(r => r.ip === ip) || null;
+        addOrUpdateRoom(formattedCode, name, requestedSubjects);
+        state.currentRoom = state.rooms.find(r => r.connectionCode === formattedCode) || null;
         renderRooms();
         applyTeacherPermissions();
 
@@ -414,10 +378,10 @@
         if (isHomeroomTeacher() && !state.classroomConfigured) showClassroomSetup();
         else hideClassroomSetup();
       } else if (msg.type === 'approval-required') {
-        const name = msg.className || ip;
+        const name = msg.className || `教室 ${formattedCode}`;
         state.teacherStatus = msg.teacher || { status: 'pending' };
-        state.pendingRoomIp = ip;
-        awaitRoomSave(ip, name);
+        state.pendingRoomCode = formattedCode;
+        awaitRoomSave(formattedCode, name, requestedSubjects);
         setStatus('connecting', '等待管理员审核');
         showApprovalOverlay(name, msg.message);
       } else if (msg.type === 'approval-rejected') {
@@ -426,8 +390,8 @@
       } else if (msg.type === 'login-required') {
         setStatus('offline', '身份无效');
         disconnect();
-        showAccountOverlay('login', state.account);
-        showAccountError(loginError, msg.message || '请重新登录');
+        showAccountOverlay();
+        alert(msg.message || '教师身份已失效，请使用小程序重新扫码登录');
       } else if (msg.type === 'auth-required') {
         if (classroomSetupOverlay && !classroomSetupOverlay.classList.contains('hidden')) {
           setupError.textContent = msg.message || '教室配置未保存，请检查后重试';
@@ -437,6 +401,12 @@
         } else {
           alert(msg.message || '当前账户没有执行此操作的权限');
         }
+      } else if (msg.type === 'subject-required') {
+        const room = state.rooms.find(item => item.connectionCode === formattedCode);
+        if (room) { room.subjects = []; saveToDisk(); }
+        setStatus('offline', '需要设置授课科目');
+        alert(msg.message || '请重新连接教室并先填写授课科目');
+        disconnect();
       } else if (msg.type === 'face-detections') {
         // 诊断：记录接收次数和最近一次收到的脸数
         state._faceRecvCount = (state._faceRecvCount || 0) + 1;
@@ -470,55 +440,133 @@
     };
 
     ws.onclose = () => {
-      state.ws = null;
-      if (state.currentRoom && state.currentRoom.ip === ip) {
-        setStatus('offline', '已断开');
-        hideRoomUI();
-        renderRooms();
-        scheduleReconnect(ip);
-      }
+      failAttempt(new Error('教室连接已断开'));
     };
 
-    ws.onerror = () => { /* onclose follows */ };
+    ws.onerror = () => failAttempt(new Error('无法建立教室连接'));
   }
 
-  async function awaitRoomSave(ip, name) {
-    await addOrUpdateRoom(ip, name);
-    state.currentRoom = state.rooms.find(room => room.ip === ip) || null;
+  async function awaitRoomSave(code, name, subjects) {
+    await addOrUpdateRoom(code, name, subjects);
+    state.currentRoom = state.rooms.find(room => room.connectionCode === code) || null;
     renderRooms();
   }
 
   function disconnect() {
     if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
-    state.reconnectAttempts = 0;
+    resetConnectionFailures();
     if (state.ws) {
       state.ws.onclose = null;
       state.ws.close();
       state.ws = null;
     }
-    state.currentRoom = null;
-    state.students    = [];
-    state.className   = '';
-    state.subjects    = [];
-    state.assignments = [];
-    state.classroomConfigured = false;
-    state.teachers = { approved: [], pending: [] };
-    state.pendingRoomIp = '';
-    state.searchQuery = '';
-    if (searchInput) searchInput.value = '';
-    hideClassroomSetup();
-    hideRoomUI();
-    renderStudents();
+    resetRoomWorkspace(false);
     setStatus('offline', '未连接');
     renderRooms();
   }
 
-  function scheduleReconnect(ip) {
-    if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
+  function resetRoomWorkspace(keepSelectedRoom) {
+    if (!keepSelectedRoom) state.currentRoom = null;
+    state.students    = [];
+    state.className   = '';
+    state.subjects    = [];
+    state.assignments = [];
+    state.studentStatus = [];
+    state.faceDetections = [];
+    state.pendingFaces = [];
+    state.pendingLabelFace = null;
+    state.teacherStatus = null;
+    state._faceRecvCount = 0;
+    state._faceRecvLast = 0;
+    state._faceRecvAt = 0;
+    state.classroomConfigured = false;
+    state.teachers = { approved: [], pending: [] };
+    state.pendingRoomCode = '';
+    if (!keepSelectedRoom) state.connectingRoomCode = '';
+    state.searchQuery = '';
+    selectedSubjects = [];
+    selectedAssigns = [];
+    homeworkStage = 'pending';
+    homeworkContentType = 'homework';
+    state.editingAssignmentId = null;
+    Object.values(state.callTimers).forEach(timer => clearTimeout(timer));
+    state.callTimers = {};
+    if (searchInput) searchInput.value = '';
+    if (hwStatusFilter) hwStatusFilter.value = '';
+    if (hwDateFrom) hwDateFrom.value = '';
+    if (hwDateTo) hwDateTo.value = '';
+    if (labelModal) labelModal.classList.add('hidden');
+    if (hwModal) hwModal.classList.add('hidden');
+    hideClassroomSetup();
+    hideRoomUI();
+    renderStudents();
+    renderHomework();
+    renderFaceDetections();
+    applyTeacherPermissions();
+  }
+
+  function resetConnectionFailures() {
+    state.reconnectAttempts = 0;
+    state.consecutiveFailures = 0;
+    state.reconnectPaused = false;
+    state.failurePromptShown = false;
+  }
+
+  function connectionFailureDetail(error, code) {
+    const message = String(error && error.message || '无法建立连接');
+    if (/超时/.test(message)) return `连接码 ${code} · 连接超时`;
+    if (/断开/.test(message)) return `连接码 ${code} · 教室连接已断开`;
+    return `连接码 ${code} · 教室端未启动、网络不可达或被防火墙拦截`;
+  }
+
+  function showConnectionFailureGuide(code) {
+    if (state.failurePromptShown) return;
+    state.failurePromptShown = true;
+    const room = state.rooms.find(item => item.connectionCode === code);
+    const roomName = room && room.name || '当前教室';
+    const retry = confirm([
+      `已连续尝试 ${MAX_CONNECT_ATTEMPTS} 次，仍无法连接“${roomName}”，自动重连已暂停。`,
+      '',
+      '请检查以下情况：',
+      '1. 教室端软件已经启动并完成班主任绑定；',
+      '2. 教师电脑和教室电脑连接同一局域网；',
+      '3. 当前连接码与教室端显示的一致；',
+      '4. 教室电脑防火墙允许教室端访问专用网络和 TCP 3456 端口；',
+      '5. 校园网络没有启用终端隔离或 VLAN 隔离。',
+      '',
+      '调整完成后点击“确定”重新连接；点击“取消”稍后再试。',
+    ].join('\n'));
+    state.failurePromptShown = false;
+    if (!retry) return;
+    resetConnectionFailures();
+    connect(code, { isRetry: true });
+  }
+
+  function recordConnectionFailure(error, code) {
+    state.consecutiveFailures += 1;
+    const detail = connectionFailureDetail(error, code);
+    if (state.consecutiveFailures >= MAX_CONNECT_ATTEMPTS) {
+      state.reconnectPaused = true;
+      if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
+      state.reconnectTimer = null;
+      setStatus('offline', `连续 ${MAX_CONNECT_ATTEMPTS} 次连接失败`);
+      showConnectionFailureGuide(code);
+      return;
+    }
+    setStatus('offline', `连接失败 (${state.consecutiveFailures}/${MAX_CONNECT_ATTEMPTS})`);
+    console.warn('[teacher] classroom connection failed:', detail);
+    scheduleReconnect(code);
+  }
+
+  function scheduleReconnect(code) {
+    if (state.reconnectTimer || state.reconnectPaused) return;
     const delay = Math.min(1000 * Math.pow(2, state.reconnectAttempts), 30000);
     state.reconnectAttempts++;
-    setStatus('connecting', `重连中(${state.reconnectAttempts})…`);
-    state.reconnectTimer = setTimeout(() => connect(ip), delay);
+    setStatus('connecting', `准备重连 (${state.consecutiveFailures}/${MAX_CONNECT_ATTEMPTS})…`);
+    state.reconnectTimer = setTimeout(() => {
+      state.reconnectTimer = null;
+      connect(code, { isRetry: true });
+    }, delay);
   }
 
   function setStatus(cls, text) {
@@ -530,12 +578,13 @@
   //  教室列表
   // ═══════════════════════════════════
 
-  async function addOrUpdateRoom(ip, name) {
-    const existing = state.rooms.find(r => r.ip === ip);
+  async function addOrUpdateRoom(code, name, subjects = []) {
+    const existing = state.rooms.find(r => r.connectionCode === code);
     if (existing) {
       existing.name = name;
+      if (subjects.length) existing.subjects = [...subjects];
     } else {
-      state.rooms.push({ id: genId(), ip, name });
+      state.rooms.push({ id: genId(), connectionCode: code, name, subjects:[...subjects] });
     }
     await saveToDisk();
   }
@@ -552,34 +601,34 @@
 
     state.rooms.forEach(room => {
       const li = document.createElement('li');
-      const isActive = state.currentRoom && state.currentRoom.ip === room.ip;
+      const isActive = state.currentRoom && state.currentRoom.connectionCode === room.connectionCode;
       li.className = 'room-item' + (isActive ? ' active' : '');
       const cls = isActive ? (state.ws ? 'online' : 'connecting') : 'offline';
 
       li.innerHTML =
         `<span class="dot ${cls}"></span>` +
         `<span class="room-name">${esc(room.name)}</span>` +
-        `<span class="room-ip">${esc(room.ip)}</span>` +
-        `<span class="room-del" data-ip="${esc(room.ip)}" title="删除">×</span>`;
+        `<span class="room-ip">连接码 ${esc(room.connectionCode)}</span>` +
+        `<span class="room-del" data-code="${esc(room.connectionCode)}" title="删除">×</span>`;
 
       li.addEventListener('click', (e) => {
         if (e.target.classList.contains('room-del')) return;
-        connect(room.ip);
+        connect(room.connectionCode);
       });
 
       const del = li.querySelector('.room-del');
       if (del) del.addEventListener('click', (e) => {
         e.stopPropagation();
-        removeRoom(room.ip);
+        removeRoom(room.connectionCode);
       });
 
       roomList.appendChild(li);
     });
   }
 
-  function removeRoom(ip) {
-    if (state.currentRoom && state.currentRoom.ip === ip) disconnect();
-    state.rooms = state.rooms.filter(r => r.ip !== ip);
+  function removeRoom(code) {
+    if (state.currentRoom && state.currentRoom.connectionCode === code) disconnect();
+    state.rooms = state.rooms.filter(r => r.connectionCode !== code);
     renderRooms();
     saveToDisk();
   }
@@ -632,7 +681,7 @@
     if (!parsed.students.length) { showError('请至少添加一名学生'); studentsInput.focus(); return; }
     if (!state.ws || state.ws.readyState !== WebSocket.OPEN) { showError('教室连接已断开，请重新连接后再保存'); return; }
     if (setupError) setupError.classList.add('hidden');
-    state.ws.send(JSON.stringify({ type: 'update-classroom', classroom: { className, students: parsed.students } }));
+    state.ws.send(JSON.stringify({ type: 'update-classroom', classroom: { className, students: parsed.students, subjects:(state.teacherStatus && state.teacherStatus.subjects) || [] } }));
     if (forced && completeSetupBtn) { completeSetupBtn.disabled = true; completeSetupBtn.textContent = '正在启用…'; }
   }
 
@@ -691,6 +740,8 @@
   }
 
   function hideRoomUI() {
+    // 离线状态始终回到“呼叫”空页面，不能停留在上一教室的作业/出勤 Tab。
+    switchMainTab('call');
     if (mainTabs)   mainTabs.classList.add('hidden');
     if (roomHeader) roomHeader.classList.add('hidden');
     if (msgRow)     msgRow.classList.add('hidden');
@@ -740,7 +791,7 @@
 
   function callStudent(student, btnEl) {
     if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
-      alert('未连接到教室，请先输入 IP 并连接');
+      alert('未连接到教室，请先输入连接码并连接');
       return;
     }
 
@@ -757,7 +808,7 @@
 
     state.callHistory.unshift({
       id: callId,
-      roomName: state.className || (state.currentRoom ? state.currentRoom.ip : ''),
+      roomName: state.className || (state.currentRoom ? state.currentRoom.name : ''),
       studentName: student.name,
       time: new Date().toISOString(),
       status: 'sent',
@@ -787,16 +838,16 @@
     const faceRoomName = document.getElementById('faceRoomName');
     const unknownCountEl = document.getElementById('unknownCount');
     const registeredCountEl = document.getElementById('registeredCount');
+    const attendanceTotalCount = document.getElementById('attendanceTotalCount');
+    const attendancePresentCount = document.getElementById('attendancePresentCount');
+    const attendanceAbsentCount = document.getElementById('attendanceAbsentCount');
+    const attendancePendingCount = document.getElementById('attendancePendingCount');
 
     if (!faceGridUnknown || !faceGridRegistered) return;
 
     const detections = state.faceDetections || [];
     const students = state.students || [];
-    if (faceRoomName) faceRoomName.textContent = state.className ? state.className + ' — 人脸识别' : '人脸识别';
-
-    // ── 诊断后缀 ──
-    const recvAgo = state._faceRecvAt ? Math.round((Date.now() - state._faceRecvAt) / 1000) : -1;
-    const diag = ` [收#${state._faceRecvCount || 0}/${recvAgo}s前]`;
+    if (faceRoomName) faceRoomName.textContent = state.className ? `${state.className}出勤` : '班级出勤';
 
     // ── 构建在场学生 ID 集合 ──
     const presentIds = new Set();
@@ -863,13 +914,18 @@
     // 更新摘要
     const presentCount = registeredCards.filter(c => c.isPresent).length;
     const totalRegistered = registeredCards.length;
+    const absentCount = Math.max(0, totalRegistered - presentCount);
+    if (attendanceTotalCount) attendanceTotalCount.textContent = totalRegistered;
+    if (attendancePresentCount) attendancePresentCount.textContent = presentCount;
+    if (attendanceAbsentCount) attendanceAbsentCount.textContent = absentCount;
+    if (attendancePendingCount) attendancePendingCount.textContent = unknownCards.length;
     if (faceSummary) {
       if (totalRegistered > 0) {
-        faceSummary.textContent = `${presentCount}/${totalRegistered} 已到${diag}`;
+        faceSummary.textContent = `实时更新 · ${presentCount}/${totalRegistered} 已到`;
       } else if (unknownCards.length > 0) {
-        faceSummary.textContent = `${unknownCards.length} 人待标注${diag}`;
+        faceSummary.textContent = `${unknownCards.length} 张人脸待处理`;
       } else {
-        faceSummary.textContent = `等待检测${diag}`;
+        faceSummary.textContent = '等待教室端同步';
       }
     }
 
@@ -879,7 +935,7 @@
     //  渲染「未标注」网格
     // ═══════════════════════════════════════
     if (unknownCards.length === 0) {
-      faceGridUnknown.innerHTML = '<div class="muted-note">所有检测到的人脸均已标注入库</div>';
+      faceGridUnknown.innerHTML = '<div class="attendance-empty is-success"><span>✓</span><strong>没有待匹配人脸</strong><small>新面孔出现后会自动显示在这里</small></div>';
     } else {
       faceGridUnknown.innerHTML = unknownCards.map(c => {
         if (c.cropBase64) {
@@ -916,8 +972,9 @@
     //  渲染「已入库」网格
     // ═══════════════════════════════════════
     if (registeredCards.length === 0) {
-      faceGridRegistered.innerHTML = '<div class="muted-note">暂无已入库学生<br>在「未标注」中标注人脸即可自动入库</div>';
+      faceGridRegistered.innerHTML = '<div class="attendance-empty"><span>人</span><strong>暂无学生出勤数据</strong><small>先完成学生名单，并在“待匹配”中关联人脸</small></div>';
     } else {
+      registeredCards.sort((a, b) => Number(b.isPresent) - Number(a.isPresent) || String(a.name).localeCompare(String(b.name), 'zh-CN'));
       faceGridRegistered.innerHTML = registeredCards.map(c => {
         if (c.isPresent && c.cropBase64) {
           // 在场 + 有人脸截图：彩色显示
@@ -1121,13 +1178,13 @@
 
   function buildAssignDrop() {
     if (!hwAssignDrop) return;
-    let hws = state.assignments;
+    let hws = state.assignments.filter(a => homeworkView.typeOf(a) === homeworkContentType && homeworkView.stageOf(a) === homeworkStage);
     const from = hwDateFrom ? hwDateFrom.value : '';
     const to = hwDateTo ? hwDateTo.value : '';
-    if (from) hws = hws.filter(a => a.date >= from);
-    if (to) hws = hws.filter(a => a.date <= to);
+    if (from) hws = hws.filter(a => homeworkView.dateKey(a.deadline) >= from);
+    if (to) hws = hws.filter(a => homeworkView.dateKey(a.deadline) <= to);
     if (selectedSubjects.length > 0) hws = hws.filter(a => selectedSubjects.includes(a.subject));
-    hws.sort((a, b) => a.date.localeCompare(b.date));
+    hws.sort((a, b) => homeworkView.dateKey(a.deadline).localeCompare(homeworkView.dateKey(b.deadline)));
     let html = '';
     hws.forEach(a => {
       const chk = selectedAssigns.length === 0 || selectedAssigns.includes(a.id) ? 'checked' : '';
@@ -1156,7 +1213,7 @@
 
   function updateAssignBtn() {
     if (!hwAssignBtn) return;
-    const hws = state.assignments;
+    const hws = state.assignments.filter(a => homeworkView.typeOf(a) === homeworkContentType && homeworkView.stageOf(a) === homeworkStage);
     if (selectedAssigns.length === 0 || selectedAssigns.length >= hws.length) {
       hwAssignBtn.textContent = '全部作业 ▾';
     } else if (selectedAssigns.length <= 2) {
@@ -1183,6 +1240,7 @@
   function renderHomework() {
     if (!hwSubjectBtn) return;
     applyTeacherPermissions();
+    updateHomeworkStageBar();
 
     buildSubjectDrop();
     updateSubjectBtn();
@@ -1197,6 +1255,45 @@
   }
 
   // ── 辅助函数 ──
+
+  function updateHomeworkStageBar() {
+    const currentItems = state.assignments.filter(a => homeworkView.typeOf(a) === homeworkContentType);
+    const pending = currentItems.filter(a => homeworkView.stageOf(a) === 'pending').length;
+    const closed = currentItems.length - pending;
+    if (hwPendingCount) hwPendingCount.textContent = pending;
+    if (hwClosedCount) hwClosedCount.textContent = closed;
+    [[hwStagePending, 'pending'], [hwStageClosed, 'closed']].forEach(([button, stage]) => {
+      if (!button) return;
+      const active = stage === homeworkStage;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', String(active));
+    });
+    if (hwPendingLabel) hwPendingLabel.textContent = homeworkContentType === 'notice' ? '生效中通知' : '待提交作业';
+    if (hwClosedLabel) hwClosedLabel.textContent = homeworkContentType === 'notice' ? '历史通知' : '提交统计';
+    if (hwPendingHint) hwPendingHint.textContent = homeworkContentType === 'notice' ? '尚未到结束时间' : '尚未到截止时间';
+    if (hwClosedHint) hwClosedHint.textContent = homeworkContentType === 'notice' ? '已到结束时间' : '已到截止时间';
+    [[hwContentHomework, 'homework'], [hwContentNotice, 'notice']].forEach(([button, type]) => {
+      if (button) button.classList.toggle('active', type === homeworkContentType);
+    });
+    if (hwStatusFilter) hwStatusFilter.classList.toggle('hidden', homeworkContentType === 'notice');
+    if (exportHomeworkBtn) exportHomeworkBtn.classList.toggle('hidden', homeworkContentType === 'notice');
+  }
+
+  function setHomeworkContentType(type) {
+    if (type !== 'homework' && type !== 'notice') return;
+    homeworkContentType = type; homeworkStage = 'pending'; selectedAssigns = [];
+    renderHomework();
+  }
+
+  function setHomeworkStage(stage) {
+    if (stage !== 'pending' && stage !== 'closed') return;
+    homeworkStage = stage;
+    selectedAssigns = [];
+    updateHomeworkStageBar();
+    buildAssignDrop();
+    updateAssignBtn();
+    renderHomeworkList(null);
+  }
 
   function updateStatusFilter() {
     if (!hwStatusFilter) return;
@@ -1217,7 +1314,15 @@
     const customs = getHwCustomStatuses();
     const filterStatus = hwStatusFilter ? hwStatusFilter.value : '';
     updateStatusFilter();
-    let html = '<div class="hw-table-wrap"><table class="hw-matrix"><thead><tr>';
+    const summary = homeworkView.submissionSummary(a, state.students);
+    let html = `<div class="hw-single-summary"><button class="hw-back-overview" type="button">← 返回${homeworkContentType === 'notice' ? (homeworkStage === 'pending' ? '生效中通知' : '历史通知') : (homeworkStage === 'pending' ? '待提交作业' : '提交统计')}</button><div><span>${esc(a.subject)} · ${homeworkContentType === 'notice' ? '班级通知' : '作业'}</span><strong>${esc(a.title)}</strong><small>${a.deadline ? `${homeworkContentType === 'notice' ? '结束' : '截止'} ${esc(formatDeadline(a.deadline))}` : '未设置时间'}</small></div>${homeworkContentType === 'notice' ? '<div class="notice-state-badge">' + (homeworkStage === 'pending' ? '生效中' : '已结束') + '</div>' : `<div class="hw-summary-numbers"><b>${summary.submitted}<small>已提交</small></b><b>${summary.pending}<small>待提交</small></b><b>${summary.late}<small>迟交</small></b><b>${summary.rate}%<small>完成率</small></b></div>`}</div>`;
+    if (homeworkContentType === 'notice') {
+      html += `<div class="notice-detail"><span>通知内容</span><p>${esc(a.title)}</p>${canModifySubject(a.subject) ? `<div><button class="btn" data-edit-hw="${a.id}">编辑通知</button><button class="btn btn-danger-outline" data-del-hw="${a.id}">删除通知</button></div>` : ''}</div>`;
+      hwContent.innerHTML = html;
+      const back = hwContent.querySelector('.hw-back-overview'); if (back) back.addEventListener('click', () => { selectedAssigns = []; renderHomeworkList(null); });
+      bindHwEvents(); return;
+    }
+    html += '<div class="hw-table-wrap"><table class="hw-matrix"><thead><tr>';
     html += '<th class="hw-matrix-name">姓名</th>';
     html += `<th class="hw-matrix-hw"><div class="hw-matrix-hw-title">${esc(a.title)}</div>`;
     html += `<div class="hw-matrix-hw-date">${esc(a.subject)} · ${esc(a.date)}</div>`;
@@ -1242,6 +1347,8 @@
     });
     html += '</tbody></table></div>';
     hwContent.innerHTML = html;
+    const back = hwContent.querySelector('.hw-back-overview');
+    if (back) back.addEventListener('click', () => { selectedAssigns = []; updateAssignBtn(); buildAssignDrop(); renderHomeworkList(null); });
     bindHwEvents();
   }
 
@@ -1280,17 +1387,82 @@
   }
 
   function getFilteredAssignments(subject) {
-    let hws = state.assignments;
+    let hws = [...state.assignments];
+    hws = hws.filter(a => homeworkView.typeOf(a) === homeworkContentType);
+    hws = hws.filter(a => homeworkView.stageOf(a) === homeworkStage);
     if (subject) hws = hws.filter(a => a.subject === subject);
     if (selectedSubjects.length > 0) hws = hws.filter(a => selectedSubjects.includes(a.subject));
     if (selectedAssigns.length > 0) hws = hws.filter(a => selectedAssigns.includes(a.id));
     const from = hwDateFrom ? hwDateFrom.value : '';
     const to   = hwDateTo   ? hwDateTo.value   : '';
-    if (from) hws = hws.filter(a => a.date >= from);
-    if (to)   hws = hws.filter(a => a.date <= to);
-    // 按日期排序
-    hws.sort((a, b) => a.date.localeCompare(b.date));
+    if (from) hws = hws.filter(a => homeworkView.dateKey(a.deadline) >= from);
+    if (to)   hws = hws.filter(a => homeworkView.dateKey(a.deadline) <= to);
+    hws.sort((a, b) => {
+      const result = homeworkView.dateKey(a.deadline).localeCompare(homeworkView.dateKey(b.deadline));
+      return homeworkStage === 'closed' ? -result : result;
+    });
     return hws;
+  }
+
+  async function exportHomeworkStatistics() {
+    if (!api.exportHomework) {
+      alert('当前版本不支持导出表格，请更新教师端');
+      return;
+    }
+    const assignments = getFilteredAssignments(null);
+    if (!assignments.length) {
+      alert('当前筛选范围内没有可导出的作业');
+      return;
+    }
+    const status = hwStatusFilter ? hwStatusFilter.value : '';
+    const students = state.students.filter(student => {
+      if (!status) return true;
+      return assignments.some(assignment => ((assignment.submissions && assignment.submissions[student.id]) || '未提交') === status);
+    });
+    const selectedAssignmentNames = selectedAssigns.map(id => {
+      const assignment = state.assignments.find(item => item.id === id);
+      return assignment ? `${assignment.subject} - ${assignment.title}` : '';
+    }).filter(Boolean);
+    const payload = {
+      className: state.className || (state.currentRoom && state.currentRoom.name) || '教室',
+      teacherName: state.account && state.account.name ? state.account.name : '教师',
+      exportedAt: new Date().toISOString(),
+      filters: {
+        stage: homeworkStage,
+        subjects: selectedSubjects.length && selectedSubjects.length < state.subjects.length ? [...selectedSubjects] : [],
+        assignments: selectedAssignmentNames,
+        status,
+        dateFrom: hwDateFrom ? hwDateFrom.value : '',
+        dateTo: hwDateTo ? hwDateTo.value : '',
+      },
+      students: students.map(student => ({ id: student.id, name: student.name })),
+      assignments: assignments.map(assignment => ({
+        id: assignment.id,
+        subject: assignment.subject,
+        title: assignment.title,
+        date: assignment.date,
+        deadline: assignment.deadline,
+        type: homeworkView.typeOf(assignment),
+        submissions: assignment.submissions || {},
+      })),
+    };
+    const originalText = exportHomeworkBtn ? exportHomeworkBtn.textContent : '';
+    if (exportHomeworkBtn) {
+      exportHomeworkBtn.disabled = true;
+      exportHomeworkBtn.textContent = '正在导出…';
+    }
+    try {
+      const result = await api.exportHomework(payload);
+      if (!result || !result.ok) alert((result && result.message) || '导出表格失败，请重试');
+      else if (!result.canceled) alert(`作业统计已导出：\n${result.filePath}`);
+    } catch (error) {
+      alert('导出表格失败，请重试');
+    } finally {
+      if (exportHomeworkBtn) {
+        exportHomeworkBtn.disabled = false;
+        exportHomeworkBtn.textContent = originalText || '导出表格';
+      }
+    }
   }
 
   function renderHomeworkList(subject) {
@@ -1299,7 +1471,9 @@
     updateStatusFilter();
 
     if (hws.length === 0) {
-      hwContent.innerHTML = '<div class="muted-note">该学科暂无作业</div>';
+      const emptyTitle = homeworkContentType === 'notice' ? (homeworkStage === 'pending' ? '当前没有生效中的通知' : '当前没有历史通知') : (homeworkStage === 'pending' ? '当前没有待提交作业' : '当前没有已截止作业');
+      const emptyHint = homeworkContentType === 'notice' ? (homeworkStage === 'pending' ? '教师发布的通知会在结束时间前显示在这里。' : '通知到达结束时间后会自动进入这里。') : (homeworkStage === 'pending' ? '新布置且未到截止时间的作业会显示在这里。' : '作业到达截止时间后会自动进入这里。');
+      hwContent.innerHTML = `<div class="hw-empty-state"><span>${homeworkStage === 'pending' ? '✓' : '◷'}</span><strong>${emptyTitle}</strong><small>${selectedSubjects.length || hwDateFrom.value || hwDateTo.value ? '可以调整上方筛选条件查看其他内容。' : emptyHint}</small></div>`;
       return;
     }
 
@@ -1307,12 +1481,31 @@
     const customs = getHwCustomStatuses();
     const filterStatus = hwStatusFilter ? hwStatusFilter.value : '';
 
-    let html = '<div class="hw-table-wrap"><table class="hw-matrix"><thead><tr>';
-    html += '<th class="hw-matrix-name">姓名</th>';
+    const deadlineGroups = homeworkView.groupByDeadline(hws, homeworkStage);
+    let html = '<div class="hw-deadline-groups">';
+    deadlineGroups.forEach(group => {
+      html += `<section class="hw-deadline-group"><div class="hw-deadline-head"><strong>${esc(group.label)}</strong><span>${group.assignments.length} ${homeworkContentType === 'notice' ? '条通知' : '项作业'}</span></div><div class="hw-overview-grid">`;
+      group.assignments.forEach(a => {
+        const stats = homeworkView.submissionSummary(a, state.students);
+        html += `<button class="hw-overview-card ${homeworkContentType === 'notice' ? 'notice-card' : ''}" type="button" data-view-hw="${esc(a.id)}"><span class="hw-overview-subject">${esc(a.subject)}${a.source === 'student' ? ' · 学生补录' : ''}</span><strong>${esc(a.title)}</strong><small>${a.deadline ? `${homeworkContentType === 'notice' ? '结束' : '截止'} ${esc(formatDeadline(a.deadline))}` : '未设置时间'}</small>${homeworkContentType === 'notice' ? `<div class="notice-card-footer"><span>${homeworkStage === 'pending' ? '生效中' : '已结束'}</span><em>查看通知 ›</em></div>` : `<div class="hw-progress"><i style="width:${stats.rate}%"></i></div><div class="hw-overview-stats"><span><b>${stats.submitted}</b> 已提交</span><span class="pending"><b>${stats.pending}</b> 待提交</span>${stats.late ? `<span class="late"><b>${stats.late}</b> 迟交</span>` : ''}<em>${stats.rate}%</em></div>`}</button>`;
+      });
+      html += '</div></section>';
+    });
+    if (homeworkContentType === 'notice') {
+      html += '</div>'; hwContent.innerHTML = html;
+      hwContent.querySelectorAll('[data-view-hw]').forEach(button => button.addEventListener('click', () => { selectedAssigns = [button.dataset.viewHw]; renderSingleAssignment(button.dataset.viewHw); }));
+      return;
+    }
+    html += '</div><div class="hw-detail-heading"><div><strong>学生提交明细</strong><small>按截止日期分组，可直接修改每名学生的提交状态</small></div></div>';
+    html += '<div class="hw-table-wrap"><table class="hw-matrix"><thead><tr class="hw-deadline-row">';
+    html += '<th class="hw-matrix-name" rowspan="2">姓名</th>';
+    deadlineGroups.forEach(group => { html += `<th colspan="${group.assignments.length}">${esc(group.label)}<small>${group.assignments.length} 项</small></th>`; });
+    html += '</tr><tr>';
     hws.forEach(a => {
       const editable = canModifySubject(a.subject);
       html += `<th class="hw-matrix-hw">`;
       html += `<div class="hw-matrix-hw-title" title="${esc(a.title)}">${esc(a.title)}</div>`;
+      if (a.source === 'student') html += '<div class="hw-matrix-hw-date">学生补录</div>';
       html += `<div class="hw-matrix-hw-date">${esc(a.date)}</div>`;
       html += `<div class="hw-matrix-hw-date">${a.deadline ? ('截止 ' + esc(formatDeadline(a.deadline))) : '未设置截止时间'}</div>`;
       if (editable) {
@@ -1367,6 +1560,9 @@
     html += '</tbody></table></div>';
 
     hwContent.innerHTML = html;
+    hwContent.querySelectorAll('[data-view-hw]').forEach(button => {
+      button.addEventListener('click', () => { selectedAssigns = [button.dataset.viewHw]; updateAssignBtn(); buildAssignDrop(); renderSingleAssignment(button.dataset.viewHw); });
+    });
     bindHwEvents();
   }
 
@@ -1442,10 +1638,28 @@
 
   // ── 作业弹窗 ──
 
-  function openAddHw() {
+  function updatePublishType(type) {
+    if (state.editingAssignmentId) {
+      const editing = state.assignments.find(item => item.id === state.editingAssignmentId);
+      type = homeworkView.typeOf(editing);
+    }
+    publishType = type === 'notice' ? 'notice' : 'homework';
+    [[publishTypeHomework, 'homework'], [publishTypeNotice, 'notice']].forEach(([button, value]) => { if (button) button.classList.toggle('active', value === publishType); });
+    if (publishTypeHomework) publishTypeHomework.disabled = !!state.editingAssignmentId;
+    if (publishTypeNotice) publishTypeNotice.disabled = !!state.editingAssignmentId;
+    if (hwModalTitleLabel) hwModalTitleLabel.textContent = state.editingAssignmentId ? (publishType === 'notice' ? '编辑通知' : '编辑作业') : (publishType === 'notice' ? '发布通知' : '布置作业');
+    if (publishContentLabel) publishContentLabel.textContent = publishType === 'notice' ? '通知内容' : '作业内容';
+    if (publishDeadlineLabel) publishDeadlineLabel.textContent = publishType === 'notice' ? '通知结束时间' : '提交截止时间';
+    if (publishHint) publishHint.textContent = publishType === 'notice' ? '通知将在结束时间前显示在教室端和小程序端，到期后自动进入历史通知。' : '截止前会显示在学生的桌面组件中；到达该时间后自动进入课代表提交统计。';
+    if (hwModalTitle) hwModalTitle.placeholder = publishType === 'notice' ? '例如：明天下午第二节课调至实验室' : '例如：完成练习册第 12—14 页';
+  }
+
+  function openAddHw(type = 'homework') {
     if (state.subjects.filter(canModifySubject).length === 0) { alert('你没有可布置作业的授权学科，请联系班主任'); return; }
     state.editingAssignmentId = null;
-    if (hwModalTitleLabel) hwModalTitleLabel.textContent = '添加作业';
+    if (publishTypeHomework) publishTypeHomework.disabled = false;
+    if (publishTypeNotice) publishTypeNotice.disabled = false;
+    updatePublishType(type);
     if (hwModalTitle) hwModalTitle.value = '';
     if (hwModalDate) hwModalDate.value = new Date().toISOString().slice(0, 10);
     if (hwModalDeadline) {
@@ -1468,7 +1682,7 @@
     const a = state.assignments.find(x => x.id === aid);
     if (!a) return;
     state.editingAssignmentId = aid;
-    if (hwModalTitleLabel) hwModalTitleLabel.textContent = '编辑作业';
+    updatePublishType(homeworkView.typeOf(a));
     updateHwSubjectSelect();
     if (hwModalSubject) hwModalSubject.value = a.subject;
     if (hwModalTitle) hwModalTitle.value = a.title;
@@ -1486,16 +1700,16 @@
     if (!title) { hwModalTitle.focus(); return; }
     const date = hwModalDate.value || new Date().toISOString().slice(0, 10);
     const deadline = hwModalDeadline && hwModalDeadline.value ? hwModalDeadline.value : '';
-    if (!deadline) { alert('请设置提交截止时间'); return; }
+    if (!deadline) { alert(publishType === 'notice' ? '请设置通知结束时间' : '请设置提交截止时间'); return; }
 
     const isEdit = !!state.editingAssignmentId;
     if (isEdit) {
       const a = state.assignments.find(x => x.id === state.editingAssignmentId);
-      if (a) { a.subject = subject; a.title = title; a.date = date; a.deadline = deadline; }
+      if (a) { a.subject = subject; a.title = title; a.date = date; a.deadline = deadline; a.type = publishType; if (publishType === 'notice') a.submissions = {}; }
     } else {
       const subs = {};
-      state.students.forEach(s => { subs[s.id] = '未提交'; });
-      state.assignments.push({ id: genId(), subject, title, date, deadline, submissions: subs });
+      if (publishType === 'homework') state.students.forEach(s => { subs[s.id] = '未提交'; });
+      state.assignments.push({ id: genId(), subject, title, date, deadline, type:publishType, submissions: subs });
     }
 
     const savedId = state.editingAssignmentId;
@@ -1516,15 +1730,19 @@
       }
     }
 
-    selectedAssigns = selectedAssigns.filter(id => id !== aid);
-    if (selectedAssigns.length === 1) renderSingleAssignment(selectedAssigns[0]);
-    else renderHomeworkList(null);
+    const savedAssignment = isEdit
+      ? state.assignments.find(x => x.id === savedId)
+      : state.assignments[state.assignments.length - 1];
+    homeworkContentType = publishType;
+    homeworkStage = homeworkView.stageOf(savedAssignment);
+    selectedAssigns = [];
+    renderHomework();
   }
 
   function deleteHw(aid) {
     const a = state.assignments.find(x => x.id === aid);
     if (!a) return;
-    if (!confirm(`确定删除作业「${a.title}」吗？`)) return;
+    if (!confirm(`确定删除${homeworkView.typeOf(a) === 'notice' ? '通知' : '作业'}「${a.title}」吗？`)) return;
     state.assignments = state.assignments.filter(x => x.id !== aid);
     selectedAssigns = selectedAssigns.filter(id => id !== aid);
     if (state.ws && state.ws.readyState === WebSocket.OPEN) {
@@ -1617,9 +1835,12 @@
   // ═══════════════════════════════════
 
   function bindEvents() {
-    if (connectBtn) connectBtn.addEventListener('click', () => connect(ipInput ? ipInput.value : ''));
-    if (ipInput) ipInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') connect(ipInput.value);
+    if (connectBtn) connectBtn.addEventListener('click', () => connect(connectionCodeInput ? connectionCodeInput.value : ''));
+    if (connectionCodeInput) connectionCodeInput.addEventListener('input', () => {
+      connectionCodeInput.value = connectionCode.format(connectionCodeInput.value);
+    });
+    if (connectionCodeInput) connectionCodeInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') connect(connectionCodeInput.value);
     });
 
     if (searchInput) {
@@ -1645,6 +1866,10 @@
       if (selectedAssigns.length === 1) renderSingleAssignment(selectedAssigns[0]);
       else renderHomeworkList(null);
     });
+    if (hwStagePending) hwStagePending.addEventListener('click', () => setHomeworkStage('pending'));
+    if (hwStageClosed) hwStageClosed.addEventListener('click', () => setHomeworkStage('closed'));
+    if (hwContentHomework) hwContentHomework.addEventListener('click', () => setHomeworkContentType('homework'));
+    if (hwContentNotice) hwContentNotice.addEventListener('click', () => setHomeworkContentType('notice'));
 
     // 日期筛选
     const onDateChange = () => {
@@ -1656,7 +1881,9 @@
     if (hwDateTo)   hwDateTo.addEventListener('change', onDateChange);
 
     // 学科按钮
-    if (addAssignmentBtn2)   addAssignmentBtn2.addEventListener('click', () => openAddHw());
+    if (exportHomeworkBtn) exportHomeworkBtn.addEventListener('click', exportHomeworkStatistics);
+    if (addAssignmentBtn2) addAssignmentBtn2.addEventListener('click', () => openAddHw('homework'));
+    if (publishNoticeBtn) publishNoticeBtn.addEventListener('click', () => openAddHw('notice'));
     if (saveClassroomBtn) saveClassroomBtn.addEventListener('click', () => submitClassroomConfig(manageClassName, manageStudents, false));
     if (completeSetupBtn) completeSetupBtn.addEventListener('click', () => submitClassroomConfig(setupClassName, setupStudents, true));
     if (refreshTeachersBtn) refreshTeachersBtn.addEventListener('click', () => {
@@ -1697,9 +1924,10 @@
     // 作业弹窗
     if (hwModalCancel)  hwModalCancel.addEventListener('click', () => hwModal && hwModal.classList.add('hidden'));
     if (hwModalConfirm) hwModalConfirm.addEventListener('click', confirmHw);
+    if (publishTypeHomework) publishTypeHomework.addEventListener('click', () => updatePublishType('homework'));
+    if (publishTypeNotice) publishTypeNotice.addEventListener('click', () => updatePublishType('notice'));
     if (hwModalTitle) {
       hwModalTitle.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') confirmHw();
         if (e.key === 'Escape') hwModal && hwModal.classList.add('hidden');
       });
     }
@@ -1724,24 +1952,9 @@
       });
     }
 
-    if (loginForm) loginForm.addEventListener('submit', handleLogin);
-    if (registerForm) registerForm.addEventListener('submit', handleRegister);
-    if (keyLoginForm) keyLoginForm.addEventListener('submit', handleKeyLogin);
-    const showRegister = document.getElementById('showRegister');
-    const showLogin = document.getElementById('showLogin');
-    const showKeyLogin = document.getElementById('showKeyLogin');
-    const showKeyLoginFromRegister = document.getElementById('showKeyLoginFromRegister');
-    const backToPasswordLogin = document.getElementById('backToPasswordLogin');
-    if (showRegister) showRegister.addEventListener('click', () => showAccountOverlay('register'));
-    if (showLogin) showLogin.addEventListener('click', () => showAccountOverlay('login'));
-    if (showKeyLogin) showKeyLogin.addEventListener('click', () => showAccountOverlay('key'));
-    if (showKeyLoginFromRegister) showKeyLoginFromRegister.addEventListener('click', () => showAccountOverlay('key'));
-    if (backToPasswordLogin) backToPasswordLogin.addEventListener('click', () => showAccountOverlay('login'));
-    const generateLoginKeyBtn = document.getElementById('generateLoginKeyBtn');
-    const copyLoginKeyBtn = document.getElementById('copyLoginKeyBtn');
+    const refreshTeacherLoginQr = document.getElementById('refreshTeacherLoginQr');
+    if (refreshTeacherLoginQr) refreshTeacherLoginQr.addEventListener('click', handleTeacherLoginQr);
     const generateMiniProgramQrBtn = document.getElementById('generateMiniProgramQrBtn');
-    if (generateLoginKeyBtn) generateLoginKeyBtn.addEventListener('click', handleGenerateLoginKey);
-    if (copyLoginKeyBtn) copyLoginKeyBtn.addEventListener('click', handleCopyLoginKey);
     if (generateMiniProgramQrBtn) generateMiniProgramQrBtn.addEventListener('click', handleGenerateMiniProgramQr);
     if (accountMenuBtn) accountMenuBtn.addEventListener('click', openAccountModal);
     const accountModalClose = document.getElementById('accountModalClose');
@@ -1754,8 +1967,8 @@
     const approvalRetryBtn = document.getElementById('approvalRetryBtn');
     const approvalCancelBtn = document.getElementById('approvalCancelBtn');
     if (approvalRetryBtn) approvalRetryBtn.addEventListener('click', () => {
-      const ip = state.pendingRoomIp || (state.currentRoom && state.currentRoom.ip);
-      if (ip) connect(ip);
+      const code = state.pendingRoomCode || (state.currentRoom && state.currentRoom.connectionCode);
+      if (code) connect(code);
     });
     if (approvalCancelBtn) approvalCancelBtn.addEventListener('click', () => {
       hideApprovalOverlay();
@@ -1804,6 +2017,8 @@
     if (state.ws && state.ws.readyState === WebSocket.OPEN) {
       state.ws.send(JSON.stringify({ type: 'ping' }));
     }
+    const homeworkPanel = document.getElementById('tab-homework');
+    if (homeworkPanel && !homeworkPanel.classList.contains('hidden') && state.assignments.length) renderHomework();
   }, 30000);
 
   // ═══════════════════════════════════
@@ -1811,7 +2026,7 @@
   // ═══════════════════════════════════
 
   function onReady() {
-    ipInput        = document.getElementById('ipInput');
+    connectionCodeInput = document.getElementById('connectionCodeInput');
     connectBtn     = document.getElementById('connectBtn');
     roomList       = document.getElementById('roomList');
     noRooms        = document.getElementById('noRooms');
@@ -1835,22 +2050,6 @@
     accountOverlay = document.getElementById('accountOverlay');
     accountTitle   = document.getElementById('accountTitle');
     accountDesc    = document.getElementById('accountDesc');
-    loginForm      = document.getElementById('loginForm');
-    registerForm   = document.getElementById('registerForm');
-    keyLoginForm   = document.getElementById('keyLoginForm');
-    loginName      = document.getElementById('loginName');
-    loginPassword  = document.getElementById('loginPassword');
-    loginError     = document.getElementById('loginError');
-    regName        = document.getElementById('regName');
-    regSubjects    = document.getElementById('regSubjects');
-    regPassword    = document.getElementById('regPassword');
-    regPassword2   = document.getElementById('regPassword2');
-    regError       = document.getElementById('regError');
-    loginKeyInput  = document.getElementById('loginKeyInput');
-    keyLoginError  = document.getElementById('keyLoginError');
-    generatedLoginKey = document.getElementById('generatedLoginKey');
-    loginKeyResult = document.getElementById('loginKeyResult');
-    loginKeyStatus = document.getElementById('loginKeyStatus');
     teacherInfo    = document.getElementById('teacherInfo');
     accountMenuBtn = document.getElementById('accountMenuBtn');
     accountModal   = document.getElementById('accountModal');
@@ -1873,9 +2072,21 @@
     hwAssignDrop   = document.getElementById('hwAssignDrop');
 
     hwStatusFilter       = document.getElementById('hwStatusFilter');
+    hwContentHomework    = document.getElementById('hwContentHomework');
+    hwContentNotice      = document.getElementById('hwContentNotice');
+    hwStagePending       = document.getElementById('hwStagePending');
+    hwStageClosed        = document.getElementById('hwStageClosed');
+    hwPendingCount       = document.getElementById('hwPendingCount');
+    hwClosedCount        = document.getElementById('hwClosedCount');
+    hwPendingLabel       = document.getElementById('hwPendingLabel');
+    hwClosedLabel        = document.getElementById('hwClosedLabel');
+    hwPendingHint        = document.getElementById('hwPendingHint');
+    hwClosedHint         = document.getElementById('hwClosedHint');
     hwDateFrom           = document.getElementById('hwDateFrom');
     hwDateTo             = document.getElementById('hwDateTo');
     addAssignmentBtn2    = document.getElementById('addAssignmentBtn2');
+    publishNoticeBtn     = document.getElementById('publishNoticeBtn');
+    exportHomeworkBtn    = document.getElementById('exportHomeworkBtn');
     hwContent            = document.getElementById('hwContent');
     hwModal               = document.getElementById('hwModal');
     hwModalTitleLabel     = document.getElementById('hwModalTitleLabel');
@@ -1885,6 +2096,11 @@
     hwModalDeadline       = document.getElementById('hwModalDeadline');
     hwModalCancel         = document.getElementById('hwModalCancel');
     hwModalConfirm        = document.getElementById('hwModalConfirm');
+    publishTypeHomework   = document.getElementById('publishTypeHomework');
+    publishTypeNotice     = document.getElementById('publishTypeNotice');
+    publishContentLabel   = document.getElementById('publishContentLabel');
+    publishDeadlineLabel  = document.getElementById('publishDeadlineLabel');
+    publishHint           = document.getElementById('publishHint');
     classroomTabBtn       = document.getElementById('classroomTabBtn');
     manageClassName       = document.getElementById('manageClassName');
     manageStudents        = document.getElementById('manageStudents');
@@ -1925,8 +2141,8 @@
       state.callHistory = data.callHistory;
       renderRooms();
       renderHistory();
-      // 不恢复登录会话：每次启动都要求教师重新输入密码。
-      showAccountOverlay(data.account ? 'login' : 'register', data.account);
+      // 每次启动只允许从已登录小程序同步身份。
+      showAccountOverlay();
     });
   }
 

@@ -5,7 +5,7 @@
       <text class="class-name">{{className || roomName || '尚未选择教室'}}</text>
       <view class="class-status"><view class="status-dot {{status}}"></view><text>{{statusMessage}}</text></view>
     </view>
-    <button class="switch-room" size="mini" bindtap="openRooms">切换教室</button>
+    <text class="secondary-page-tag">教室功能</text>
   </view>
 
   <view class="connection-notice {{status}}" wx:if="{{status !== 'online'}}">
@@ -14,12 +14,21 @@
   </view>
 
   <block wx:if="{{status === 'online'}}">
-    <view class="section-heading"><view><text class="section-title">呼叫内容</text><text class="section-note">发送前可切换常用消息</text></view></view>
-    <view class="message-cell surface" hover-class="cell-hover" bindtap="openTemplates">
-      <view class="message-symbol"><view></view><view></view><view></view></view>
-      <text class="message-value">{{templates[templateIndex]}}</text>
-      <text class="cell-arrow">›</text>
+    <view class="section-heading"><view><text class="section-title">呼叫内容</text><text class="section-note">可自由编辑，点击学生后发送</text></view></view>
+    <view class="message-editor surface">
+      <textarea class="message-input" value="{{callText}}" maxlength="100" auto-height placeholder="输入要在教室大屏显示的内容" bindinput="editCallText" confirm-type="done"/>
+      <view class="message-tools">
+        <view class="message-actions">
+          <button class="text-tool name-tool" size="mini" bindtap="insertNameVariable">＋ 学生姓名</button>
+          <button class="text-tool clear-tool" size="mini" bindtap="clearCallText" wx:if="{{callText}}">清空</button>
+        </view>
+        <text class="message-count {{callTextLength >= 90 ? 'near-limit' : ''}}">{{callTextLength}}/100</text>
+      </view>
+      <view class="variable-hint"><text>{name}</text><text>会在发送时自动替换为所选学生姓名</text></view>
     </view>
+    <scroll-view class="template-scroll" scroll-x enhanced show-scrollbar="false">
+      <view class="template-row"><button class="template-chip {{callText === item ? 'active' : ''}}" wx:for="{{templates}}" wx:key="*this" data-index="{{index}}" bindtap="useTemplate">{{item}}</button></view>
+    </scroll-view>
 
     <view class="section-heading"><view><text class="section-title">选择学生</text><text class="section-note">共 {{students.length}} 名学生，点击即可呼叫</text></view></view>
     <view class="search-box"><view class="search-icon"></view><input placeholder="搜索学生姓名" value="{{query}}" bindinput="search" confirm-type="search"/><text class="search-clear" wx:if="{{query}}" bindtap="clearSearch">×</text></view>

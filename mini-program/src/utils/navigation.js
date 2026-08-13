@@ -1,7 +1,6 @@
 const TAB_ROUTES = {
-  call: '/pages/call/index',
-  homework: '/pages/homework/index',
-  attendance: '/pages/attendance/index',
+  home: '/pages/home/index',
+  scan: '/pages/scan/index',
   profile: '/pages/profile/index',
 };
 

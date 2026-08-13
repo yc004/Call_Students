@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>教室连接二维码</title><link rel="stylesheet" href="connection-qr.css"></head>
+<body>
+  <main class="qr-shell">
+    <div class="brand">教</div>
+    <p class="eyebrow">教室连接</p>
+    <h1 id="roomName">本教室</h1>
+    <p class="lead">在微信小程序底部点击“扫码”，选择“添加教室”后扫描。</p>
+    <div class="network-picker"><label for="networkInterface">用于手机连接的网卡</label><select id="networkInterface"><option value="">自动选择（推荐）</option></select><small id="networkDetail">正在检测网卡…</small></div>
+    <div class="qr-card"><img id="qrImage" alt="教室连接二维码"><div id="placeholder" class="placeholder">正在生成二维码…</div></div>
+    <div class="code-line"><span>连接码</span><strong id="connectionCode">读取中…</strong></div>
+    <p class="network-tip">请选择与手机处于同一 Wi-Fi/局域网的网卡，不要选择虚拟机、VPN 或 Docker 网卡。</p>
+    <button id="retryBtn" type="button">重新读取</button>
+  </main>
+  <script src="connection-qr.js"></script>
+</body>
+</html>

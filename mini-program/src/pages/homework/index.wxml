@@ -1,13 +1,14 @@
 <view class="page homework-page">
   <view class="page-toolbar">
     <view class="page-heading"><text class="page-kicker">{{className || roomName || statusMessage}}</text><text class="page-title">作业</text></view>
-    <button class="header-action compose-button" size="mini" bindtap="openComposer" wx:if="{{canCompose}}">布置作业</button>
+    <button class="header-action compose-button" size="mini" data-type="{{contentType}}" bindtap="openComposer" wx:if="{{canCompose}}">{{contentType === 'notice' ? '发布通知' : '布置作业'}}</button>
   </view>
 
-  <view class="overview surface">
-    <view class="overview-item"><text>{{assignmentCount}}</text><text>全部作业</text></view>
-    <view class="overview-item"><text>{{pendingCount}}</text><text>待统计</text></view>
-    <view class="overview-item"><text>{{subjectCount}}</text><text>涉及学科</text></view>
+  <view class="content-switch"><view class="{{contentType === 'homework' ? 'active' : ''}}" data-type="homework" bindtap="selectContentType">作业</view><view class="{{contentType === 'notice' ? 'active' : ''}}" data-type="notice" bindtap="selectContentType">通知</view></view>
+
+  <view class="stage-switch surface">
+    <view class="stage-option {{homeworkStage === 'pending' ? 'active' : ''}}" data-stage="pending" bindtap="selectStage"><view><text>{{contentType === 'notice' ? '生效中通知' : '待提交作业'}}</text><text>{{contentType === 'notice' ? '未到结束时间' : '未到截止时间'}}</text></view><text class="stage-count">{{contentType === 'notice' ? activeNoticeCount : pendingCount}}</text></view>
+    <view class="stage-option {{homeworkStage === 'closed' ? 'active' : ''}}" data-stage="closed" bindtap="selectStage"><view><text>{{contentType === 'notice' ? '历史通知' : '提交统计'}}</text><text>{{contentType === 'notice' ? '已到结束时间' : '已到截止时间'}}</text></view><text class="stage-count">{{contentType === 'notice' ? endedNoticeCount : closedCount}}</text></view>
   </view>
 
   <view class="subject-filter" wx:if="{{subjects.length}}">
@@ -18,32 +19,35 @@
 
   <view class="assignment-groups" wx:if="{{visibleAssignments.length}}">
     <view class="date-section" wx:for="{{visibleAssignments}}" wx:key="date">
-      <view class="section-heading date-heading"><view><text class="section-title">{{item.dateLabel}}</text><text class="section-note">共 {{item.total}} 项作业</text></view></view>
-      <view class="subject-group surface" wx:for="{{item.subjects}}" wx:key="subject" wx:for-item="group">
-        <view class="subject-header"><view class="subject-dot"></view><text>{{group.subject}}</text><text>{{group.items.length}} 项</text></view>
-        <view class="assignment-cell" wx:for="{{group.items}}" wx:key="id" wx:for-item="assignment">
-          <view class="assignment-main"><text class="assignment-title">{{assignment.title}}</text><text class="assignment-deadline">{{assignment.deadlineText}}</text></view>
-          <view class="submission"><text>{{assignment.submitted}}/{{studentCount}}</text><text>已提交</text></view>
+      <view class="section-heading date-heading"><view><text class="section-title">{{item.dateLabel}}</text><text class="section-note">{{item.total}} {{contentType === 'notice' ? '条通知' : '项作业'}}</text></view></view>
+      <view class="deadline-group surface {{contentType === 'notice' ? 'notice-group' : ''}}">
+        <view class="assignment-cell" wx:for="{{item.items}}" wx:key="id" wx:for-item="assignment">
+          <view class="assignment-top"><view class="assignment-tags"><text class="subject-pill">{{assignment.subject}}</text><text class="student-source" wx:if="{{assignment.isStudentCreated}}">学生补录</text></view><text class="assignment-deadline">{{assignment.deadlineText}}</text></view>
+          <text class="assignment-title">{{assignment.title}}</text>
+          <block wx:if="{{!assignment.isNotice}}"><view class="progress-track"><view class="progress-value" style="width:{{assignment.summary.rate}}%"></view></view><view class="submission-stats"><text><text class="stat-number">{{assignment.summary.submitted}}</text> 已提交</text><text class="pending"><text class="stat-number">{{assignment.summary.pending}}</text> 待提交</text><text class="late" wx:if="{{assignment.summary.late}}"><text class="stat-number">{{assignment.summary.late}}</text> 迟交</text><text class="rate">{{assignment.summary.rate}}%</text></view></block>
+          <block wx:else><view class="notice-state"><text>{{homeworkStage === 'pending' ? '生效中' : '已结束'}}</text><text>{{assignment.deadlineText}}</text></view></block>
+          <view class="assignment-actions" wx:if="{{assignment.canManage}}"><button data-id="{{assignment.id}}" bindtap="editAssignment">编辑</button><button class="delete" data-id="{{assignment.id}}" bindtap="deleteAssignment">删除</button></view>
         </view>
       </view>
     </view>
   </view>
 
   <view class="surface empty assignment-empty" wx:else>
-    <view class="empty-mark">✓</view><text class="empty-title">{{selectedSubject ? '该学科暂无作业' : '暂时没有作业'}}</text><text class="empty-desc">{{canCompose ? '点击右上角“布置作业”开始安排。' : '老师布置的新作业会显示在这里。'}}</text>
+    <view class="empty-mark">{{homeworkStage === 'pending' ? '✓' : '◷'}}</view><text class="empty-title">{{selectedSubject ? (contentType === 'notice' ? '该学科暂无通知' : '该学科暂无作业') : (contentType === 'notice' ? (homeworkStage === 'pending' ? '当前没有生效中的通知' : '当前没有历史通知') : (homeworkStage === 'pending' ? '当前没有待提交作业' : '当前没有已截止作业'))}}</text><text class="empty-desc">{{contentType === 'notice' ? (homeworkStage === 'pending' ? '新通知会在结束时间前显示在这里。' : '通知结束后会自动进入历史记录。') : (homeworkStage === 'pending' ? '新布置且未到截止时间的作业会显示在这里。' : '作业到达截止时间后会自动进入提交统计。')}}</text>
   </view>
 
   <page-container show="{{composerOpen}}" position="bottom" round overlay close-on-slide-down bind:clickoverlay="closeComposer" bind:afterleave="closeComposer">
     <view class="bottom-sheet composer-sheet">
       <view class="sheet-handle"></view>
-      <view class="sheet-title"><view><text>布置作业</text><text class="sheet-subtitle">截止后自动进入提交统计</text></view><text class="sheet-close" bindtap="closeComposer">×</text></view>
+      <view class="sheet-title"><view><text>{{editingAssignmentId ? (publishType === 'notice' ? '编辑通知' : '编辑作业') : (publishType === 'notice' ? '发布通知' : '布置作业')}}</text><text class="sheet-subtitle">{{editingAssignmentId ? '修改后将同步到教室端和其他教师设备' : (publishType === 'notice' ? '结束后自动进入历史通知' : '截止后自动进入提交统计')}}</text></view><text class="sheet-close" bindtap="closeComposer">×</text></view>
+      <view class="publish-switch" wx:if="{{!editingAssignmentId}}"><view class="{{publishType === 'homework' ? 'active' : ''}}" data-type="homework" bindtap="selectPublishType">作业</view><view class="{{publishType === 'notice' ? 'active' : ''}}" data-type="notice" bindtap="selectPublishType">通知</view></view>
       <text class="label">授课学科</text>
-      <picker mode="selector" range="{{allowedSubjects}}" value="{{draftSubjectIndex}}" bindchange="setDraftSubject"><view class="picker-field"><text>{{allowedSubjects[draftSubjectIndex] || '请选择学科'}}</text><text class="picker-arrow">›</text></view></picker>
-      <text class="label">作业内容</text>
-      <textarea class="assignment-input" maxlength="80" auto-height placeholder="例如：完成练习册第 12—14 页" value="{{draftTitle}}" bindinput="setDraftTitle"></textarea>
-      <text class="label">提交截止时间</text>
+      <picker mode="selector" range="{{allowedSubjects}}" value="{{draftSubjectIndex}}" disabled="{{editingAssignmentId && !isHomeroom}}" bindchange="setDraftSubject"><view class="picker-field {{editingAssignmentId && !isHomeroom ? 'disabled' : ''}}"><text>{{allowedSubjects[draftSubjectIndex] || '请选择学科'}}</text><text class="picker-arrow" wx:if="{{!editingAssignmentId || isHomeroom}}">›</text></view></picker>
+      <text class="label">{{publishType === 'notice' ? '通知内容' : '作业内容'}}</text>
+      <textarea class="assignment-input" maxlength="200" auto-height placeholder="{{publishType === 'notice' ? '例如：明天下午第二节课调至实验室' : '例如：完成练习册第 12—14 页'}}" value="{{draftTitle}}" bindinput="setDraftTitle"></textarea>
+      <text class="label">{{publishType === 'notice' ? '通知结束时间' : '提交截止时间'}}</text>
       <view class="deadline-row"><picker mode="date" value="{{draftDate}}" start="{{today}}" bindchange="setDraftDate"><view class="picker-field">{{draftDate}}</view></picker><picker mode="time" value="{{draftTime}}" bindchange="setDraftTime"><view class="picker-field">{{draftTime}}</view></picker></view>
-      <button class="primary submit-assignment" bindtap="submitAssignment" disabled="{{!draftTitle || !allowedSubjects.length}}">确认布置</button>
+      <button class="primary submit-assignment" bindtap="submitAssignment" disabled="{{!draftTitle || !allowedSubjects.length}}">{{editingAssignmentId ? '保存修改' : (publishType === 'notice' ? '确认发布' : '确认布置')}}</button>
     </view>
   </page-container>
 </view>

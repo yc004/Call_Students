@@ -7,6 +7,10 @@
     "start": "unset ELECTRON_RUN_AS_NODE && electron .",
     "verify:syntax": "node ../scripts/verify-js-syntax.js teacher-app",
     "test:account": "node test/account-auth.test.js",
+    "test:pairing": "node test/mini-program-pairing.test.js",
+    "test:connection-code": "node test/connection-code.test.js",
+    "test:homework-view": "node test/homework-view.test.js",
+    "test:homework-export": "node test/homework-export.test.js",
     "build": "electron-builder --win",
     "build:win:ci": "electron-builder --win nsis --x64 --publish never",
     "build:portable": "electron-builder --win portable"
@@ -20,6 +24,10 @@
     },
     "files": [
       "main.js",
+      "connection-code.js",
+      "homework-view.js",
+      "homework-export.js",
+      "mini-program-pairing.js",
       "account-auth.js",
       "preload.js",
       "index.html",
@@ -56,6 +64,7 @@
     "electron-builder": "26.15.3"
   },
   "dependencies": {
+    "exceljs": "^4.4.0",
     "qrcode": "^1.5.4"
   }
 }

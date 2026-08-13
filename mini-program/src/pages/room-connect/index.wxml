@@ -1,0 +1,29 @@
+<view class="shared-page">
+  <view class="shared-header">
+    <view class="share-badge">班</view>
+    <text class="shared-kicker">班主任分享了一个教室</text>
+    <text class="shared-title">{{roomName}}</text>
+    <text class="shared-desc">确认信息后，以你自己的教师身份加入该教室。</text>
+  </view>
+
+  <view class="room-card" wx:if="{{valid}}">
+    <view class="room-mark">室</view>
+    <view class="room-info"><text>{{roomName}}</text><text>连接码 {{connectionCode}}</text></view>
+    <text class="saved-tag" wx:if="{{alreadySaved}}">已保存</text>
+  </view>
+
+  <view class="identity-card" wx:if="{{valid}}">
+    <view class="identity-row"><text>连接身份</text><text>{{loggedIn ? accountName : '尚未登录'}}</text></view>
+    <view class="identity-row"><text>网络要求</text><text>与教室电脑处于同一局域网</text></view>
+    <view class="identity-row"><text>加入权限</text><text>{{alreadySaved ? '重新连接' : '首次连接后等待班主任批准'}}</text></view>
+    <view class="subject-field"><text>授课科目 <text class="required">必填</text></text><input value="{{subjectText}}" maxlength="120" bindinput="onSubjectInput" placeholder="例如：数学；多个科目用逗号分隔"/></view>
+  </view>
+
+  <view class="connection-panel {{connectionState}}" wx:if="{{valid && connectionState !== 'ready'}}"><view class="connection-indicator"><view></view></view><view class="connection-copy"><text>{{connectionTitle}}</text><text>{{connectionDetail}}</text></view></view>
+
+  <button class="connect-button" wx:if="{{valid && connectionState !== 'success' && connectionState !== 'waiting'}}" loading="{{connecting}}" disabled="{{connecting}}" bindtap="connectRoom">{{connecting ? '正在发送教师身份' : (connectionState === 'failed' ? '重新连接' : (loggedIn ? (alreadySaved ? '切换并连接教室' : '添加并连接教室') : '登录后添加教室'))}}</button>
+  <button class="connect-button" wx:else bindtap="goHome">返回首页</button>
+  <button class="scan-button" bindtap="openScan">使用二维码连接</button>
+
+  <view class="security-note"><text>分享链接只包含教室名称和局域网连接码，不包含学生、作业或教师账户信息。</text></view>
+</view>

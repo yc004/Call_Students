@@ -3,8 +3,15 @@
   var expanded = false;
   var menu = document.getElementById('floatMenu');
   var toggle = document.getElementById('toggleMenu');
+  var unreadDot = document.getElementById('unreadDot');
   var shell = document.getElementById('floatShell');
   var closeTimer = null;
+  function renderUnread(unread) {
+    unreadDot.hidden = !unread;
+    toggle.classList.toggle('has-unread', !!unread);
+  }
+  if (api.getHomeworkUnread) api.getHomeworkUnread().then(renderUnread).catch(function () {});
+  if (api.onHomeworkUnreadChanged) api.onHomeworkUnreadChanged(renderUnread);
   function setExpanded(next) {
     clearTimeout(closeTimer);
     expanded = next;
@@ -52,6 +59,6 @@
   }
   toggle.addEventListener('pointerup', finishPointer);
   toggle.addEventListener('pointercancel', function () { drag = null; toggle.classList.remove('dragging'); });
-  document.getElementById('openWidget').addEventListener('click', function () { if (api.openHomeworkWidget) api.openHomeworkWidget(); setExpanded(false); });
+  document.getElementById('openWidget').addEventListener('click', function () { renderUnread(false); if (api.openHomeworkWidget) api.openHomeworkWidget(); setExpanded(false); });
   document.getElementById('openBoard').addEventListener('click', function () { if (api.openHomeworkBoard) api.openHomeworkBoard(); setExpanded(false); });
 })();

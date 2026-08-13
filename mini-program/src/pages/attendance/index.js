@@ -1,5 +1,6 @@
 const socket = require('../../utils/socket');
 const { sessionStore } = require('../../utils/session');
+const roomContext = require('../../utils/room-context');
 
 function formatTime(value) {
   const date = new Date(value); if (!value || Number.isNaN(date.getTime())) return '';
@@ -8,9 +9,10 @@ function formatTime(value) {
 
 Page({
   data: { status:'offline',statusMessage:'未连接',className:'',roomName:'',students:[],visibleStudents:[],liveFaces:[],pendingFaces:[],filter:'all',query:'',presentCount:0,arrivedCount:0,awayCount:0,unseenCount:0,totalCount:0,presentPercent:0,pendingFaceCount:0,isHomeroom:false,updatedText:'等待数据' },
-  onLoad() {
+  onLoad(options) {
     const session=sessionStore.load(); if(!session){ wx.reLaunch({url:'/pages/login/index'}); return; }
-    this.session=session; this.setData({roomName:session.activeRoom ? session.activeRoom.name : ''});
+    const context=roomContext.activateByCode(options && options.code);if(!context){wx.showToast({title:'教室信息已失效',icon:'none'});setTimeout(()=>wx.navigateBack(),300);return;}
+    this.session=context.session; this.setData({roomName:context.room.name});
     this.unsubscribe=socket.subscribe((event,payload)=>{
       if(event==='status') this.setData({status:payload.status,statusMessage:payload.message});
       if(event==='sync') this.applySync(payload);
@@ -18,7 +20,7 @@ Page({
       if(event==='presence') this.applyPresence(payload.detections || []);
       if(event==='pendingFaces') this.applyPendingFaces(payload.faces || []);
     });
-    if(session.activeRoom) socket.connect(session.activeRoom,session.account);
+    socket.connect(context.room,context.session.account,{force:true});
   },
   onUnload(){ this.unsubscribe && this.unsubscribe(); },
   onShow(){

@@ -3,18 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>今日作业</title>
+  <title>今日安排</title>
   <link rel="stylesheet" href="homework-widget.css">
+  <style>.notice-list{display:flex;flex-direction:column;gap:10px;margin-bottom:16px}.notice-heading{display:flex;align-items:center;justify-content:space-between;color:#41516b;font-size:14px}.notice-heading span{color:var(--muted);font-size:12px}.notice-item{padding:14px 16px;border:1px solid #f0d9a8;border-radius:15px;background:#fffaf0}.notice-item h2{margin:8px 0 5px;font-size:18px;line-height:1.45;word-break:break-word}.notice-item small{color:#8a6a2c;font-size:12px}.notice-subject{display:inline-block;padding:3px 8px;border-radius:8px;color:#8b5c00;background:#ffedc7;font-size:12px;font-weight:800}</style>
 </head>
 <body>
   <header class="widget-header">
-    <div class="drag-zone"><span class="widget-kicker">班级作业</span><h1>今日作业</h1></div>
+    <div class="drag-zone"><span class="widget-kicker">班级信息</span><h1>今日安排</h1></div>
     <button id="closeWidget" class="close-button" type="button" aria-label="收起作业组件">×</button>
   </header>
   <main>
     <div id="dateLabel" class="date-label"></div>
+    <section id="noticeList" class="notice-list" aria-live="polite"></section>
     <section id="assignmentList" class="assignment-list" aria-live="polite"></section>
-    <section id="emptyState" class="empty-state" hidden><div>✓</div><h2>今天暂时没有待完成作业</h2><p>老师布置新作业后会自动显示在这里。</p></section>
+    <section id="emptyState" class="empty-state" hidden><div>✓</div><h2>今天暂时没有新安排</h2><p>老师发布作业或通知后会自动显示在这里。</p></section>
   </main>
   <footer><span id="classLabel">正在同步班级数据</span><button id="refreshWidget" type="button">刷新</button></footer>
   <script src="homework-widget.js"></script>

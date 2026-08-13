@@ -1,6 +1,7 @@
 (function () {
   var api = window.api || {};
   var list = document.getElementById('assignmentList');
+  var noticeList = document.getElementById('noticeList');
   var empty = document.getElementById('emptyState');
   var dateLabel = document.getElementById('dateLabel');
   var classLabel = document.getElementById('classLabel');
@@ -25,14 +26,23 @@
     }).join('');
     return '<article class="subject-group"><div class="subject-group-head"><span class="subject">' + esc(group.subject) + '</span><span class="assignment-count">' + countText + '</span></div><ul class="assignment-items">' + items + '</ul></article>';
   }
+  function renderNotices(notices) {
+    if (!notices.length) return '';
+    return '<div class="notice-heading"><strong>班级通知</strong><span>' + notices.length + ' 条</span></div>' + notices.map(function (item) {
+      return '<article class="notice-item"><span class="notice-subject">' + esc(item.subject || '班级') + '</span><h2>' + esc(item.title || '未命名通知') + '</h2><small>' + esc(deadlineText(item.deadline).replace('截止', '结束')) + '</small></article>';
+    }).join('');
+  }
   async function render() {
     dateLabel.textContent = formatDate(today());
     if (!api.getData) { classLabel.textContent = '预览环境未连接数据'; return; }
     try {
       var data = await api.getData(); var students = data.students || [];
-      var assignments = (data.assignments || []).filter(function (item) { return item.date === today() && isDisplayPhase(item); });
+      var active = (data.assignments || []).filter(function (item) { return isDisplayPhase(item); });
+      var assignments = active.filter(function (item) { return item.type !== 'notice' && item.date === today(); });
+      var notices = active.filter(function (item) { return item.type === 'notice'; });
       classLabel.textContent = (data.className || '未命名班级') + ' · ' + students.length + ' 名学生';
-      empty.hidden = assignments.length > 0;
+      empty.hidden = assignments.length > 0 || notices.length > 0;
+      noticeList.innerHTML = renderNotices(notices);
       list.innerHTML = groupBySubject(assignments).map(renderSubjectGroup).join('');
     } catch (error) { console.error(error); classLabel.textContent = '同步失败，请点击刷新'; }
   }

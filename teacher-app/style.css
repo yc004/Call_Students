@@ -68,7 +68,7 @@ body {
   font-weight: 500;
 }
 
-/* ── IP 连接输入 ── */
+/* ── 连接码输入 ── */
 
 .connect-box {
   display: flex;

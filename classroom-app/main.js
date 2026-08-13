@@ -3,7 +3,11 @@ const WebSocket = require('ws');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { getLanInterfaces: selectLanInterfaces } = require('./lan-addresses');
+const connectionCode = require('./connection-code');
+const { createClassroomQrPayload } = require('./classroom-qr');
 let Database = null;
+let QRCode = null;
 
 const APP_ICON_PATH = path.join(__dirname, 'icon.png');
 
@@ -155,6 +159,7 @@ try { fs.writeFileSync(LOG_FILE, '', 'utf-8'); } catch (_) {}
 // ── 状态 ──
 let tray = null;
 let onboardingWin = null;
+let connectionQrWin = null;
 let popupWin = null;
 let boardWin = null;
 let homeworkWidgetWin = null;
@@ -192,6 +197,8 @@ function getDb() {
   // deadline 是作业从“展示”自动进入“提交统计”的时间。旧数据库按需平滑迁移。
   const assignmentColumns = db.prepare('PRAGMA table_info(assignments)').all().map(row => row.name);
   if (!assignmentColumns.includes('deadline')) db.exec('ALTER TABLE assignments ADD COLUMN deadline TEXT');
+  if (!assignmentColumns.includes('type')) db.exec("ALTER TABLE assignments ADD COLUMN type TEXT DEFAULT 'homework'");
+  if (!assignmentColumns.includes('source')) db.exec("ALTER TABLE assignments ADD COLUMN source TEXT DEFAULT 'teacher'");
   // attendance 表的创建/迁移交由 migrateAttendanceSchema 统一处理：
   // 注意不能在这里用 `CREATE TABLE IF NOT EXISTS attendance(...day...)`，
   // 因为旧库的 attendance 表已存在且无 day 列，SQLite 校验新 DDL 引用的 day 列会报
@@ -286,7 +293,7 @@ function loadData() {
   const className = d.prepare("SELECT value FROM meta WHERE key='className'").get()?.value || '';
   const students = d.prepare('SELECT id, name FROM students ORDER BY rowid').all();
   const subjects = getDerivedSubjects();
-  const assignments = d.prepare('SELECT id, subject, title, date, deadline FROM assignments ORDER BY date').all();
+  const assignments = d.prepare("SELECT id, subject, title, date, deadline, COALESCE(type, 'homework') AS type, COALESCE(source, 'teacher') AS source FROM assignments ORDER BY date").all();
   for (const a of assignments) {
     a.submissions = {};
     const rows = d.prepare('SELECT student_id, status FROM submissions WHERE assignment_id=?').all(a.id);
@@ -311,8 +318,10 @@ function saveData(data) {
     d.prepare('DELETE FROM assignments').run();
     d.prepare('DELETE FROM submissions').run();
     for (const a of (data.assignments || [])) {
-      d.prepare('INSERT INTO assignments (id, subject, title, date, deadline) VALUES (?,?,?,?,?)').run(a.id, a.subject, a.title, a.date, a.deadline || null);
-      for (const [sid, status] of Object.entries(a.submissions || {})) {
+      const type = a.type === 'notice' ? 'notice' : 'homework';
+      const source = a.source === 'student' ? 'student' : 'teacher';
+      d.prepare('INSERT INTO assignments (id, subject, title, date, deadline, type, source) VALUES (?,?,?,?,?,?,?)').run(a.id, a.subject, a.title, a.date, a.deadline || null, type, source);
+      for (const [sid, status] of Object.entries(type === 'homework' ? (a.submissions || {}) : {})) {
         d.prepare('INSERT INTO submissions (assignment_id, student_id, status) VALUES (?,?,?)').run(a.id, sid, status);
       }
     }
@@ -368,14 +377,62 @@ function isSystemReady() {
   return isHomeroomBound() && isClassroomConfigured();
 }
 
-function getLanAddresses() {
-  const addresses = [];
-  for (const entries of Object.values(os.networkInterfaces())) {
-    for (const entry of entries || []) {
-      if (entry.family === 'IPv4' && !entry.internal) addresses.push(entry.address);
-    }
+function getSavedNetworkInterface() {
+  return getDb().prepare("SELECT value FROM meta WHERE key='networkInterface'").get()?.value || '';
+}
+
+function getNetworkInterfaceStatus() {
+  const interfaces = selectLanInterfaces(os.networkInterfaces());
+  const preferredName = getSavedNetworkInterface();
+  const selected = preferredName
+    ? interfaces.find(item => item.name === preferredName) || null
+    : interfaces[0] || null;
+  return {
+    interfaces,
+    mode: preferredName ? 'manual' : 'auto',
+    preferredName,
+    selected,
+    unavailable: !!preferredName && !selected,
+  };
+}
+
+function setNetworkInterface(name) {
+  const requested = String(name || '').trim().slice(0, 120);
+  const status = getNetworkInterfaceStatus();
+  if (requested && !status.interfaces.some(item => item.name === requested)) {
+    return { success:false, message:'选择的网卡当前不可用，请刷新后重新选择', ...status };
   }
-  return Array.from(new Set(addresses));
+  if (requested) getDb().prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('networkInterface', ?)").run(requested);
+  else getDb().prepare("DELETE FROM meta WHERE key='networkInterface'").run();
+  rebuildTrayMenu();
+  [onboardingWin, connectionQrWin].forEach(win => {
+    if (win && !win.isDestroyed()) win.webContents.send('network-interface-changed');
+  });
+  return { success:true, ...getNetworkInterfaceStatus() };
+}
+
+function getLanAddresses() {
+  const selected = getNetworkInterfaceStatus().selected;
+  return selected ? [selected.address] : [];
+}
+
+function getConnectionCodes() {
+  return getLanAddresses().map(address => {
+    try { return connectionCode.encode(address); } catch (_error) { return null; }
+  }).filter(Boolean);
+}
+
+async function getClassroomQrData() {
+  const network = getNetworkInterfaceStatus();
+  if (network.unavailable) return { success:false, message:`此前选择的网卡“${network.preferredName}”当前不可用，请重新选择网卡`, network };
+  const connectionCodes = getConnectionCodes();
+  if (!connectionCodes.length) return { success: false, message: '未检测到可用的局域网连接', network };
+  const className = getDb().prepare("SELECT value FROM meta WHERE key='className'").get()?.value || '本教室';
+  const connectionCodeValue = connectionCodes[0];
+  if (!QRCode) QRCode = require('qrcode');
+  const payload = createClassroomQrPayload(className, connectionCodeValue);
+  const qrDataUrl = await QRCode.toDataURL(payload, { errorCorrectionLevel: 'M', width: 360, margin: 2 });
+  return { success: true, name: className || '本教室', connectionCode: connectionCodeValue, qrDataUrl, network };
 }
 
 function getOnboardingStatus() {
@@ -386,7 +443,7 @@ function getOnboardingStatus() {
     if (!candidates.has(teacher.connection_id)) candidates.set(teacher.connection_id, { ...teacher, source: 'approved' });
   });
   const className = getDb().prepare("SELECT value FROM meta WHERE key='className'").get()?.value || '';
-  return { bound: !!homeroom, configured: isClassroomConfigured(), homeroom, candidates: Array.from(candidates.values()), className, addresses: getLanAddresses(), wsPort: WS_PORT };
+  return { bound: !!homeroom, configured: isClassroomConfigured(), homeroom, candidates: Array.from(candidates.values()), className, connectionCodes: getConnectionCodes(), network:getNetworkInterfaceStatus() };
 }
 
 function bindHomeroomTeacher(connectionId) {
@@ -401,13 +458,17 @@ function bindHomeroomTeacher(connectionId) {
   const approved = d.prepare('SELECT * FROM approved_teachers WHERE connection_id=?').get(id);
   const teacher = pending || approved;
   if (!teacher) return { success: false, message: '该教师请求已失效，请让班主任重新连接' };
+  let teacherSubjects = [];
+  try { teacherSubjects = JSON.parse(teacher.subjects || '[]'); } catch (_error) {}
+  teacherSubjects = normalizeSubjects(teacherSubjects);
+  if (!teacherSubjects.length) return { success: false, message: '请让该教师重新连接并先填写授课科目，再绑定为班主任' };
   const now = new Date().toISOString();
   d.transaction(() => {
     d.prepare("INSERT OR REPLACE INTO meta VALUES ('classroomConfigured', 'false')").run();
     d.prepare('DELETE FROM pending_requests WHERE connection_id=?').run(id);
     d.prepare('DELETE FROM approved_teachers WHERE connection_id=?').run(id);
     d.prepare('INSERT INTO approved_teachers (connection_id, name, role, subjects, approved_at) VALUES (?,?,?,?,?)')
-      .run(id, teacher.name, '班主任', teacher.subjects || '[]', now);
+      .run(id, teacher.name, '班主任', JSON.stringify(teacherSubjects), now);
   })();
   notifyTeacherCandidatesChanged();
   notifyOnboardingChanged();
@@ -415,6 +476,12 @@ function bindHomeroomTeacher(connectionId) {
   broadcastSync(loadData());
   rebuildTrayMenu();
   return { success: true, teacher: getHomeroomTeacher() };
+}
+
+function normalizeSubjects(values) {
+  return Array.from(new Set((Array.isArray(values) ? values : [])
+    .map(value => String(value).trim().slice(0, 30))
+    .filter(Boolean))).slice(0, 20);
 }
 
 function getDerivedSubjects() {
@@ -530,8 +597,26 @@ function createTray() {
 
 function rebuildTrayMenu() {
   const autoLaunch = app.getLoginItemSettings().openAtLogin;
+  const codes = getConnectionCodes();
+  const network = getNetworkInterfaceStatus();
+  const connectionCodeItem = { label: codes.length ? `连接码 ${codes.join(' / ')}` : '暂无可用连接码', enabled: false };
+  const networkInterfaceItem = {
+    label: network.selected ? `网卡 ${network.selected.name} · ${network.selected.address}` : '选择连接网卡',
+    submenu: [
+      { label:'自动选择（推荐）', type:'radio', checked:network.mode === 'auto', click:() => setNetworkInterface('') },
+      ...network.interfaces.map(item => ({
+        label:`${item.name} · ${item.address}${item.isVirtual ? ' · 虚拟网卡' : ''}`,
+        type:'radio', checked:network.mode === 'manual' && network.preferredName === item.name,
+        click:() => setNetworkInterface(item.name),
+      })),
+    ],
+  };
   if (!isHomeroomBound()) {
     const menu = Menu.buildFromTemplate([
+      connectionCodeItem,
+      networkInterfaceItem,
+      { label: '显示教室连接二维码', click: () => createConnectionQrWindow() },
+      { type: 'separator' },
       { label: '完成班主任绑定', click: () => createOnboardingWindow() },
       { label: (autoLaunch ? '✓ ' : '') + '开机自启', click: () => {
         const current = app.getLoginItemSettings().openAtLogin;
@@ -547,6 +632,10 @@ function rebuildTrayMenu() {
   }
   if (!isClassroomConfigured()) {
     const menu = Menu.buildFromTemplate([
+      connectionCodeItem,
+      networkInterfaceItem,
+      { label: '显示教室连接二维码', click: () => createConnectionQrWindow() },
+      { type: 'separator' },
       { label: '等待班主任完成教室配置', enabled: false },
       { label: '查看绑定状态', click: () => createOnboardingWindow() },
       { label: (autoLaunch ? '✓ ' : '') + '开机自启', click: () => {
@@ -563,6 +652,10 @@ function rebuildTrayMenu() {
   }
   const faceEnabled = getFaceCheckEnabled();
   const menu = Menu.buildFromTemplate([
+    connectionCodeItem,
+    networkInterfaceItem,
+    { label: '显示教室连接二维码', click: () => createConnectionQrWindow() },
+    { type: 'separator' },
     { label: '打开作业看板', click: () => openBoardWindow() },
     { label: '录入学生人脸', click: () => createFaceRegisterWindow() },
     { type: 'separator' },
@@ -611,6 +704,28 @@ function createOnboardingWindow() {
   onboardingWin.on('closed', () => { onboardingWin = null; });
 }
 
+function createConnectionQrWindow() {
+  if (connectionQrWin && !connectionQrWin.isDestroyed()) {
+    connectionQrWin.show(); connectionQrWin.focus(); return;
+  }
+  connectionQrWin = new BrowserWindow({
+    width: 480,
+    height: 720,
+    minWidth: 420,
+    minHeight: 660,
+    title: '教室连接二维码',
+    icon: APP_ICON_PATH,
+    backgroundColor: '#F4F7FC',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  connectionQrWin.loadFile('renderer/connection/connection-qr.html');
+  connectionQrWin.on('closed', () => { connectionQrWin = null; });
+}
+
 function activateBoundRuntime(openBoard = true) {
   if (!isSystemReady()) return false;
   if (onboardingWin && !onboardingWin.isDestroyed()) onboardingWin.close();
@@ -645,6 +760,19 @@ function setHomeworkFloatExpanded(expanded) {
     : { x: bounds.x + offset, y: bounds.y + offset, width: compact, height: compact });
 }
 
+function getHomeworkUnread() {
+  const row = getDb().prepare("SELECT value FROM meta WHERE key='homeworkUnread'").get();
+  return !!row && row.value === 'true';
+}
+
+function setHomeworkUnread(unread) {
+  const value = unread ? 'true' : 'false';
+  getDb().prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('homeworkUnread', ?)").run(value);
+  if (homeworkFloatWin && !homeworkFloatWin.isDestroyed()) {
+    homeworkFloatWin.webContents.send('homework-unread-changed', !!unread);
+  }
+}
+
 // 学生从悬浮球进入查看用的桌面作业组件；课代表上报仍使用完整作业看板。
 function createHomeworkFloatWindow() {
   if (!isSystemReady()) return;
@@ -662,11 +790,17 @@ function createHomeworkFloatWindow() {
   homeworkFloatWin.setAlwaysOnTop(true, 'floating');
   homeworkFloatWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   homeworkFloatWin.loadFile('renderer/homework/homework-float.html');
+  homeworkFloatWin.webContents.on('did-finish-load', () => {
+    if (homeworkFloatWin && !homeworkFloatWin.isDestroyed()) {
+      homeworkFloatWin.webContents.send('homework-unread-changed', getHomeworkUnread());
+    }
+  });
   homeworkFloatWin.on('closed', () => { homeworkFloatWin = null; });
 }
 
 function openHomeworkWidget() {
   if (!isSystemReady()) { createOnboardingWindow(); return; }
+  setHomeworkUnread(false);
   if (homeworkWidgetWin && !homeworkWidgetWin.isDestroyed()) {
     homeworkWidgetWin.show(); homeworkWidgetWin.focus(); return;
   }
@@ -676,7 +810,7 @@ function openHomeworkWidget() {
   homeworkWidgetWin = new BrowserWindow({
     width, height, minWidth: 360, minHeight: 440,
     x: Math.max(12, sw - width - 28), y: Math.max(12, Math.round((sh - height) / 2)),
-    frame: false, resizable: true, movable: true, alwaysOnTop: false, backgroundColor: '#F7F9FD', title: '今日作业',
+    frame: false, resizable: true, movable: true, alwaysOnTop: false, backgroundColor: '#F7F9FD', title: '今日安排',
     icon: APP_ICON_PATH,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
   });
@@ -1053,9 +1187,7 @@ function startWSServer() {
 
           const connectionId = String(msg.connectionId || '').trim();
           const reportedName = String(msg.name || '').trim().slice(0, 20);
-          const reportedSubjects = Array.isArray(msg.subjects)
-            ? msg.subjects.map(s => String(s).trim().slice(0, 30)).filter(Boolean).slice(0, 20)
-            : [];
+          const reportedSubjects = normalizeSubjects(msg.subjects);
           if (!reportedName || !/^[A-Za-z0-9-]{8,128}$/.test(connectionId)) {
             ws.send(JSON.stringify({ type: 'login-required', message: '教师身份无效，请在教师端重新登录' }));
             break;
@@ -1066,19 +1198,36 @@ function startWSServer() {
             if (t.found && t.approved) {
               // 已批准：以教室端存储的身份为准（管理员可修改角色/学科）
               teacher = { connectionId, name: t.name, role: t.role, subjects: t.subjects, status: 'approved' };
+              // 兼容旧版未设科目的已加入账户：只允许在教室端记录为空时补齐，不覆盖班主任已授权的科目。
+              if (!normalizeSubjects(t.subjects).length && reportedSubjects.length) {
+                getDb().prepare('UPDATE approved_teachers SET subjects=? WHERE connection_id=?').run(JSON.stringify(reportedSubjects), connectionId);
+                teacher.subjects = reportedSubjects;
+              }
+              if (!normalizeSubjects(teacher.subjects).length) {
+                ws.send(JSON.stringify({ type: 'subject-required', message: '当前教室还没有你的授课科目，请重新添加教室并先填写科目' }));
+                break;
+              }
               // 若教师端上报的姓名有变化，更新数据库
               if (reportedName !== t.name) {
                 getDb().prepare('UPDATE approved_teachers SET name=? WHERE connection_id=?').run(reportedName, connectionId);
                 teacher.name = reportedName;
               }
             } else if (t.found && !t.approved) {
+              if (!reportedSubjects.length) {
+                ws.send(JSON.stringify({ type: 'subject-required', message: '加入教室前必须至少填写一个授课科目' }));
+                break;
+              }
               // 待审核：更新教师最新上报的身份信息
               const newName = reportedName || t.name;
-              const newSubjects = reportedSubjects.length ? reportedSubjects : t.subjects;
+              const newSubjects = reportedSubjects;
               getDb().prepare('UPDATE pending_requests SET name=?, subjects=?, requested_at=? WHERE connection_id=?')
                 .run(newName, JSON.stringify(newSubjects), new Date().toISOString(), connectionId);
               teacher = { connectionId, name: newName, role: t.role, subjects: newSubjects, status: 'pending' };
             } else {
+              if (!reportedSubjects.length) {
+                ws.send(JSON.stringify({ type: 'subject-required', message: '加入教室前必须至少填写一个授课科目' }));
+                break;
+              }
               getDb().prepare('INSERT INTO pending_requests (connection_id, name, role, subjects, requested_at) VALUES (?,?,?,?,?)')
                 .run(connectionId, reportedName, '授课教师', JSON.stringify(reportedSubjects), new Date().toISOString());
               teacher = { connectionId, name: reportedName, role: '授课教师', subjects: reportedSubjects, status: 'pending' };
@@ -1100,6 +1249,12 @@ function startWSServer() {
 
           // 通知绑定引导与班主任教师端：待审核列表有变化
           if (teacher.status === 'pending') {
+            // 首次绑定时让确认窗口主动出现在教室大屏，避免候选身份已登记但窗口仍停留后台。
+            createOnboardingWindow();
+            if (onboardingWin && !onboardingWin.isDestroyed()) {
+              onboardingWin.show();
+              onboardingWin.focus();
+            }
             notifyTeacherCandidatesChanged();
             broadcastSync(loadData());
           }
@@ -1150,7 +1305,7 @@ function startWSServer() {
           if (!msg.assignmentId || !msg.studentId) return;
           const data = loadData();
           const assignment = data.assignments.find(a => a.id === msg.assignmentId);
-          if (assignment) {
+          if (assignment && assignment.type !== 'notice') {
             assignment.submissions[msg.studentId] = msg.status || '未提交';
             saveData(data);
             broadcastSync(data);
@@ -1162,23 +1317,25 @@ function startWSServer() {
           if (!msg.action) return;
           const data = loadData();
           const teacher = ws._teacher || {};
-          if (teacher.status !== 'approved') { ws.send(JSON.stringify({ type: 'auth-required', message: '未获批准，无法修改作业' })); return; }
+          if (teacher.status !== 'approved') { ws.send(JSON.stringify({ type: 'auth-required', message: '未获批准，无法发布或修改班级内容' })); return; }
           const requested = msg.assignment || {};
           const existing = requested.id ? data.assignments.find(item => item.id === requested.id) : null;
           // 任课教师只能操作教室端已授权的学科；编辑时不得借由篡改 subject 转移作业归属。
           const targetSubject = msg.action === 'add' ? requested.subject : (existing && existing.subject);
-          const hasSubjectPermission = teacher.role === '班主任' || (targetSubject && (teacher.subjects || []).includes(targetSubject));
+          const hasConfiguredSubjects = normalizeSubjects(teacher.subjects).length > 0;
+          const hasSubjectPermission = hasConfiguredSubjects && (teacher.role === '班主任' || (targetSubject && (teacher.subjects || []).includes(targetSubject)));
           const subjectUnchanged = msg.action !== 'edit' || !existing || requested.subject === existing.subject || teacher.role === '班主任';
           if (!targetSubject || !hasSubjectPermission || !subjectUnchanged) {
-            ws.send(JSON.stringify({ type: 'auth-required', message: '你只能修改自己被授权学科的作业' })); return;
+            ws.send(JSON.stringify({ type: 'auth-required', message: hasConfiguredSubjects ? '你只能发布或修改自己被授权学科的作业与通知' : '请先设置至少一个授课科目，再发布作业或通知' })); return;
           }
           if (msg.action === 'add' && requested.id && requested.title) {
-            data.assignments.push(msg.assignment);
+            data.assignments.push({ ...msg.assignment, type: requested.type === 'notice' ? 'notice' : 'homework', source:'teacher', submissions: requested.type === 'notice' ? {} : (requested.submissions || {}) });
+            setHomeworkUnread(true);
           } else if (msg.action === 'delete' && existing) {
             data.assignments = data.assignments.filter(a => a.id !== existing.id);
           } else if (msg.action === 'edit' && existing) {
             const idx = data.assignments.findIndex(a => a.id === existing.id);
-            if (idx >= 0) data.assignments[idx] = msg.assignment;
+            if (idx >= 0) data.assignments[idx] = { ...msg.assignment, type: existing.type === 'notice' ? 'notice' : 'homework', source:existing.source === 'student' ? 'student' : 'teacher', submissions: existing.type === 'notice' ? {} : (msg.assignment.submissions || {}) };
           } else { return; }
           saveData(data);
           broadcastSync(data);
@@ -1192,6 +1349,13 @@ function startWSServer() {
           }
           const data = loadData();
           const input = msg.classroom || {};
+          const configuredSubjects = normalizeSubjects(input.subjects);
+          if (configuredSubjects.length && !normalizeSubjects(teacher.subjects).length) {
+            getDb().prepare('UPDATE approved_teachers SET subjects=? WHERE connection_id=?')
+              .run(JSON.stringify(configuredSubjects), teacher.connectionId);
+            teacher.subjects = configuredSubjects;
+            ws._teacher.subjects = configuredSubjects;
+          }
           const names = Array.isArray(input.students) ? input.students : [];
           const seenIds = new Set();
           const seenNames = new Set();
@@ -1209,9 +1373,13 @@ function startWSServer() {
             ws.send(JSON.stringify({ type: 'auth-required', message: '教室配置需要填写班级名称并至少添加一名学生' }));
             return;
           }
-          if (Array.isArray(input.subjects)) data.subjects = Array.from(new Set(input.subjects.map(value => String(value).trim().slice(0, 30)).filter(Boolean))).sort();
+          if (!normalizeSubjects(teacher.subjects).length) {
+            ws.send(JSON.stringify({ type: 'auth-required', message: '班主任必须先设置授课科目，才能完成教室配置' }));
+            return;
+          }
+          data.subjects = getDerivedSubjects();
           const studentIds = new Set(students.map(student => student.id));
-          data.assignments.forEach(assignment => {
+          data.assignments.filter(assignment => assignment.type !== 'notice').forEach(assignment => {
             assignment.submissions = assignment.submissions || {};
             Object.keys(assignment.submissions).forEach(id => { if (!studentIds.has(id)) delete assignment.submissions[id]; });
             students.forEach(student => { if (!assignment.submissions[student.id]) assignment.submissions[student.id] = '未提交'; });
@@ -1235,23 +1403,30 @@ function startWSServer() {
             ws.send(JSON.stringify({ type: 'auth-required', message: '班主任只能修改自己的授课科目' }));
             return;
           }
-          const subjects = Array.isArray(msg.subjects)
-            ? Array.from(new Set(msg.subjects.map(value => String(value).trim().slice(0, 30)).filter(Boolean))).slice(0, 20)
-            : [];
+          const subjects = normalizeSubjects(msg.subjects);
           const d = getDb();
           if (action === 'approve') {
             const pending = d.prepare('SELECT * FROM pending_requests WHERE connection_id=?').get(connectionId);
             if (!pending) return;
+            const requestedSubjects = normalizeSubjects(JSON.parse(pending.subjects || '[]'));
+            if (!requestedSubjects.length) {
+              ws.send(JSON.stringify({ type: 'auth-required', message: '该教师尚未设置授课科目，请其重新发起加入请求' }));
+              return;
+            }
             d.transaction(() => {
               d.prepare('DELETE FROM pending_requests WHERE connection_id=?').run(connectionId);
               d.prepare('INSERT OR REPLACE INTO approved_teachers (connection_id, name, role, subjects, approved_at) VALUES (?,?,?,?,?)')
-                .run(connectionId, pending.name, '授课教师', JSON.stringify(subjects.length ? subjects : JSON.parse(pending.subjects || '[]')), new Date().toISOString());
+                .run(connectionId, pending.name, '授课教师', JSON.stringify(requestedSubjects), new Date().toISOString());
             })();
             refreshTeacherConnections(connectionId, false);
           } else if (action === 'reject') {
             rejectTeacher(connectionId);
             refreshTeacherConnections(connectionId, true);
           } else if (action === 'update') {
+            if (!subjects.length) {
+              ws.send(JSON.stringify({ type: 'auth-required', message: '每位教师必须至少保留一个授课科目' }));
+              return;
+            }
             const target = d.prepare('SELECT role FROM approved_teachers WHERE connection_id=?').get(connectionId);
             if (!target) return;
             d.prepare('UPDATE approved_teachers SET subjects=? WHERE connection_id=?')
@@ -1266,6 +1441,17 @@ function startWSServer() {
             return;
           }
           broadcastSync(loadData());
+          break;
+        }
+
+        case 'confirm-subjects': {
+          const teacher = ws._teacher || {};
+          if (teacher.status !== 'approved') { ws.send(JSON.stringify({ type: 'auth-required', message: '请先完成教室审核' })); return; }
+          const subjects = normalizeSubjects(msg.subjects);
+          if (!subjects.length) { ws.send(JSON.stringify({ type: 'auth-required', message: '请至少确认一个授课科目' })); return; }
+          getDb().prepare('UPDATE approved_teachers SET subjects=? WHERE connection_id=?').run(JSON.stringify(subjects), teacher.connectionId);
+          ws._teacher.subjects = subjects;
+          sendTeacherSync(ws, loadData());
           break;
         }
 
@@ -1427,10 +1613,38 @@ ipcMain.handle('save-data', (_, data) => {
   if (t1 - t0 > 100) logToFile('ipc', `save-data slow: ${t1 - t0}ms`);
   return true;
 });
+ipcMain.handle('create-student-assignment', (_, input) => {
+  if (!isSystemReady()) return { success:false, message:'教室尚未完成配置' };
+  const data = loadData();
+  const subject = String(input && input.subject || '').trim().slice(0, 30);
+  const title = String(input && input.title || '').trim().slice(0, 200);
+  const date = String(input && input.date || '').trim();
+  const validDate = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : new Date().toISOString().slice(0, 10);
+  if (!subject || !data.subjects.includes(subject)) return { success:false, message:'请选择教室中已有的授课科目' };
+  if (!title) return { success:false, message:'请填写作业内容' };
+  const studentCreatedToday = data.assignments.filter(item => item.source === 'student' && item.date === validDate);
+  if (studentCreatedToday.length >= 30) return { success:false, message:'今日补录作业数量已达上限，请联系老师检查' };
+  const duplicate = data.assignments.find(item => item.type !== 'notice' && item.date === validDate && item.subject === subject && item.title === title);
+  if (duplicate) return { success:false, message:'这项作业已经存在，请直接选择后上报' };
+  const assignment = {
+    id:`student-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`,
+    subject,
+    title,
+    date:validDate,
+    deadline:new Date().toISOString(),
+    type:'homework',
+    source:'student',
+    submissions:Object.fromEntries(data.students.map(student => [student.id, '未提交'])),
+  };
+  data.assignments.push(assignment);
+  saveData(data);
+  return { success:true, assignment };
+});
 ipcMain.on('open-face-register', (_, studentId, name) => createFaceRegisterWindow(studentId, name));
 ipcMain.on('open-homework-widget', () => openHomeworkWidget());
 ipcMain.on('hide-homework-widget', () => hideHomeworkWidget());
 ipcMain.on('open-homework-board', () => openBoardWindow());
+ipcMain.handle('get-homework-unread', () => getHomeworkUnread());
 ipcMain.on('set-homework-float-expanded', (_, expanded) => setHomeworkFloatExpanded(!!expanded));
 ipcMain.on('move-homework-float', (event, dx, dy) => {
   const win = BrowserWindow.fromWebContents(event.sender);
@@ -1440,6 +1654,9 @@ ipcMain.on('move-homework-float', (event, dx, dy) => {
 });
 
 ipcMain.handle('get-onboarding-status', () => getOnboardingStatus());
+ipcMain.handle('get-classroom-qr', () => getClassroomQrData());
+ipcMain.handle('get-network-interfaces', () => getNetworkInterfaceStatus());
+ipcMain.handle('set-network-interface', (_, name) => setNetworkInterface(name));
 ipcMain.handle('bind-homeroom-teacher', (_, connectionId) => bindHomeroomTeacher(connectionId));
 ipcMain.on('finish-onboarding', () => finishBindingStage());
 
