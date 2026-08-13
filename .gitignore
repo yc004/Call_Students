@@ -5,6 +5,8 @@ dist/
 *.blockmap
 builder-debug.yml
 win-unpacked/
+classroom-app/build/
+teacher-app/build/
 
 # 运行时数据（不打包测试数据）
 data/
@@ -24,6 +26,9 @@ mini-program/project.local.config.json
 native/build/
 native/deps/onnxruntime/include/
 native/deps/onnxruntime/lib/
+classroom-app/native/build/
+classroom-app/native/deps/onnxruntime/include/
+classroom-app/native/deps/onnxruntime/lib/
 .cache/
 
 # Native models are reproducibly downloaded and checksum-verified from models.json

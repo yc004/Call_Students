@@ -53,8 +53,23 @@
 .network-tip { margin-top: 24rpx; padding: 20rpx 22rpx; border-radius: 12rpx; background: #fff5e8; color: #a65f00; font-size: 22rpx; line-height: 1.55; }
 .save-room { margin-top: 34rpx; }
 @media (prefers-color-scheme: dark) {
-  .profile-page { color:rgba(255,255,255,.9); }.account-name, .profile-section-title, .setting-copy text, .room-main text { color:rgba(255,255,255,.92); }.account-role, .profile-section-note, .setting-copy text:last-child, .room-main text:last-child { color:rgba(255,255,255,.55); }
-  .subject-tags text, .current-tag, .room-cell.active .room-mark { background:#173a29; color:#35d67c; }.identity-icon { background:#252d40; color:#aebff2; }.room-icon, .add-icon, .security-icon { background:#173a29; color:#35d67c; }
-  .weui-cell + .weui-cell::before, .room-cell { border-color:rgba(255,255,255,.1); }.weui-cell_active, .cell-hover { background:#292929; }.room-mark { background:#2a2a2a; color:rgba(255,255,255,.65); }.state-text, .room-select { color:#35d67c; }
-  .weui-btn_warn { background:#d94b4b; }.network-tip { background:#3b2c17; color:#ffc36b; }.field { border-color:rgba(255,255,255,.14); background:#242424; color:rgba(255,255,255,.92); }
+  .profile-page { background:#111; color:rgba(255,255,255,.9); }
+  .account-name, .profile-section-title, .setting-copy text, .room-main text { color:rgba(255,255,255,.92); }
+  .account-role, .profile-section-note, .setting-copy text:last-child, .room-main text:last-child { color:rgba(255,255,255,.55); }
+  .subject-tags text, .current-tag, .room-cell.active .room-mark { background:#173a29; color:#35d67c; }
+  .identity-icon { background:#252d40; color:#aebff2; }
+  .room-icon, .add-icon, .security-icon { background:#173a29; color:#35d67c; }
+  .weui-cells { background:#1e1e1e; }
+  .weui-cell + .weui-cell::before { background:rgba(255,255,255,.1); }
+  .weui-cell_active, .cell-hover { background:#292929; }
+  .room-cell { border-color:rgba(255,255,255,.1); }
+  .room-mark { background:#2a2a2a; color:rgba(255,255,255,.65); }
+  .state-text, .room-select { color:#35d67c; }
+  .weui-btn_warn { background:#d94b4b; }
+  .bottom-sheet { background:#1e1e1e; }
+  .sheet-title { color:rgba(255,255,255,.92); }
+  .sheet-subtitle { color:rgba(255,255,255,.55); }
+  .sheet-close { background:#2c2c2c; color:rgba(255,255,255,.7); }
+  .network-tip { background:#3b2c17; color:#ffc36b; }
+  .field { border-color:rgba(255,255,255,.14); background:#242424; color:rgba(255,255,255,.92); }
 }

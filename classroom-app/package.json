@@ -1,6 +1,6 @@
 {
   "name": "classroom-app",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "教室端 —— 大屏呼叫显示",
   "main": "main.js",
   "scripts": {
@@ -14,6 +14,9 @@
     "test:native": "node native/test/test_bindings.js && node native/test/test_gallery.js",
     "build": "npm run build:native && electron-builder --win",
     "build:win:ci": "electron-builder --win nsis --x64 --publish never",
+    "prepare:mac-icon": "bash ../scripts/prepare-macos-icon.sh .",
+    "build:mac": "npm run build:native && npm run prepare:mac-icon && electron-builder --mac dmg zip --config.mac.identity=- --config.mac.hardenedRuntime=false",
+    "build:mac:ci": "npm run prepare:mac-icon && electron-builder --mac dmg zip --publish never",
     "build:portable": "npm run build:native && electron-builder --win portable"
   },
   "cmake-js": {
@@ -82,7 +85,26 @@
       ]
     },
     "mac": {
-      "icon": "node_modules/electron/dist/Electron.app/Contents/Resources/electron.icns"
+      "icon": "build/icon.icns",
+      "artifactName": "ClassroomCall-Classroom-${version}-macOS-${arch}.${ext}",
+      "category": "public.app-category.education",
+      "hardenedRuntime": false,
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,

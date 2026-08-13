@@ -33,8 +33,8 @@ function errorText(error) { const text=String(error&&error.message||'');if(/doma
 
 Page({
   data:{hasRooms:false,accountName:'教师',greeting:'',roomStats:[],loadingStats:false,totalRooms:0,onlineRooms:0,totalHomework:0,totalPending:0,totalClosed:0,totalSubmitted:0,totalExpected:0},
-  onLoad(){const session=sessionStore.load();if(!session){wx.reLaunch({url:'/pages/login/index'});return;}this.session=session;this.applySession(session);},
-  onShow(){const session=sessionStore.load();if(!session){wx.reLaunch({url:'/pages/login/index'});return;}this.session=session;this.applySession(session);if(this.getTabBar)this.getTabBar().refresh('home');if(session.rooms.length)this.loadAllRoomStats();},
+  onLoad(){if(getApp().globalData.applyNavigationTheme)getApp().globalData.applyNavigationTheme();const session=sessionStore.load();if(!session){wx.reLaunch({url:'/pages/login/index'});return;}this.session=session;this.applySession(session);},
+  onShow(){if(getApp().globalData.applyNavigationTheme)getApp().globalData.applyNavigationTheme();const session=sessionStore.load();if(!session){wx.reLaunch({url:'/pages/login/index'});return;}this.session=session;this.applySession(session);if(this.getTabBar)this.getTabBar().refresh('home');if(session.rooms.length)this.loadAllRoomStats();},
   onRoomChanged(){this.onShow();},
   applySession(session){this.setData({hasRooms:!!session.rooms.length,accountName:session.account.name,greeting:dailyGreeting(session.account),totalRooms:session.rooms.length});},
   startScan(){scanAction.start({onComplete:()=>this.onRoomChanged()});},

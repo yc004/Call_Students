@@ -1,7 +1,7 @@
 <view class="profile-page">
   <view class="profile-account">
     <view class="avatar">{{initial}}</view>
-    <view class="account-main"><text class="account-name">{{account.name}}</text><text class="account-role">{{roleText}}</text><view class="subject-tags"><text wx:for="{{subjectTags}}" wx:key="*this">{{item}}</text><text wx:if="{{!subjectTags.length}}">授课科目待授权</text></view></view>
+    <view class="account-main"><text class="account-name">{{account.name}}</text><text class="account-role">{{roleText}}</text><view class="subject-tags"><text wx:for="{{subjectTags}}" wx:key="*this">{{item}}</text></view></view>
   </view>
 
   <view class="profile-section"><text class="profile-section-title">账户与安全</text></view>
