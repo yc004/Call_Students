@@ -19,7 +19,7 @@
     // 无截止时间的历史作业兼容原有行为，直接纳入统计。
     return !item.deadline || new Date(item.deadline).getTime() <= Date.now();
   }
-  function assignmentList() { return ((state.data && state.data.assignments) || []).filter(function (item) { return item.date === currentDate() && isStatisticsPhase(item); }); }
+  function assignmentList() { return ((state.data && state.data.assignments) || []).filter(function (item) { return item.type !== 'notice' && item.date === currentDate() && isStatisticsPhase(item); }); }
   function selectedAssignment() { return assignmentList().find(function (item) { return item.id === state.assignmentId; }); }
   function statusMeta(status) { return STATUS.find(function (item) { return item.id === status; }) || STATUS[1]; }
   function submission(assignment, studentId) { return (assignment.submissions && assignment.submissions[studentId]) || '未提交'; }
@@ -70,14 +70,14 @@
       var total = state.data.students.length;
       var count = reportedCount(item);
       return '<button class="assignment-card ' + (item.id === state.assignmentId ? 'selected' : '') + '" type="button" data-assignment-id="' + esc(item.id) + '">' +
-        '<span class="subject">' + esc(item.subject || '未分类') + '</span><span class="title">' + esc(item.title) + '</span>' +
+        '<span class="subject">' + esc(item.subject || '未分类') + (item.source === 'student' ? '<em>学生补录</em>' : '') + '</span><span class="title">' + esc(item.title) + '</span>' +
         '<span class="meta"><span>已上报</span><strong>' + count + ' / ' + total + '</strong></span></button>';
     }).join('');
   }
 
   function renderReport(assignment) {
     var total = state.data.students.length;
-    el.subject.textContent = assignment.subject || '未分类作业';
+    el.subject.textContent = (assignment.subject || '未分类作业') + (assignment.source === 'student' ? ' · 学生补录' : '');
     el.title.textContent = assignment.title || '未命名作业';
     el.progress.textContent = reportedCount(assignment) + ' / ' + total;
     el.statusActions.innerHTML = STATUS.map(function (item) {
@@ -136,8 +136,43 @@
     }).catch(function (error) { console.error(error); notify('保存失败，请刷新后重试', true); });
   }
 
+  function openCreate() {
+    if (!state.data || !state.data.subjects || !state.data.subjects.length) { notify('当前教室还没有可选科目，请联系班主任', true); return; }
+    el.createSubject.innerHTML = state.data.subjects.map(function (subject) { return '<option value="' + esc(subject) + '">' + esc(subject) + '</option>'; }).join('');
+    el.createTitle.value = '';
+    el.createDateText.textContent = currentDate();
+    el.createModal.hidden = false;
+    setTimeout(function () { el.createTitle.focus(); }, 0);
+  }
+  function closeCreate() { el.createModal.hidden = true; }
+  async function createAssignment(event) {
+    event.preventDefault();
+    var subject = el.createSubject.value;
+    var title = el.createTitle.value.trim();
+    if (!subject) { notify('请选择科目', true); return; }
+    if (!title) { notify('请填写作业内容', true); el.createTitle.focus(); return; }
+    el.confirmCreate.disabled = true;
+    el.confirmCreate.textContent = '正在创建…';
+    try {
+      var result = await api.createStudentAssignment({ subject: subject, title: title, date: currentDate() });
+      if (!result || !result.success) throw new Error(result && result.message || '创建失败');
+      closeCreate();
+      await loadData();
+      state.assignmentId = result.assignment.id;
+      state.filter = 'all';
+      render();
+      notify('作业已补录，现在可以上报提交情况');
+    } catch (error) { notify(error.message || '创建作业失败', true); }
+    finally { el.confirmCreate.disabled = false; el.confirmCreate.textContent = '创建并开始上报'; }
+  }
+
   function bind() {
     el.refresh.addEventListener('click', loadData);
+    el.createButton.addEventListener('click', openCreate);
+    el.closeCreate.addEventListener('click', closeCreate);
+    el.cancelCreate.addEventListener('click', closeCreate);
+    el.createForm.addEventListener('submit', createAssignment);
+    el.createModal.addEventListener('click', function (event) { if (event.target === el.createModal) closeCreate(); });
     el.date.addEventListener('change', function () { state.assignmentId = ''; state.filter = 'all'; render(); });
     el.assignmentRail.addEventListener('click', function (event) { var button = event.target.closest('[data-assignment-id]'); if (button) chooseAssignment(button.dataset.assignmentId); });
     el.statusActions.addEventListener('click', function (event) { var button = event.target.closest('[data-status]'); if (button) chooseStatus(button.dataset.status); });
@@ -146,7 +181,7 @@
   }
 
   function ready() {
-    el = { info: document.getElementById('boardInfo'), date: document.getElementById('boardDateFilter'), refresh: document.getElementById('refreshBtn'), assignmentRail: document.getElementById('assignmentRail'), report: document.getElementById('reportPanel'), empty: document.getElementById('boardEmpty'), subject: document.getElementById('selectedAssignmentSubject'), title: document.getElementById('selectedAssignmentTitle'), progress: document.getElementById('progressCount'), statusActions: document.getElementById('statusActions'), tapHint: document.getElementById('tapHint'), filters: document.getElementById('studentFilters'), grid: document.getElementById('studentGrid'), toast: document.getElementById('boardToast') };
+    el = { info: document.getElementById('boardInfo'), date: document.getElementById('boardDateFilter'), refresh: document.getElementById('refreshBtn'), createButton:document.getElementById('createAssignmentBtn'), assignmentRail: document.getElementById('assignmentRail'), report: document.getElementById('reportPanel'), empty: document.getElementById('boardEmpty'), subject: document.getElementById('selectedAssignmentSubject'), title: document.getElementById('selectedAssignmentTitle'), progress: document.getElementById('progressCount'), statusActions: document.getElementById('statusActions'), tapHint: document.getElementById('tapHint'), filters: document.getElementById('studentFilters'), grid: document.getElementById('studentGrid'), toast: document.getElementById('boardToast'), createModal:document.getElementById('createAssignmentModal'), createForm:document.getElementById('createAssignmentForm'), createSubject:document.getElementById('createSubject'), createTitle:document.getElementById('createTitle'), createDateText:document.getElementById('createDateText'), closeCreate:document.getElementById('closeCreateBtn'), cancelCreate:document.getElementById('cancelCreateBtn'), confirmCreate:document.getElementById('confirmCreateBtn') };
     el.date.value = today(); bind(); loadData();
     if (api.onDataChanged) api.onDataChanged(function () { loadData(); });
     setInterval(function () {

@@ -35,3 +35,11 @@
 .student-copy { flex: 1; min-width: 0; margin-left: 20rpx; }.student-copy text { display: block; color: rgba(0, 0, 0, .9); font-size: 28rpx; font-weight: 500; }.student-copy text:last-child { margin-top: 6rpx; color: rgba(0, 0, 0, .45); font-size: 21rpx; font-weight: 400; }
 .attendance-state { display: flex; align-items: center; height: 48rpx; padding: 0 16rpx; border-radius: 24rpx; background: #f2f2f2; color: rgba(0, 0, 0, .5); font-size: 21rpx; }.attendance-state view { width: 11rpx; height: 11rpx; margin-right: 8rpx; border-radius: 50%; background: #b2b2b2; }.attendance-state.present { background: #e9f8ef; color: #07c160; }.attendance-state.present view { background: #07c160; }.attendance-state.away { background: #fff5e8; color: #b06000; }.attendance-state.away view { background: #fa9d3b; }
 .attendance-page > .empty { margin-top: 18rpx; }
+@media (prefers-color-scheme: dark) {
+  .attendance-ring > view { background:#242424; }.attendance-ring text:first-child, .summary-copy > text, .summary-stats text, .student-copy text { color:rgba(255,255,255,.9); }.attendance-ring text:last-child, .summary-copy > text:nth-child(2), .summary-stats text:last-child, .student-copy text:last-child, .section-count { color:rgba(255,255,255,.52); }
+  .summary-stats { border-color:rgba(255,255,255,.1); }.summary-stats view + view { border-color:rgba(255,255,255,.1); }
+  .pending-alert { background:#3b2c17; }.pending-alert text { color:#ffc36b; }.face-card { background:#1e1e1e; }.face-card image { background:#2a2a2a; }.face-caption text { color:rgba(255,255,255,.72); }
+  .filter-tab { color:rgba(255,255,255,.6); }.filter-tab.active { background:#173a29; color:#35d67c; }.attendance-cell + .attendance-cell { border-color:rgba(255,255,255,.1); }
+  .student-avatar.away, .attendance-state.away { background:#3b2c17; color:#ffc36b; }.attendance-state { background:#2a2a2a; color:rgba(255,255,255,.6); }.attendance-state.present { background:#173a29; color:#35d67c; }
+}
+.attendance-page { padding-bottom:48rpx; }

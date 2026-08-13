@@ -1,1 +1,1 @@
-{ "navigationBarTitleText": "学生呼叫", "enablePullDownRefresh": false }
+{ "navigationBarTitleText": "学生呼叫", "enablePullDownRefresh": false, "disableScroll": false }

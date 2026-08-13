@@ -18,7 +18,7 @@
     </div>
 
     <div class="connect-box">
-      <input type="text" id="ipInput" placeholder="例如 192.168.1.20" inputmode="decimal" autocomplete="off" autofocus>
+      <input type="text" id="connectionCodeInput" placeholder="连接码 178-260-683" inputmode="numeric" maxlength="11" autocomplete="off" autofocus aria-label="教室连接码">
       <button id="connectBtn" class="btn btn-primary">连接</button>
     </div>
 
@@ -81,7 +81,7 @@
       <div id="emptyState" class="empty-state">
         <div class="empty-icon">—</div>
         <p>连接一间教室开始使用</p>
-        <p class="muted-note">在左侧输入教室电脑的局域网 IP</p>
+        <p class="muted-note">在左侧输入教室端显示的 9 位连接码</p>
       </div>
 
       <details id="historySection" class="history-section">
@@ -98,31 +98,58 @@
       </details>
     </div>
 
-    <!-- ══════════ 人脸识别 Tab ══════════ -->
+    <!-- ══════════ 出勤 Tab ══════════ -->
     <div class="main-tab-content hidden" id="tab-attendance" role="tabpanel">
-      <div id="faceSection" class="face-section">
-        <div class="face-header">
-          <h2 id="faceRoomName">人脸识别</h2>
-          <span id="faceSummary" class="face-summary"></span>
+      <div id="faceSection" class="face-section attendance-section">
+        <header class="attendance-header">
+          <div>
+            <span class="workspace-kicker">实时出勤</span>
+            <h2 id="faceRoomName">班级出勤</h2>
+            <p>教室端识别结果会自动同步到这里</p>
+          </div>
+          <span id="faceSummary" class="face-summary">等待同步</span>
+        </header>
+
+        <div class="attendance-overview" aria-label="出勤概览">
+          <div class="attendance-stat stat-total">
+            <span class="attendance-stat-icon" aria-hidden="true">全</span>
+            <div><strong id="attendanceTotalCount">0</strong><span>班级人数</span></div>
+          </div>
+          <div class="attendance-stat stat-present">
+            <span class="attendance-stat-icon" aria-hidden="true">到</span>
+            <div><strong id="attendancePresentCount">0</strong><span>当前已到</span></div>
+          </div>
+          <div class="attendance-stat stat-absent">
+            <span class="attendance-stat-icon" aria-hidden="true">缺</span>
+            <div><strong id="attendanceAbsentCount">0</strong><span>当前未到</span></div>
+          </div>
+          <div class="attendance-stat stat-pending">
+            <span class="attendance-stat-icon" aria-hidden="true">待</span>
+            <div><strong id="attendancePendingCount">0</strong><span>待匹配人脸</span></div>
+          </div>
         </div>
-        <!-- 子标签：未标注 / 已入库 -->
-        <div class="face-subtabs" role="tablist" aria-label="人脸状态">
-          <button class="face-subtab active" role="tab" aria-selected="true" aria-controls="faceGridUnknown" data-subtab="unknown">未标注 <span id="unknownCount" class="subtab-count"></span></button>
-          <button class="face-subtab" role="tab" aria-selected="false" aria-controls="faceGridRegistered" data-subtab="registered">已入库 <span id="registeredCount" class="subtab-count"></span></button>
-        </div>
-        <div class="face-hint-row" id="faceHintUnknown">
-          <span>教室端检测到的陌生人脸会保存在待标注库中，仅班主任可匹配学生姓名。</span>
-        </div>
-        <div class="face-hint-row hidden" id="faceHintRegistered">
-          <span>彩色表示在教室中，灰色表示当前不在。</span>
-        </div>
-        <!-- 未标注人脸网格 -->
-        <div id="faceGridUnknown" class="face-grid">
-          <div class="muted-note">等待教室端采集人脸上传…</div>
-        </div>
-        <!-- 已入库学生网格（默认隐藏） -->
-        <div id="faceGridRegistered" class="face-grid hidden">
-          <div class="muted-note">暂无已入库学生</div>
+
+        <div class="attendance-content">
+          <div class="attendance-content-head">
+            <div class="face-subtabs" role="tablist" aria-label="出勤视图">
+              <button class="face-subtab active" role="tab" aria-selected="true" aria-controls="faceGridUnknown" data-subtab="unknown">待匹配 <span id="unknownCount" class="subtab-count">0</span></button>
+              <button class="face-subtab" role="tab" aria-selected="false" aria-controls="faceGridRegistered" data-subtab="registered">学生出勤 <span id="registeredCount" class="subtab-count">0</span></button>
+            </div>
+          </div>
+          <div class="face-hint-row" id="faceHintUnknown">
+            <span class="face-hint-icon" aria-hidden="true">i</span>
+            <span>将陌生人脸匹配到学生姓名后，系统会自动加入人脸库。仅班主任可以操作。</span>
+          </div>
+          <div class="face-hint-row hidden" id="faceHintRegistered">
+            <span class="face-hint-icon" aria-hidden="true">i</span>
+            <span>已到学生优先显示；灰色卡片表示当前未在摄像头监控范围内。</span>
+          </div>
+          <div id="faceGridUnknown" class="face-grid face-grid-unknown">
+            <div class="attendance-empty"><span>⌁</span><strong>等待教室端采集</strong><small>检测到的新面孔会显示在这里</small></div>
+          </div>
+          <div id="faceGridRegistered" class="face-grid face-grid-registered hidden">
+            <div class="attendance-empty"><span>人</span><strong>暂无学生出勤数据</strong><small>完成学生名单和人脸匹配后即可查看</small></div>
+          </div>
         </div>
       </div>
     </div>
@@ -148,6 +175,14 @@
     <!-- ══════════ 作业管理 Tab ══════════ -->
     <div class="main-tab-content hidden" id="tab-homework" role="tabpanel">
       <div id="hwSection" class="hw-section">
+        <div class="hw-content-switch" role="tablist" aria-label="内容类型">
+          <button id="hwContentHomework" class="active" type="button" data-content-type="homework">作业</button>
+          <button id="hwContentNotice" type="button" data-content-type="notice">通知</button>
+        </div>
+        <div class="hw-stage-bar" role="tablist" aria-label="作业阶段">
+          <button id="hwStagePending" class="hw-stage-tab active" type="button" role="tab" aria-selected="true" data-stage="pending"><span id="hwPendingLabel">待提交作业</span><strong id="hwPendingCount">0</strong><small id="hwPendingHint">尚未到截止时间</small></button>
+          <button id="hwStageClosed" class="hw-stage-tab" type="button" role="tab" aria-selected="false" data-stage="closed"><span id="hwClosedLabel">提交统计</span><strong id="hwClosedCount">0</strong><small id="hwClosedHint">已到截止时间</small></button>
+        </div>
         <div class="hw-toolbar">
           <div class="hw-toolbar-left">
             <div class="ms-wrap" id="hwSubjectMs">
@@ -161,11 +196,14 @@
             <select id="hwStatusFilter" class="hw-filter-select">
               <option value="">全部状态</option>
             </select>
-            <input type="date" id="hwDateFrom" class="hw-date-input" title="开始日期">
+            <span class="hw-deadline-label">截止日期</span>
+            <input type="date" id="hwDateFrom" class="hw-date-input" title="截止日期起始">
             <span class="hw-date-sep">~</span>
-            <input type="date" id="hwDateTo" class="hw-date-input" title="结束日期">
+            <input type="date" id="hwDateTo" class="hw-date-input" title="截止日期结束">
           </div>
           <div class="hw-toolbar-right">
+            <button id="exportHomeworkBtn" class="btn btn-sm" type="button">导出表格</button>
+            <button id="publishNoticeBtn" class="btn btn-sm" type="button">＋ 发布通知</button>
             <button id="addAssignmentBtn2" class="btn btn-primary btn-sm">＋ 布置作业</button>
           </div>
         </div>
@@ -210,41 +248,12 @@
     <h2 id="accountTitle">教师登录</h2>
     <p id="accountDesc" class="account-desc">登录后才能连接教室和使用教学功能。</p>
 
-    <form id="loginForm" class="account-form">
-      <label for="loginName">教师姓名</label>
-      <input id="loginName" type="text" maxlength="20" autocomplete="username" placeholder="输入教师姓名">
-      <label for="loginPassword">密码</label>
-      <input id="loginPassword" type="password" maxlength="64" autocomplete="current-password" placeholder="输入密码">
-      <p id="loginError" class="account-error hidden" aria-live="polite"></p>
-      <button id="loginBtn" class="btn btn-primary account-primary" type="submit">登录</button>
-      <button id="showKeyLogin" class="btn account-secondary" type="button">使用登录密钥</button>
-      <p class="account-switch">首次在这台电脑使用？<button id="showRegister" type="button">创建本机账户</button></p>
-    </form>
-
-    <form id="registerForm" class="account-form hidden">
-      <label for="regName">教师姓名</label>
-      <input id="regName" type="text" maxlength="20" autocomplete="username" placeholder="输入真实姓名">
-      <label for="regSubjects">授课科目</label>
-      <input id="regSubjects" type="text" maxlength="100" placeholder="例如：数学, 物理">
-      <span class="account-field-hint">多个科目用逗号分隔，供教室管理员审核。</span>
-      <label for="regPassword">设置密码</label>
-      <input id="regPassword" type="password" maxlength="64" autocomplete="new-password" placeholder="至少 6 位">
-      <label for="regPassword2">确认密码</label>
-      <input id="regPassword2" type="password" maxlength="64" autocomplete="new-password" placeholder="再次输入密码">
-      <p id="regError" class="account-error hidden" aria-live="polite"></p>
-      <button id="regBtn" class="btn btn-primary account-primary" type="submit">创建并登录</button>
-      <button id="showKeyLoginFromRegister" class="btn account-secondary" type="button">已有密钥，直接登录</button>
-      <p class="account-switch">本机已有账户？<button id="showLogin" type="button">返回登录</button></p>
-    </form>
-
-    <form id="keyLoginForm" class="account-form hidden">
-      <label for="loginKeyInput">登录密钥</label>
-      <textarea id="loginKeyInput" class="login-key-input" rows="6" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="粘贴以 TEACHER-KEY-1 开头的完整密钥"></textarea>
-      <span class="account-field-hint">密钥会恢复同一个教师身份、班级权限和授课科目。</span>
-      <p id="keyLoginError" class="account-error hidden" aria-live="polite"></p>
-      <button class="btn btn-primary account-primary" type="submit">使用密钥登录</button>
-      <p class="account-switch"><button id="backToPasswordLogin" type="button">返回密码登录</button></p>
-    </form>
+    <div id="miniScanLogin" class="account-form mini-scan-login">
+      <div class="mini-scan-qr-wrap"><img id="teacherLoginQrImage" alt="小程序登录教师端二维码"></div>
+      <p id="teacherLoginQrStatus" class="account-field-hint">使用已登录的小程序扫描二维码，将教师账户同步到这台电脑。</p>
+      <button id="refreshTeacherLoginQr" class="btn btn-primary account-primary" type="button">生成登录二维码</button>
+      <p class="account-switch">请确保手机与电脑连接同一局域网，并保持小程序运行。</p>
+    </div>
   </div>
 </div>
 
@@ -284,7 +293,7 @@
     <p id="teacherEditName" class="field-hint"></p>
     <label class="field-label" for="teacherEditSubjects">授课科目</label>
     <input id="teacherEditSubjects" type="text" maxlength="120" placeholder="例如：数学, 物理">
-    <p class="field-hint">多个科目使用逗号分隔。学科列表将由班主任和已加入教师的授课科目自动生成。</p>
+    <p class="field-hint">班主任在这里为教师授权可用学科；教师连接教室后，再确认本次授课科目。</p>
     <div class="modal-actions"><button id="teacherEditCancel" class="btn" type="button">取消</button><button id="teacherEditSave" class="btn btn-primary" type="button">保存授权</button></div>
   </div>
 </div>
@@ -295,31 +304,18 @@
     <h3 id="accountModalTitle">账户管理</h3>
     <div class="account-summary">
       <span class="account-avatar account-avatar-lg" id="accountModalAvatar">教</span>
-      <div><strong id="accountModalName"></strong><small id="accountModalSubjects"></small></div>
+      <div><strong id="accountModalName"></strong><small id="accountModalSubjects">连接教室后确认授课科目</small></div>
     </div>
     <div class="account-id-row"><span>连接 ID</span><code id="accountConnectionId"></code></div>
     <p class="account-field-hint">教室管理员可通过此身份批准你的设备。</p>
-    <section class="login-key-section" aria-labelledby="loginKeyTitle">
-      <div class="login-key-heading">
-        <div><strong id="loginKeyTitle">跨设备登录密钥</strong><small>在其他教师端粘贴即可登录此账户</small></div>
-        <button id="generateLoginKeyBtn" class="btn btn-sm" type="button">生成密钥</button>
-      </div>
-      <div id="loginKeyResult" class="login-key-result hidden">
-        <textarea id="generatedLoginKey" rows="5" readonly spellcheck="false" aria-label="生成的登录密钥"></textarea>
-        <div class="login-key-actions">
-          <span id="loginKeyStatus" aria-live="polite">密钥等同于登录凭证，请勿发送给他人。</span>
-          <button id="copyLoginKeyBtn" class="btn btn-primary btn-sm" type="button">复制密钥</button>
-        </div>
-      </div>
-    </section>
     <section class="mini-login-section" aria-labelledby="miniLoginTitle">
       <div class="login-key-heading">
-        <div><strong id="miniLoginTitle">微信小程序登录</strong><small>使用微信扫描后，将自动登录并记住已保存的教室</small></div>
+        <div><strong id="miniLoginTitle">微信小程序安全配对</strong><small>通过局域网一次性传输身份和已保存教室</small></div>
         <button id="generateMiniProgramQrBtn" class="btn btn-sm" type="button">生成二维码</button>
       </div>
       <div id="miniProgramQrResult" class="mini-login-result hidden">
         <img id="miniProgramQrImage" alt="微信小程序登录二维码">
-        <div><strong>打开配套小程序扫码</strong><p id="miniProgramQrHint">二维码等同于登录凭证，请勿拍照转发给他人。</p></div>
+        <div><strong>打开配套小程序扫码</strong><p id="miniProgramQrHint">二维码仅包含本机临时连接信息，不包含账户、密码或教室数据。</p></div>
       </div>
     </section>
     <div class="modal-actions">
@@ -333,15 +329,19 @@
 <div id="hwModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="hwModalTitleLabel">
   <div class="modal-card modal-wide">
     <h3 id="hwModalTitleLabel">添加作业</h3>
+    <div class="publish-type-switch" role="tablist" aria-label="发布类型">
+      <button id="publishTypeHomework" class="active" type="button" data-publish-type="homework">作业</button>
+      <button id="publishTypeNotice" type="button" data-publish-type="notice">通知</button>
+    </div>
     <label class="field-label">学科</label>
     <select id="hwModalSubject" class="field-select"></select>
-    <label class="field-label">作业标题</label>
-    <input type="text" id="hwModalTitle" placeholder="例如：第一章练习" maxlength="50">
+    <label id="publishContentLabel" class="field-label">作业内容</label>
+    <textarea id="hwModalTitle" placeholder="例如：完成练习册第 12—14 页" maxlength="200" rows="4"></textarea>
     <label class="field-label">日期</label>
     <input type="date" id="hwModalDate">
-    <label class="field-label">提交截止时间</label>
+    <label id="publishDeadlineLabel" class="field-label">提交截止时间</label>
     <input type="datetime-local" id="hwModalDeadline">
-    <p class="field-hint">截止前会显示在学生的“今日作业”组件中；到达该时间后自动进入课代表提交统计。</p>
+    <p id="publishHint" class="field-hint">截止前会显示在学生的桌面组件中；到达该时间后自动进入课代表提交统计。</p>
     <div class="modal-actions">
       <button id="hwModalCancel" class="btn">取消</button>
       <button id="hwModalConfirm" class="btn btn-primary">确定</button>
@@ -349,6 +349,8 @@
   </div>
 </div>
 
-  <script src="app.js?v=13"></script>
+  <script src="connection-code.js"></script>
+  <script src="homework-view.js"></script>
+  <script src="app.js?v=15"></script>
 </body>
 </html>

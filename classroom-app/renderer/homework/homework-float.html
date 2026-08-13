@@ -3,17 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>作业入口</title>
+  <title>班级安排入口</title>
   <link rel="stylesheet" href="homework-float.css">
 </head>
 <body>
   <div id="floatShell" class="float-shell" title="拖动可移动入口">
     <div id="floatMenu" class="float-menu" hidden>
       <button id="openBoard" class="menu-ball stats-ball" type="button"><strong>提交</strong><span>情况管理</span></button>
-      <button id="openWidget" class="menu-ball display-ball" type="button"><strong>今日</strong><span>作业展示</span></button>
+      <button id="openWidget" class="menu-ball display-ball" type="button"><strong>今日</strong><span>作业通知</span></button>
     </div>
     <button id="toggleMenu" class="main-ball" type="button" aria-label="展开作业菜单" aria-expanded="false">
-      <span class="book-mark">作业</span><span class="open-hint">查看</span>
+      <span id="unreadDot" class="unread-dot" aria-label="有新的作业或通知" hidden></span>
+      <span class="book-mark">班级</span><span class="open-hint">查看</span>
     </button>
   </div>
   <script src="homework-float.js"></script>

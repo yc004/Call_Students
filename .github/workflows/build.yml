@@ -38,8 +38,21 @@ jobs:
       - name: Validate source
         run: |
           node .github/scripts/verify-release-metadata.js
-          node scripts/verify-js-syntax.js classroom-app teacher-app
+          node scripts/verify-js-syntax.js classroom-app
+          node scripts/verify-js-syntax.js teacher-app
+          node scripts/verify-js-syntax.js mini-program/src
+
+      - name: Install teacher test dependencies
+        working-directory: teacher-app
+        run: npm ci
+
+      - name: Run teacher tests
+        run: |
           node teacher-app/test/account-auth.test.js
+          node teacher-app/test/mini-program-pairing.test.js
+          node teacher-app/test/connection-code.test.js
+          node teacher-app/test/homework-view.test.js
+          node teacher-app/test/homework-export.test.js
 
   classroom-windows:
     name: Classroom app (Windows x64)

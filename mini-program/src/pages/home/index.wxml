@@ -1,0 +1,16 @@
+<view class="page home-page">
+  <view class="home-welcome"><text class="welcome-kicker">{{hasRooms ? '欢迎回来' : '你好，' + accountName}}</text><text class="welcome-title">{{hasRooms ? accountName + '老师' : '开始连接你的第一个教室'}}</text><text class="welcome-message">{{greeting}}</text></view>
+  <view class="bind-guide surface" wx:if="{{!hasRooms}}"><view class="guide-scan-mark">⌗</view><text class="guide-title">添加教室后开始使用</text><text class="guide-desc">扫描教室端显示的二维码，或打开班主任通过微信发来的教室分享卡片。</text><button class="primary guide-button" bindtap="startScan">扫描教室二维码</button><view class="share-guide"><view class="share-dot">1</view><text>点击分享卡片</text><view class="guide-line"></view><view class="share-dot">2</view><text>确认身份并连接</text></view></view>
+  <block wx:else>
+    <view class="summary-card surface"><view class="summary-head"><view><text>今日作业概览</text><text>{{onlineRooms}}/{{totalRooms}} 个教室已读取</text></view><button size="mini" loading="{{loadingStats}}" bindtap="loadAllRoomStats">刷新</button></view><view class="summary-grid"><view><strong>{{totalHomework}}</strong><text>今日作业</text></view><view><strong>{{totalPending}}</strong><text>待截止</text></view><view><strong>{{totalClosed}}</strong><text>已截止</text></view><view><strong>{{totalSubmitted}}<small>/{{totalExpected}}</small></strong><text>提交人次</text></view></view></view>
+    <view class="section-heading"><view><text class="section-title">我的教室</text><text class="section-note">先选择教室，再进入对应功能</text></view></view>
+    <view class="classroom-card surface" wx:for="{{roomStats}}" wx:key="connectionCode">
+      <view class="classroom-head">
+        <view class="classroom-identity"><view class="classroom-state {{item.online ? 'online' : ''}}">{{item.online ? '✓' : '!'}}</view><view class="classroom-copy"><text>{{item.name}}</text><text wx:if="{{item.online}}">今日 {{item.homeworkCount}} 项作业 · {{item.submitted}}/{{item.expected}} 提交</text><text wx:else>{{item.errorText}}</text></view></view>
+        <view class="room-actions"><button wx:if="{{item.isHomeroom}}" class="icon-button" aria-label="教室设置" data-code="{{item.connectionCode}}" bindtap="openSettings"><view class="settings-icon"><view></view><view></view><view></view></view></button><button wx:if="{{item.isHomeroom}}" class="icon-button" aria-label="分享教室" open-type="share" data-code="{{item.connectionCode}}"><view class="share-icon"><view></view></view></button><button class="icon-button leave" aria-label="退出教室" data-code="{{item.connectionCode}}" bindtap="leaveRoom"><view class="leave-icon"><view></view></view></button></view>
+      </view>
+      <view class="feature-grid"><button data-feature="call" data-code="{{item.connectionCode}}" bindtap="openFeature"><view class="feature-icon call-icon">呼</view><text>学生呼叫</text><small>发送大屏通知</small></button><button data-feature="homework" data-code="{{item.connectionCode}}" bindtap="openFeature"><view class="feature-icon homework-icon">作</view><text>作业与通知</text><small>布置并统计</small></button><button data-feature="attendance" data-code="{{item.connectionCode}}" bindtap="openFeature"><view class="feature-icon attendance-icon">勤</view><text>人脸出勤</text><small>查看到班情况</small></button></view>
+    </view>
+    <view class="loading-card surface" wx:if="{{loadingStats && !roomStats.length}}"><view class="loading-dot"></view><text>正在读取全部教室数据…</text></view>
+  </block>
+</view>

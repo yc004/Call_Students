@@ -18,6 +18,7 @@
       <label class="date-control" for="boardDateFilter"><span>日期</span><input type="date" id="boardDateFilter"></label>
     </div>
     <div class="board-actions">
+      <button class="touch-button primary" id="createAssignmentBtn" type="button">＋ 补录作业</button>
       <button class="touch-button secondary" id="refreshBtn" type="button">刷新数据</button>
     </div>
   </header>
@@ -61,11 +62,22 @@
     <section id="boardEmpty" class="board-empty" hidden>
       <div class="empty-icon">作业</div>
       <h2>这一天还没有作业</h2>
-      <p>暂无进入提交统计阶段的作业，请等待任课教师在教师端布置。</p>
+      <p>如果老师忘记在系统中布置，可点击右上角“补录作业”后继续上报。</p>
     </section>
   </main>
 
   <div id="boardToast" class="board-toast" role="status" aria-live="polite"></div>
+
+  <div id="createAssignmentModal" class="create-modal" hidden>
+    <form id="createAssignmentForm" class="create-card">
+      <div class="create-head"><div><span>课代表补录</span><h2>添加作业</h2></div><button id="closeCreateBtn" type="button" aria-label="关闭">×</button></div>
+      <p class="create-tip">仅用于老师已经口头布置、但忘记录入系统的作业。创建后会标记为“学生补录”。</p>
+      <label for="createSubject">科目</label><select id="createSubject" required></select>
+      <label for="createTitle">作业内容</label><textarea id="createTitle" maxlength="200" rows="4" required placeholder="例如：完成练习册第 12页 1—6 题"></textarea>
+      <div class="create-date"><span>上报日期</span><strong id="createDateText"></strong></div>
+      <div class="create-actions"><button id="cancelCreateBtn" class="touch-button secondary" type="button">取消</button><button id="confirmCreateBtn" class="touch-button primary" type="submit">创建并开始上报</button></div>
+    </form>
+  </div>
 
   <script src="homework-board.js?v=2"></script>
 </body>

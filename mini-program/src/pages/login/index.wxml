@@ -3,7 +3,7 @@
     <view class="brand"><view class="brand-mark">班</view><view><text class="brand-name">班达教师端</text><text class="brand-desc">班级事务，一触即达</text></view></view>
     <view class="welcome">
       <text class="welcome-title">连接教室，随时处理班级事务</text>
-      <text class="welcome-desc">使用教师端生成的二维码登录，无需输入账号和密码。</text>
+      <text class="welcome-desc">先创建小程序教师账户，再用它登录电脑教师端。</text>
     </view>
 
     <view class="scan-panel">
@@ -11,14 +11,28 @@
         <view class="corner c1"></view><view class="corner c2"></view><view class="corner c3"></view><view class="corner c4"></view>
         <view class="scan-center"></view>
       </view>
-      <text class="scan-title">扫描教师端二维码</text>
-      <text class="scan-desc">在电脑教师端打开“账户管理”，选择“小程序登录”。</text>
-      <button class="primary scan-button" bindtap="scanLogin" loading="{{scanning}}" disabled="{{scanning}}">{{scanning ? '正在读取' : '开始扫码'}}</button>
+      <text class="scan-title">创建小程序教师账户</text>
+      <text class="scan-desc">账户创建成功后，进入“我的—登录电脑教师端”扫描电脑二维码。</text>
+      <button class="primary scan-button" bindtap="openRegister">创建教师账户</button>
     </view>
 
     <view class="privacy-row">
       <view class="privacy-icon">✓</view>
-      <text>登录凭证仅保存在当前微信设备，可在“我的”中退出。</text>
+      <text>二维码不含账户和教室数据，配对成功后立即失效。</text>
+    </view>
+    <view class="privacy-row">
+      <view class="privacy-icon">i</view>
+      <text>连接失败时会显示网络检查步骤，调整后可直接重新扫码。</text>
     </view>
   </view>
+  <page-container show="{{registerOpen}}" position="bottom" round overlay bind:clickoverlay="closeRegister">
+    <view class="register-sheet">
+      <view class="register-handle"></view>
+      <view class="register-title"><view><text>创建教师账户</text><text>创建后可独立添加教室，也可生成连接码与电脑教师端同步。</text></view><text class="register-close" bindtap="closeRegister">×</text></view>
+      <text class="register-label">教师姓名</text>
+      <input class="register-field" maxlength="20" placeholder="请输入真实姓名" value="{{registerName}}" bindinput="setRegisterName"/>
+      <view class="register-tip">账户身份仅保存在当前微信设备；登录电脑教师端时通过扫码安全传输。</view>
+      <button class="primary register-confirm" bindtap="registerAccount">创建账户</button>
+    </view>
+  </page-container>
 </view>

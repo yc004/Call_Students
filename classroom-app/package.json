@@ -6,6 +6,7 @@
   "scripts": {
     "start": "unset ELECTRON_RUN_AS_NODE && electron .",
     "verify:syntax": "node ../scripts/verify-js-syntax.js classroom-app",
+    "test:qr": "node test/classroom-qr.test.js",
     "prepare:models": "node scripts/prepare-native-models.js",
     "verify:models": "node scripts/prepare-native-models.js --verify-only",
     "build:native": "npm run verify:models && cmake-js build --directory native",
@@ -29,6 +30,9 @@
     },
     "files": [
       "main.js",
+      "connection-code.js",
+      "lan-addresses.js",
+      "classroom-qr.js",
       "preload.js",
       "face-gallery.js",
       "icon.png",
@@ -90,13 +94,14 @@
   },
   "devDependencies": {
     "cmake-js": "^7.3.0",
-    "electron": "^42.4.0",
+    "electron": "42.4.0",
     "electron-builder": "26.15.3",
     "node-addon-api": "^8.3.0"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",
     "face-api.js": "^0.22.2",
+    "qrcode": "1.5.4",
     "ws": "^8.16.0"
   }
 }

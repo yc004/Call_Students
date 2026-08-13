@@ -4,19 +4,6 @@
     <view class="account-main"><text class="account-name">{{account.name}}</text><text class="account-role">{{roleText}}</text><view class="subject-tags"><text wx:for="{{subjectTags}}" wx:key="*this">{{item}}</text><text wx:if="{{!subjectTags.length}}">授课科目待授权</text></view></view>
   </view>
 
-  <view class="profile-section"><text class="profile-section-title">教室</text><text class="profile-section-note">打开小程序时自动连接当前教室</text></view>
-  <view class="weui-cells">
-    <view class="weui-cell weui-cell_active" hover-class="weui-cell_active" wx:if="{{activeRoom.ip}}" bindtap="showRoomPicker">
-      <view class="weui-cell__hd"><view class="setting-icon room-icon">{{activeRoomInitial}}</view></view>
-      <view class="weui-cell__bd setting-copy"><text>{{activeRoom.name}}</text><text>{{activeRoom.ip}} · 端口 3456</text></view>
-      <view class="weui-cell__ft"><text class="current-tag">当前</text></view>
-    </view>
-    <view class="weui-cell weui-cell_active" hover-class="weui-cell_active" wx:else bindtap="showAddRoom">
-      <view class="weui-cell__hd"><view class="setting-icon add-icon">＋</view></view><view class="weui-cell__bd setting-copy"><text>添加教室</text><text>输入教室电脑的局域网 IP</text></view><view class="weui-cell__ft weui-cell__ft_in-access"></view>
-    </view>
-    <view class="weui-cell weui-cell_active" hover-class="weui-cell_active" wx:if="{{activeRoom.ip}}" bindtap="showAddRoom"><view class="weui-cell__hd"><view class="setting-icon add-icon">＋</view></view><view class="weui-cell__bd setting-copy"><text>添加其他教室</text><text>保存后可以快速切换</text></view><view class="weui-cell__ft weui-cell__ft_in-access"></view></view>
-  </view>
-
   <view class="profile-section"><text class="profile-section-title">账户与安全</text></view>
   <view class="weui-cells">
     <view class="weui-cell"><view class="weui-cell__hd"><view class="setting-icon security-icon">✓</view></view><view class="weui-cell__bd setting-copy"><text>保持登录</text><text>凭证仅保存在当前微信设备</text></view><view class="weui-cell__ft"><text class="state-text">已开启</text></view></view>
@@ -24,18 +11,4 @@
   </view>
   <button class="weui-btn weui-btn_warn logout" bindtap="logout">退出登录</button>
 
-  <page-container show="{{roomPickerOpen || addingRoom}}" position="bottom" round overlay close-on-slide-down bind:clickoverlay="closeRoomPanel" bind:afterleave="closeRoomPanel">
-    <view class="bottom-sheet" wx:if="{{roomPickerOpen}}">
-      <view class="sheet-handle"></view><view class="sheet-title"><view><text>选择教室</text><text class="sheet-subtitle">共 {{rooms.length}} 个已保存教室</text></view><text class="sheet-close" bindtap="hideRoomPicker">×</text></view>
-      <view class="room-list"><view class="room-cell {{activeRoom.ip === item.ip ? 'active' : ''}}" hover-class="cell-hover" wx:for="{{rooms}}" wx:key="ip" data-ip="{{item.ip}}" bindtap="selectRoom"><view class="room-mark">{{item.initial}}</view><view class="room-main"><text>{{item.name}}</text><text>{{item.ip}}</text></view><text class="room-select">{{activeRoom.ip === item.ip ? '✓' : '›'}}</text></view></view>
-      <button class="secondary picker-add" bindtap="showAddRoom">添加新教室</button>
-    </view>
-    <view class="bottom-sheet" wx:if="{{addingRoom}}">
-      <view class="sheet-handle"></view><view class="sheet-title"><view><text>添加教室</text><text class="sheet-subtitle">手机和教室电脑需在同一局域网</text></view><text class="sheet-close" bindtap="hideAddRoom">×</text></view>
-      <text class="label">教室名称</text><input class="field" maxlength="40" placeholder="例如：八年级一班" value="{{newRoomName}}" bindinput="setRoomName"/>
-      <text class="label">教室电脑 IP</text><input class="field" type="text" placeholder="例如：192.168.1.20" value="{{newRoomIp}}" bindinput="setRoomIp"/>
-      <view class="network-tip"><text>请确认手机与教室电脑处于同一局域网，并允许微信访问本地网络。</text></view>
-      <button class="primary save-room" bindtap="addRoom">保存并连接</button>
-    </view>
-  </page-container>
 </view>

@@ -1,5 +1,11 @@
-const MINI_PREFIX = 'CLASSROOM-CALL-MINI-1';
-const TEACHER_PREFIX = 'TEACHER-KEY-1';
+const PAIRING_PREFIX = 'CLASSROOM-CALL-PAIR-1';
+const connectionCode = require('./connection-code');
+
+function authError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
 
 function decodeUtf8(arrayBuffer) {
   const bytes = new Uint8Array(arrayBuffer);
@@ -14,34 +20,114 @@ function decodeBase64Url(value) {
   return decodeUtf8(wx.base64ToArrayBuffer(base64));
 }
 
-function parseTeacherKey(value) {
-  const parts = String(value || '').split('.');
-  if (parts.length !== 3 || parts[0] !== TEACHER_PREFIX) throw new Error('教师身份信息无效');
-  const data = JSON.parse(decodeBase64Url(parts[1]));
-  if (!data.name || !data.connectionId || !data.passwordHash || !data.passwordSalt) throw new Error('教师身份信息不完整');
+function isPrivateIpv4(value) {
+  const parts = String(value || '').split('.').map(Number);
+  if (parts.length !== 4 || parts.some(part => !Number.isInteger(part) || part < 0 || part > 255)) return false;
+  return parts[0] === 10
+    || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31)
+    || (parts[0] === 192 && parts[1] === 168);
+}
+
+function parsePairingQr(value) {
+  const parts = String(value || '').trim().split('.');
+  if (parts.length !== 2 || parts[0] !== PAIRING_PREFIX) throw authError('PAIR_QR_INVALID', '请扫描教师端新生成的临时配对二维码');
+  let payload;
+  try { payload = JSON.parse(decodeBase64Url(parts[1])); }
+  catch (_error) { throw authError('PAIR_QR_INVALID', '二维码内容无法读取，请重新生成'); }
+
+  const hosts = [...new Set((Array.isArray(payload.hosts) ? payload.hosts : []).map(String).filter(isPrivateIpv4))].slice(0, 6);
+  const port = Number(payload.port);
+  const token = String(payload.token || '');
+  const expiresAt = Number(payload.expiresAt);
+  if (payload.version !== 1 || payload.purpose !== 'teacher-login') throw authError('PAIR_QR_INVALID', '请在新版教师端重新生成登录二维码');
+  if (!hosts.length || !Number.isInteger(port) || port < 1 || port > 65535) throw authError('PAIR_QR_INVALID', '二维码中的局域网连接信息无效');
+  if (!/^[A-Za-z0-9_-]{32,128}$/.test(token)) throw authError('PAIR_QR_INVALID', '二维码中的临时配对码无效');
+  if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) throw authError('PAIR_QR_EXPIRED', '二维码已过期，请在教师端重新生成');
+  return { hosts, port, token, expiresAt };
+}
+
+function requestHost(host, pairing, localSession) {
+  return new Promise((resolve, reject) => {
+    if (typeof wx.createTCPSocket !== 'function') {
+      reject(authError('PAIR_UNSUPPORTED', '当前微信版本不支持局域网安全配对，请升级微信后重试'));
+      return;
+    }
+    const socket = wx.createTCPSocket({ type: 'IPv4' });
+    let completed = false;
+    const receivedBytes = [];
+    const timeout = setTimeout(() => finish(new Error('连接教师端超时')), 6000);
+    function finish(error, data) {
+      if (completed) return;
+      completed = true;
+      clearTimeout(timeout);
+      try { socket.close(); } catch (_error) {}
+      if (error) reject(error); else resolve(data);
+    }
+    socket.onConnect(() => socket.write(`${JSON.stringify({ token: pairing.token, account: localSession.account, rooms: localSession.rooms || [] })}\n`));
+    socket.onMessage(({ message }) => {
+      const bytes = new Uint8Array(message);
+      for (let index = 0; index < bytes.length; index += 1) receivedBytes.push(bytes[index]);
+      if (receivedBytes.length > 65536) {
+        finish(new Error('教师端返回的数据过大'));
+        return;
+      }
+      const newline = receivedBytes.indexOf(10);
+      if (newline < 0) return;
+      let data;
+      try { data = JSON.parse(decodeUtf8(Uint8Array.from(receivedBytes.slice(0, newline)).buffer)); }
+      catch (_error) {
+        finish(new Error('教师端返回的数据无法读取'));
+        return;
+      }
+      if (!data.ok) {
+        const message = data.message || '教师端拒绝了配对';
+        finish(/已使用|已过期/.test(message) ? authError('PAIR_QR_EXPIRED', message) : new Error(message));
+      }
+      else finish(null, data);
+    });
+    socket.onError(error => finish(new Error(error && error.errMsg || '无法连接教师端')));
+    socket.onClose(() => {
+      if (!completed) finish(new Error('教师端已断开配对连接'));
+    });
+    socket.connect({ address: host, port: pairing.port, timeout: 5 });
+  });
+}
+
+function normalizeSession(data) {
+  const sourceAccount = data && data.account;
+  const name = sourceAccount && String(sourceAccount.name || '').trim();
+  const connectionId = sourceAccount && String(sourceAccount.connectionId || '').trim();
+  if (!name || name.length > 20 || !/^[a-zA-Z0-9-]{8,128}$/.test(connectionId)) throw new Error('教师端返回的身份信息无效');
+  const rooms = (Array.isArray(data.rooms) ? data.rooms : []).slice(0, 50).map(room => ({
+    id: String(room.id || '').slice(0, 80),
+    name: String(room.name || '教室').slice(0, 40),
+    connectionCode: connectionCode.format(room.connectionCode),
+    subjects: Array.from(new Set((room.subjects || []).map(value => String(value).trim()).filter(Boolean))).slice(0, 20),
+  })).filter(room => connectionCode.isValid(room.connectionCode));
   return {
-    name: String(data.name),
-    subjects: Array.isArray(data.subjects) ? data.subjects.map(String) : [],
-    connectionId: String(data.connectionId),
-    passwordHash: String(data.passwordHash),
-    passwordSalt: String(data.passwordSalt),
+    account: { name, connectionId, subjects: [] },
+    rooms,
+    activeRoom: rooms[0] || null,
+    pairedAt: new Date().toISOString(),
   };
 }
 
-function parseLoginQr(value) {
-  const parts = String(value || '').trim().split('.');
-  if (parts.length !== 3 || parts[0] !== MINI_PREFIX) throw new Error('请扫描教师端生成的小程序登录二维码');
-  let payload;
-  try { payload = JSON.parse(decodeBase64Url(parts[1])); }
-  catch (_error) { throw new Error('二维码内容无法读取，请重新生成'); }
-  if (payload.version !== 1 || !payload.loginKey) throw new Error('二维码版本不受支持');
-  const account = parseTeacherKey(payload.loginKey);
-  const rooms = (Array.isArray(payload.rooms) ? payload.rooms : []).map(room => ({
-    id: String(room.id || ''),
-    name: String(room.name || room.ip || '教室'),
-    ip: String(room.ip || '').trim(),
-  })).filter(room => room.ip);
-  return { account, rooms, activeRoom: rooms[0] || null, loginKey: payload.loginKey };
+async function pairWithTeacher(value, localSession) {
+  if (!localSession || !localSession.account) throw authError('PAIR_ACCOUNT_REQUIRED', '请先在小程序登录或创建教师账户');
+  const pairing = parsePairingQr(value);
+  let lastError = null;
+  for (const host of pairing.hosts) {
+    try {
+      const result = await requestHost(host, pairing, localSession);
+      return normalizeSession(result);
+    } catch (error) {
+      lastError = error;
+      if (error && (error.code === 'PAIR_UNSUPPORTED' || error.code === 'PAIR_QR_EXPIRED')) throw error;
+      if (Date.now() > pairing.expiresAt) throw authError('PAIR_QR_EXPIRED', '二维码已过期，请在教师端重新生成');
+    }
+  }
+  const detail = lastError && lastError.message && !String(lastError.message).includes('request:fail') ? `：${lastError.message}` : '';
+  throw authError('PAIR_NETWORK', `无法连接教师端${detail}`);
 }
 
-module.exports = { parseLoginQr };
+module.exports = { parsePairingQr, pairWithTeacher };

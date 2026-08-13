@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, dialog } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const QRCode = require('qrcode');
@@ -6,16 +6,16 @@ const {
   publicAccount,
   verifyAccountPassword,
   makeStoredAccount,
-  generateLoginKey,
-  parseLoginKey,
-  generateMiniProgramLoginPayload,
 } = require('./account-auth');
+const { startPairingServer } = require('./mini-program-pairing');
+const { buildHomeworkWorkbookBuffer, normalizePayload, safeFilePart } = require('./homework-export');
+const connectionCode = require('./connection-code');
 
 // 禁用磁盘缓存
 app.commandLine.appendSwitch('disable-http-cache');
 
 // ── 常量 ──
-// 教师端存储本机教师账户、教室 IP 列表和呼叫记录（JSON 文件，体积小无需 SQLite）
+// 教师端存储本机教师账户、教室连接码列表和呼叫记录（JSON 文件，体积小无需 SQLite）
 // 作业、学科、提交状态等数据始终从教室端通过 WebSocket 获取，不本地存储
 const DATA_FILE = app.isPackaged
   ? path.join(app.getPath('userData'), 'data.json')
@@ -38,7 +38,27 @@ function loadAllData() {
 
 function loadData() {
   const d = loadAllData();
-  return { account: publicAccount(d.account), rooms: d.rooms, callHistory: d.callHistory };
+  const rooms = d.rooms.map(room => {
+    const subjects = Array.from(new Set((room.subjects || []).map(value => String(value).trim().slice(0, 30)).filter(Boolean))).slice(0, 20);
+    if (room.connectionCode && connectionCode.isValid(room.connectionCode)) {
+      return { id: room.id, name: room.name || '教室', connectionCode: connectionCode.format(room.connectionCode), subjects };
+    }
+    try { return { id: room.id, name: room.name || '教室', connectionCode: connectionCode.encode(room.ip), subjects }; }
+    catch (_error) { return null; }
+  }).filter(Boolean);
+  return { account: publicAccount(d.account), rooms, callHistory: d.callHistory };
+}
+
+function migrateStoredRooms() {
+  const stored = loadAllData();
+  const normalized = loadData().rooms;
+  if (JSON.stringify(stored.rooms) !== JSON.stringify(normalized)) {
+    const merged = { ...stored, rooms: normalized };
+    const dir = path.dirname(DATA_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(DATA_FILE, JSON.stringify(merged, null, 2), 'utf-8');
+  }
+  return normalized;
 }
 
 function saveData(data) {
@@ -53,77 +73,87 @@ function saveData(data) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(merged, null, 2), 'utf-8');
 }
 
-ipcMain.handle('get-data', () => loadData());
+ipcMain.handle('get-data', () => {
+  const rooms = migrateStoredRooms();
+  const data = loadData();
+  return { ...data, rooms };
+});
 ipcMain.handle('save-data', (_, data) => { saveData(data); return true; });
-ipcMain.handle('register-account', (_, input) => {
-  const existing = loadAllData().account;
-  if (existing) return { ok: false, message: '本机已有教师账户，请先登录' };
-  if (!input || !input.name || !input.name.trim()) return { ok: false, message: '请输入教师姓名' };
-  if (!input.password || input.password.length < 6) return { ok: false, message: '密码至少需要 6 位' };
-  const account = makeStoredAccount(input);
-  saveData({ account });
-  return { ok: true, account: publicAccount(account) };
-});
-ipcMain.handle('login-account', (_, name, password) => {
-  const stored = loadAllData().account;
-  if (!stored || stored.name !== String(name || '').trim() || !verifyAccountPassword(stored, password || '')) {
-    return { ok: false, message: '姓名或密码不正确' };
-  }
-  if (typeof stored.password === 'string') {
-    const migrated = makeStoredAccount({ name: stored.name, password, subjects: stored.subjects || [] }, stored.connectionId);
-    saveData({ account: migrated });
-    return { ok: true, account: publicAccount(migrated) };
-  }
-  return { ok: true, account: publicAccount(stored) };
-});
-ipcMain.handle('generate-login-key', () => {
-  const stored = loadAllData().account;
-  if (!stored) return { ok: false, message: '请先登录教师账户' };
-  try {
-    return { ok: true, loginKey: generateLoginKey(stored) };
-  } catch (error) {
-    return { ok: false, message: error.message || '登录密钥生成失败' };
-  }
-});
 ipcMain.handle('generate-mini-program-qr', async () => {
   const stored = loadAllData();
-  if (!stored.account) return { ok: false, message: '请先登录教师账户' };
   try {
-    const payload = generateMiniProgramLoginPayload(stored.account, stored.rooms);
-    const qrDataUrl = await QRCode.toDataURL(payload, {
+    miniProgramLoginResult = null;
+    if (activeMiniProgramPairing) await activeMiniProgramPairing.stop();
+    activeMiniProgramPairing = await startPairingServer({
+      onComplete: result => {
+        const previous = loadAllData();
+        const accountChanged = !previous.account || previous.account.connectionId !== result.account.connectionId;
+        saveData({
+          account: result.account,
+          rooms: result.rooms,
+          callHistory: accountChanged ? [] : previous.callHistory,
+        });
+        miniProgramLoginResult = {
+          ok: true,
+          account: publicAccount(result.account),
+          rooms: result.rooms,
+          accountChanged,
+          callHistory: accountChanged ? [] : previous.callHistory,
+        };
+      },
+    });
+    const qrDataUrl = await QRCode.toDataURL(activeMiniProgramPairing.payload, {
       width: 360,
       margin: 2,
       errorCorrectionLevel: 'M',
       color: { dark: '#172033', light: '#FFFFFF' },
     });
-    return { ok: true, qrDataUrl, roomCount: stored.rooms.length };
+    return {
+      ok: true,
+      qrDataUrl,
+      roomCount: activeMiniProgramPairing.roomCount,
+      expiresAt: activeMiniProgramPairing.expiresAt,
+    };
   } catch (error) {
+    if (activeMiniProgramPairing) activeMiniProgramPairing.stop();
+    activeMiniProgramPairing = null;
     return { ok: false, message: error.message || '二维码生成失败' };
   }
 });
-ipcMain.handle('import-login-key', (_, loginKey, replaceExisting = false) => {
-  let imported;
+ipcMain.handle('get-mini-program-login-status', () => {
+  const result = miniProgramLoginResult;
+  if (result) miniProgramLoginResult = null;
+  return result || { ok: false, pending: true };
+});
+ipcMain.handle('export-homework', async (event, input) => {
   try {
-    imported = parseLoginKey(loginKey);
+    const data = normalizePayload(input);
+    if (!data.assignments.length) return { ok: false, message: '当前筛选范围内没有可导出的作业' };
+    const owner = BrowserWindow.fromWebContents(event.sender) || mainWin;
+    const datePart = data.exportedAt.toISOString().slice(0, 10);
+    const defaultName = `${safeFilePart(data.className)}-作业统计-${datePart}.xlsx`;
+    const result = await dialog.showSaveDialog(owner, {
+      title: '导出作业统计',
+      defaultPath: path.join(app.getPath('documents'), defaultName),
+      filters: [{ name: 'Excel 工作簿', extensions: ['xlsx'] }],
+      properties: ['createDirectory', 'showOverwriteConfirmation'],
+    });
+    if (result.canceled || !result.filePath) return { ok: true, canceled: true };
+    const buffer = await buildHomeworkWorkbookBuffer(data);
+    fs.writeFileSync(result.filePath, Buffer.from(buffer));
+    return { ok: true, canceled: false, filePath: result.filePath };
   } catch (error) {
-    return { ok: false, message: error.message || '登录密钥无效' };
+    console.error('export-homework error:', error);
+    return { ok: false, message: error.message || '导出表格失败' };
   }
-  const existing = loadAllData().account;
-  if (existing && existing.connectionId !== imported.connectionId && !replaceExisting) {
-    return {
-      ok: false,
-      needsReplace: true,
-      message: `本机已有“${existing.name || '教师'}”账户，导入将替换本机账户。`,
-    };
-  }
-  saveData({ account: imported });
-  return { ok: true, account: publicAccount(imported) };
 });
 // ═══════════════════════════════════════
 //  窗口
 // ═══════════════════════════════════════
 
 let mainWin = null;
+let activeMiniProgramPairing = null;
+let miniProgramLoginResult = null;
 const CI_SMOKE_TEST = process.argv.includes('--ci-smoke-test');
 
 function createWindow() {
@@ -192,6 +222,11 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', () => {
+  if (activeMiniProgramPairing) activeMiniProgramPairing.stop();
+  activeMiniProgramPairing = null;
 });
 
 app.on('activate', () => {

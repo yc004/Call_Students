@@ -9,9 +9,14 @@ contextBridge.exposeInMainWorld('api', {
   // ── 数据读写（管理页用） ──
   getData:    ()      => ipcRenderer.invoke('get-data'),
   saveData:   (data)  => ipcRenderer.invoke('save-data', data),
+  createStudentAssignment: (input) => ipcRenderer.invoke('create-student-assignment', input),
 
   // ── 首次安装班主任绑定引导 ──
   getOnboardingStatus: () => ipcRenderer.invoke('get-onboarding-status'),
+  getClassroomQr: () => ipcRenderer.invoke('get-classroom-qr'),
+  getNetworkInterfaces: () => ipcRenderer.invoke('get-network-interfaces'),
+  setNetworkInterface: (name) => ipcRenderer.invoke('set-network-interface', name),
+  onNetworkInterfaceChanged: (cb) => ipcRenderer.on('network-interface-changed', () => cb()),
   bindHomeroomTeacher: (connectionId) => ipcRenderer.invoke('bind-homeroom-teacher', connectionId),
   finishOnboarding: () => ipcRenderer.send('finish-onboarding'),
   onOnboardingChanged: (cb) => ipcRenderer.on('onboarding-changed', () => cb()),
@@ -31,6 +36,8 @@ contextBridge.exposeInMainWorld('api', {
   openHomeworkBoard: () => ipcRenderer.send('open-homework-board'),
   setHomeworkFloatExpanded: (expanded) => ipcRenderer.send('set-homework-float-expanded', expanded),
   moveHomeworkFloat: (dx, dy) => ipcRenderer.send('move-homework-float', dx, dy),
+  getHomeworkUnread: () => ipcRenderer.invoke('get-homework-unread'),
+  onHomeworkUnreadChanged: (cb) => ipcRenderer.on('homework-unread-changed', (_event, unread) => cb(!!unread)),
   onDataChanged: (cb) => ipcRenderer.on('data-changed', () => cb()),
   boardLog:    (tag, msg) => ipcRenderer.send('board-log', tag, msg),
 

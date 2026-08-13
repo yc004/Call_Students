@@ -1,0 +1,34 @@
+<view class="page scan-page">
+  <view class="page-toolbar">
+    <view class="page-heading">
+      <text class="page-kicker">快捷连接</text>
+      <text class="page-title">扫一扫</text>
+    </view>
+  </view>
+
+  <view class="scan-hero surface">
+    <view class="scan-visual" bindtap="chooseScanAction" hover-class="scan-visual_active">
+      <view class="scan-corner top-left"></view><view class="scan-corner top-right"></view>
+      <view class="scan-glyph"><view></view><view></view><view></view><view></view><view></view></view>
+      <view class="scan-corner bottom-left"></view><view class="scan-corner bottom-right"></view>
+    </view>
+    <text class="scan-title">扫描连接二维码</text>
+    <text class="scan-desc">登录电脑教师端，或扫描教室大屏上的二维码添加教室</text>
+    <button class="primary scan-button" loading="{{scanning}}" disabled="{{scanning}}" bindtap="chooseScanAction">{{scanning ? '正在打开相机' : '开始扫码'}}</button>
+  </view>
+
+  <view class="section-heading"><view><text class="section-title">可以扫描</text><text class="section-note">二维码仅用于局域网内建立安全连接</text></view></view>
+  <view class="scan-options surface">
+    <view class="scan-option" bindtap="scanTeacherLogin" hover-class="scan-option_active">
+      <view class="option-icon teacher-icon">教</view><view class="option-copy"><text>登录电脑教师端</text><text>把当前教师账户和教室列表同步到电脑</text></view><text class="option-arrow">›</text>
+    </view>
+    <view class="scan-option" bindtap="scanClassroom" hover-class="scan-option_active">
+      <view class="option-icon room-icon">室</view><view class="option-copy"><text>添加教室</text><text>扫描教室端二维码，保存并立即连接</text></view><text class="option-arrow">›</text>
+    </view>
+  </view>
+
+  <view class="current-summary" wx:if="{{activeRoomName}}"><view class="summary-dot"></view><text>当前教室：{{activeRoomName}}</text><text class="summary-count">已保存 {{roomCount}} 个</text></view>
+  <button class="share-room-button" wx:if="{{canShareRoom}}" open-type="share">分享当前教室给教师</button>
+  <view class="share-permission-tip" wx:elif="{{activeRoomName}}" bindtap="explainSharePermission"><text>连接并确认为班主任后，可通过微信分享当前教室</text></view>
+  <view class="privacy-tip"><text>连接信息只保存在当前设备，并仅在同一局域网内使用。</text></view>
+</view>
