@@ -11,6 +11,14 @@ const { startPairingServer } = require('./mini-program-pairing');
 const { buildHomeworkWorkbookBuffer, normalizePayload, safeFilePart } = require('./homework-export');
 const connectionCode = require('./connection-code');
 
+// 教师端只能有一个运行实例，避免多个窗口同时持有账号和教室连接状态。
+// 第二次启动由已运行实例唤醒主窗口后退出。
+const HAS_SINGLE_INSTANCE_LOCK = app.requestSingleInstanceLock();
+if (!HAS_SINGLE_INSTANCE_LOCK) {
+  console.warn('[single-instance] another teacher app instance is already running');
+  app.quit();
+}
+
 // 禁用磁盘缓存
 app.commandLine.appendSwitch('disable-http-cache');
 
@@ -156,6 +164,23 @@ let activeMiniProgramPairing = null;
 let miniProgramLoginResult = null;
 const CI_SMOKE_TEST = process.argv.includes('--ci-smoke-test');
 
+function focusTeacherWindow() {
+  if (!mainWin || mainWin.isDestroyed()) {
+    if (!CI_SMOKE_TEST) createWindow();
+    return;
+  }
+  if (mainWin.isMinimized()) mainWin.restore();
+  mainWin.show();
+  mainWin.focus();
+}
+
+if (HAS_SINGLE_INSTANCE_LOCK) {
+  app.on('second-instance', () => {
+    try { app.focus({ steal: true }); } catch (_) {}
+    focusTeacherWindow();
+  });
+}
+
 function createWindow() {
   mainWin = new BrowserWindow({
     width: 1120,
@@ -215,6 +240,7 @@ ipcMain.on('win-close', (e) => {
 // ═══════════════════════════════════════
 
 app.whenReady().then(() => {
+  if (!HAS_SINGLE_INSTANCE_LOCK) return;
   if (CI_SMOKE_TEST) return runCISmokeTest();
   Menu.setApplicationMenu(null);
   createWindow();

@@ -9,6 +9,14 @@ const { createClassroomQrPayload } = require('./classroom-qr');
 let Database = null;
 let QRCode = null;
 
+// 教室端是托盘常驻应用，必须保证同一用户会话只运行一个实例。
+// 第二次启动时直接退出，并由已运行的实例接管唤醒窗口。
+const HAS_SINGLE_INSTANCE_LOCK = app.requestSingleInstanceLock();
+if (!HAS_SINGLE_INSTANCE_LOCK) {
+  console.warn('[single-instance] another classroom app instance is already running');
+  app.quit();
+}
+
 const APP_ICON_PATH = path.join(__dirname, 'icon.png');
 
 app.commandLine.appendSwitch('disable-http-cache');
@@ -172,6 +180,33 @@ const callMap = new Map();
 const callQueue = [];
 let isPopupBusy = false;
 let db = null;
+
+function focusClassroomWindow() {
+  const target = [
+    onboardingWin,
+    connectionQrWin,
+    boardWin,
+    homeworkWidgetWin,
+    popupWin,
+    faceRegisterWin,
+  ].find(win => win && !win.isDestroyed() && win.isVisible());
+  if (target) {
+    if (target.isMinimized()) target.restore();
+    target.show();
+    target.focus();
+    return;
+  }
+  if (isSystemReady()) openBoardWindow();
+  else createOnboardingWindow();
+}
+
+if (HAS_SINGLE_INSTANCE_LOCK) {
+  app.on('second-instance', () => {
+    // app.focus() 只在部分平台有效，窗口自身的 show/focus 作为统一兜底。
+    try { app.focus({ steal: true }); } catch (_) {}
+    focusClassroomWindow();
+  });
+}
 
 // ═══════════════════════════════════════
 //  SQLite 数据库
@@ -2067,6 +2102,7 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 app.whenReady().then(() => {
+  if (!HAS_SINGLE_INSTANCE_LOCK) return;
   if (CI_SMOKE_TEST) return runCISmokeTest();
   // 注册自定义协议用于加载模型文件（绕过 file:// fetch 限制）
   protocol.handle('face-models', (request) => {
