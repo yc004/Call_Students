@@ -550,6 +550,17 @@ function removeTeacher(connectionId) {
   getDb().prepare('DELETE FROM approved_teachers WHERE connection_id=?').run(connectionId);
 }
 
+function removeTeacherMembership(connectionId) {
+  const id = String(connectionId || '').trim();
+  if (!id) return { removed: false, role: '' };
+  const existing = findTeacher(id);
+  getDb().transaction(() => {
+    getDb().prepare('DELETE FROM pending_requests WHERE connection_id=?').run(id);
+    getDb().prepare('DELETE FROM approved_teachers WHERE connection_id=?').run(id);
+  })();
+  return { removed: existing.found, role: existing.role || '' };
+}
+
 // ═══════════════════════════════════════
 //  托盘图标生成（纯内存 PNG，零外部依赖）
 // ═══════════════════════════════════════
@@ -769,6 +780,17 @@ function activateBoundRuntime(openBoard = true) {
   rebuildTrayMenu();
   if (openBoard) openBoardWindow();
   return true;
+}
+
+function deactivateBoundRuntimeForRebinding() {
+  callQueue.length = 0;
+  callMap.clear();
+  [popupWin, boardWin, homeworkFloatWin, faceCheckWin, faceRegisterWin].forEach(win => {
+    if (win && !win.isDestroyed()) win.close();
+  });
+  if (homeworkWidgetWin && !homeworkWidgetWin.isDestroyed()) homeworkWidgetWin.hide();
+  createOnboardingWindow();
+  rebuildTrayMenu();
 }
 
 function finishBindingStage() {
@@ -1205,11 +1227,11 @@ function startWSServer() {
       let msg;
       try { msg = JSON.parse(raw.toString()); } catch { return; }
 
-      if (!isHomeroomBound() && !['connect', 'join-request', 'ping'].includes(msg.type)) {
+      if (!isHomeroomBound() && !['connect', 'join-request', 'leave-classroom', 'ping'].includes(msg.type)) {
         ws.send(JSON.stringify({ type: 'approval-required', message: '教室端尚未完成班主任绑定，暂时不能使用教学功能' }));
         return;
       }
-      if (isHomeroomBound() && !isClassroomConfigured() && !['connect', 'ping', 'update-classroom'].includes(msg.type)) {
+      if (isHomeroomBound() && !isClassroomConfigured() && !['connect', 'leave-classroom', 'ping', 'update-classroom'].includes(msg.type)) {
         ws.send(JSON.stringify({ type: 'auth-required', message: '请先由班主任完成教室初始化配置' }));
         return;
       }
@@ -1309,6 +1331,40 @@ function startWSServer() {
             notifyOnboardingChanged();
             broadcastSync(loadData());
           }
+          break;
+        }
+
+        case 'leave-classroom': {
+          const teacher = ws._teacher || {};
+          if (!teacher.connectionId || !['approved', 'pending'].includes(teacher.status)) {
+            ws.send(JSON.stringify({ type: 'auth-required', message: '请先验证教师身份，再退出教室' }));
+            break;
+          }
+          const membership = removeTeacherMembership(teacher.connectionId);
+          const wasHomeroom = membership.role === '班主任' || teacher.role === '班主任';
+          ws._teacher = { ...teacher, status: 'left' };
+          ws.send(JSON.stringify({
+            type: 'leave-classroom-ack',
+            removed: membership.removed,
+            wasHomeroom,
+            message: membership.removed ? '教室端已删除当前教师记录' : '当前教师记录已不存在',
+          }));
+
+          // 同一账户可能同时登录在教师电脑和小程序；立即撤销其他连接的权限，
+          // 避免数据库记录删除后旧 WebSocket 仍能继续操作教室数据。
+          wss.clients.forEach(client => {
+            if (client === ws || client.readyState !== WebSocket.OPEN) return;
+            if (!client._teacher || client._teacher.connectionId !== teacher.connectionId) return;
+            client._teacher = { ...client._teacher, status: 'left' };
+            client.send(JSON.stringify({ type: 'membership-revoked', message: '当前教师已退出教室，教室端记录已删除' }));
+          });
+
+          notifyTeacherCandidatesChanged();
+          notifyOnboardingChanged();
+          if (wasHomeroom) deactivateBoundRuntimeForRebinding();
+          else broadcastSync(loadData());
+          rebuildTrayMenu();
+          logToFile('ws', `teacher left classroom: ${teacher.name} (${teacher.connectionId}), role=${teacher.role || membership.role || 'unknown'}`);
           break;
         }
 

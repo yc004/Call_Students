@@ -42,5 +42,46 @@ Page({
   async openFeature(event){const {feature,code}=event.currentTarget.dataset;let session=sessionStore.load();let room=(session&&session.rooms||[]).find(item=>String(item.connectionCode)===String(code));if(!room)return;if(!(room.subjects||[]).length){const choice=await new Promise(resolve=>wx.showModal({title:'先设置授课科目',content:'每位教师（包括班主任）加入教室时都必须填写科目。多个科目用逗号分隔。',editable:true,placeholderText:'例如：数学、物理',success:resolve,fail:()=>resolve({confirm:false})}));if(!choice.confirm)return;const subjects=String(choice.content||'').split(/[,，、\s]+/).map(value=>value.trim()).filter(Boolean);if(!subjects.length){wx.showToast({title:'请至少填写一个科目',icon:'none'});return;}const rooms=session.rooms.map(item=>String(item.connectionCode)===String(code)?{...item,subjects}:item);room=rooms.find(item=>String(item.connectionCode)===String(code));session=sessionStore.save({...session,rooms,activeRoom:room});getApp().globalData.session=session;}const result=roomContext.activateByCode(code);if(!result)return;socket.connect(result.room,result.session.account,{force:true});const url=roomContext.featureUrl(feature,result.room);if(url)wx.navigateTo({url});},
   openSettings(event){this.openFeature({currentTarget:{dataset:{feature:'settings',code:event.currentTarget.dataset.code}}});},
   onShareAppMessage(options){const code=options&&options.target&&options.target.dataset&&options.target.dataset.code;const session=sessionStore.load();const room=(session&&session.rooms||[]).find(item=>String(item.connectionCode)===String(code));if(!room)return{title:'班达 · 连接教室',path:'/pages/home/index'};return{title:`${room.name}邀请你加入教室`,path:sharedRoom.createPath(room)};},
-  leaveRoom(event){const code=event.currentTarget.dataset.code;const session=sessionStore.load();const room=(session&&session.rooms||[]).find(item=>String(item.connectionCode)===String(code));if(!room)return;wx.showModal({title:`退出“${room.name}”？`,content:'退出后只会从本机移除该教室，不会删除班级资料。需要时可再次扫码或通过分享链接加入。',confirmText:'退出教室',confirmColor:'#FA5151',success:result=>{if(!result.confirm)return;const activeCode=session.activeRoom&&session.activeRoom.connectionCode;const updated=sessionStore.removeRoom(code);getApp().globalData.session=updated;if(String(activeCode)===String(code)){socket.disconnect();if(updated&&updated.activeRoom)socket.connect(updated.activeRoom,updated.account,{force:true});}this.session=updated;this.applySession(updated);this.setData({roomStats:(this.data.roomStats||[]).filter(item=>String(item.connectionCode)!==String(code))});if(updated&&updated.rooms.length)this.loadAllRoomStats();else this.setData({hasRooms:false,roomStats:[],onlineRooms:0,totalRooms:0,totalHomework:0,totalPending:0,totalClosed:0,totalSubmitted:0,totalExpected:0});wx.showToast({title:'已退出教室',icon:'success'});}});},
+  leaveRoom(event){
+    const code=event.currentTarget.dataset.code;
+    const session=sessionStore.load();
+    const room=(session&&session.rooms||[]).find(item=>String(item.connectionCode)===String(code));
+    if(!room)return;
+    const stats=(this.data.roomStats||[]).find(item=>String(item.connectionCode)===String(code));
+    const homeroomNote=stats&&stats.isHomeroom?'\n\n你是该教室的班主任。退出后教室端会重新等待班主任绑定，但班级资料会保留。':'';
+    wx.showModal({
+      title:`退出“${room.name}”？`,
+      content:`教室端会同时删除你的教师记录；以后需要重新扫码或通过分享链接加入。${homeroomNote}`,
+      confirmText:'退出教室',
+      confirmColor:'#FA5151',
+      success:async result=>{
+        if(!result.confirm)return;
+        wx.showLoading({title:'正在通知教室端',mask:true});
+        try{
+          await socket.leaveClassroom(room,session.account,8000);
+          wx.hideLoading();
+          const activeCode=session.activeRoom&&session.activeRoom.connectionCode;
+          const updated=sessionStore.removeRoom(code);
+          getApp().globalData.session=updated;
+          if(String(activeCode)===String(code)){
+            socket.disconnect();
+            if(updated&&updated.activeRoom)socket.connect(updated.activeRoom,updated.account,{force:true});
+          }
+          this.session=updated;
+          this.applySession(updated);
+          this.setData({roomStats:(this.data.roomStats||[]).filter(item=>String(item.connectionCode)!==String(code))});
+          if(updated&&updated.rooms.length)this.loadAllRoomStats();
+          else this.setData({hasRooms:false,roomStats:[],onlineRooms:0,totalRooms:0,totalHomework:0,totalPending:0,totalClosed:0,totalSubmitted:0,totalExpected:0});
+          wx.showToast({title:'已退出教室',icon:'success'});
+        }catch(error){
+          wx.hideLoading();
+          wx.showModal({
+            title:'暂时无法退出教室',
+            content:`${error&&error.message||'无法通知教室端'}\n\n请确认教室端已启动，手机与教室电脑连接同一 Wi‑Fi 后重试。为避免两端记录不一致，本次没有删除本地教室。`,
+            showCancel:false,
+          });
+        }
+      },
+    });
+  },
 });
