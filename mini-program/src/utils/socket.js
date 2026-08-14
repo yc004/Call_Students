@@ -1,5 +1,6 @@
 const listeners = new Set();
 const connectionCode = require('./connection-code');
+const { sessionStore } = require('./session');
 let socketTask = null;
 let heartbeatTimer = null;
 let reconnectTimer = null;
@@ -178,6 +179,18 @@ function connect(room, account, options = {}) {
     } else if (message.type === 'approval-required') {
       setStatus('waiting', '等待班主任批准');
       emit('notice', message);
+    } else if (message.type === 'leave-classroom-ack') {
+      emit('left', message);
+    } else if (message.type === 'membership-revoked') {
+      const revokedRoom = currentRoom;
+      disconnect();
+      if (revokedRoom) {
+        const updated = sessionStore.removeRoom(revokedRoom.connectionCode);
+        try { getApp().globalData.session = updated; } catch (_error) {}
+        emit('membershipRevoked', { ...message, connectionCode: revokedRoom.connectionCode });
+      } else {
+        emit('membershipRevoked', message);
+      }
     } else if (message.type === 'approval-rejected' || message.type === 'login-required' || message.type === 'auth-required' || message.type === 'subject-required') {
       emit('error', message);
     } else if (message.type === 'ack') emit('ack', message);
@@ -286,4 +299,62 @@ function fetchRoomSnapshot(room, account, timeoutMs = 6000) {
   });
 }
 
-module.exports = { connect, reconnect, disconnect, send, subscribe, pauseHeartbeat, getState, fetchRoomSnapshot, waitForConnection };
+function leaveClassroom(room, account, timeoutMs = 8000) {
+  const sameTarget = currentRoom && currentAccount
+    && currentRoom.connectionCode === room.connectionCode
+    && currentAccount.connectionId === account.connectionId;
+  if (sameTarget && socketTask && socketPhase === 'open') {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const unsubscribe = subscribe((event, payload) => {
+        if (event === 'left') finish(null, payload);
+        else if (event === 'error') finish(new Error(payload && payload.message || '教室端拒绝退出请求'));
+      });
+      const timer = setTimeout(() => finish(new Error('等待教室端确认超时')), timeoutMs);
+      function finish(error, result) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        unsubscribe();
+        if (error) reject(error); else resolve(result);
+      }
+      if (!send({ type: 'leave-classroom' })) finish(new Error('教室连接已断开'));
+    });
+  }
+
+  return new Promise((resolve, reject) => {
+    let target;
+    try { target = connectionCode.decode(room && room.connectionCode); }
+    catch (error) { reject(error); return; }
+    const task = wx.connectSocket({ url: `ws://${target}:3456`, tcpNoDelay: true, timeout: timeoutMs });
+    let finished = false;
+    let authenticated = false;
+    const timer = setTimeout(() => finish(new Error('无法连接教室端，退出操作尚未完成')), timeoutMs);
+    function finish(error, data) {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      try { task.close({ code: 1000, reason: 'leave complete' }); } catch (_error) {}
+      if (error) reject(error); else resolve(data);
+    }
+    task.onOpen(() => task.send({ data: JSON.stringify({
+      type: 'connect',
+      connectionId: account.connectionId,
+      name: account.name,
+      subjects: room.subjects || account.subjects || [],
+    }) }));
+    task.onMessage(({ data }) => {
+      let message;
+      try { message = JSON.parse(data); } catch (_error) { return; }
+      if ((message.type === 'sync' || message.type === 'approval-required') && !authenticated) {
+        authenticated = true;
+        task.send({ data: JSON.stringify({ type: 'leave-classroom' }) });
+      } else if (message.type === 'leave-classroom-ack') finish(null, message);
+      else if (['approval-rejected', 'login-required', 'auth-required', 'subject-required'].includes(message.type)) finish(new Error(message.message || '教室端拒绝退出请求'));
+    });
+    task.onError(error => finish(new Error(error && error.errMsg || '无法连接教室端')));
+    task.onClose(() => { if (!finished) finish(new Error('教室连接已断开，退出操作尚未完成')); });
+  });
+}
+
+module.exports = { connect, reconnect, disconnect, send, subscribe, pauseHeartbeat, getState, fetchRoomSnapshot, waitForConnection, leaveClassroom };

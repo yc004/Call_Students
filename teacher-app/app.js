@@ -75,6 +75,8 @@
     teachers: { approved: [], pending: [] },
     pendingRoomCode: '',
     connectingRoomCode: '',
+    leavingRoomCode: '',
+    pendingLeave: null,
   };
   const MAX_HISTORY = 500;
   const MAX_CONNECT_ATTEMPTS = 5;
@@ -316,6 +318,7 @@
     function failAttempt(error) {
       if (failureRecorded || state.ws !== ws) return;
       failureRecorded = true;
+      if (state.pendingLeave && state.pendingLeave.code === formattedCode) state.pendingLeave.reject(error);
       if (verificationTimer) clearTimeout(verificationTimer);
       verificationTimer = null;
       state.ws = null;
@@ -344,7 +347,18 @@
       verificationTimer = null;
       resetConnectionFailures();
 
-      if (msg.type === 'sync') {
+      if (msg.type === 'leave-classroom-ack') {
+        if (state.pendingLeave && state.pendingLeave.code === formattedCode) state.pendingLeave.resolve(msg);
+      } else if (msg.type === 'membership-revoked') {
+        const revokedCode = state.currentRoom && state.currentRoom.connectionCode;
+        disconnect();
+        if (revokedCode) {
+          state.rooms = state.rooms.filter(room => room.connectionCode !== revokedCode);
+          renderRooms();
+          saveToDisk();
+        }
+        alert(msg.message || '当前教师已退出教室，教室端记录已删除');
+      } else if (msg.type === 'sync') {
         const name = msg.className || `教室 ${formattedCode}`;
         state.className = name;
         state.students  = msg.students || [];
@@ -609,7 +623,7 @@
         `<span class="dot ${cls}"></span>` +
         `<span class="room-name">${esc(room.name)}</span>` +
         `<span class="room-ip">连接码 ${esc(room.connectionCode)}</span>` +
-        `<span class="room-del" data-code="${esc(room.connectionCode)}" title="删除">×</span>`;
+        `<span class="room-del" data-code="${esc(room.connectionCode)}" title="退出教室">×</span>`;
 
       li.addEventListener('click', (e) => {
         if (e.target.classList.contains('room-del')) return;
@@ -617,20 +631,94 @@
       });
 
       const del = li.querySelector('.room-del');
-      if (del) del.addEventListener('click', (e) => {
+      if (del) del.addEventListener('click', async (e) => {
         e.stopPropagation();
-        removeRoom(room.connectionCode);
+        await removeRoom(room.connectionCode);
       });
 
       roomList.appendChild(li);
     });
   }
 
-  function removeRoom(code) {
+  function sendLeaveRequest(ws, code) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        if (state.pendingLeave && state.pendingLeave.code === code) state.pendingLeave = null;
+        reject(new Error('等待教室端确认超时'));
+      }, 8000);
+      state.pendingLeave = {
+        code,
+        resolve(message) { clearTimeout(timer); state.pendingLeave = null; resolve(message); },
+        reject(error) { clearTimeout(timer); state.pendingLeave = null; reject(error); },
+      };
+      try { ws.send(JSON.stringify({ type: 'leave-classroom' })); }
+      catch (error) { state.pendingLeave.reject(error); }
+    });
+  }
+
+  function requestClassroomLeave(room) {
+    const code = room.connectionCode;
+    const activeRoom = state.currentRoom && state.currentRoom.connectionCode === code;
+    if (activeRoom && state.ws && state.ws.readyState === WebSocket.OPEN) {
+      return sendLeaveRequest(state.ws, code);
+    }
+    return new Promise((resolve, reject) => {
+      let ip;
+      try { ip = connectionCode.decode(code); }
+      catch (error) { reject(error); return; }
+      const ws = new WebSocket(`ws://${ip}:3456`);
+      let finished = false;
+      let authenticated = false;
+      const timer = setTimeout(() => finish(new Error('无法连接教室端，退出操作尚未完成')), 8000);
+      function finish(error, message) {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        ws.onopen = null; ws.onmessage = null; ws.onerror = null; ws.onclose = null;
+        try { ws.close(); } catch (_error) {}
+        if (error) reject(error); else resolve(message);
+      }
+      ws.onopen = () => ws.send(JSON.stringify({
+        type: 'connect',
+        connectionId: state.account.connectionId,
+        name: state.account.name,
+        subjects: room.subjects || [],
+      }));
+      ws.onmessage = event => {
+        let message;
+        try { message = JSON.parse(event.data); } catch (_error) { return; }
+        if ((message.type === 'sync' || message.type === 'approval-required') && !authenticated) {
+          authenticated = true;
+          ws.send(JSON.stringify({ type: 'leave-classroom' }));
+        } else if (message.type === 'leave-classroom-ack') finish(null, message);
+        else if (['login-required', 'auth-required', 'subject-required'].includes(message.type)) finish(new Error(message.message || '教室端拒绝退出请求'));
+      };
+      ws.onerror = () => finish(new Error('无法连接教室端，退出操作尚未完成'));
+      ws.onclose = () => { if (!finished) finish(new Error('教室连接已断开，退出操作尚未完成')); };
+    });
+  }
+
+  async function removeRoom(code) {
+    if (state.leavingRoomCode) return;
+    const room = state.rooms.find(item => item.connectionCode === code);
+    if (!room || !state.account) return;
+    const homeroomWarning = state.currentRoom && state.currentRoom.connectionCode === code && isHomeroomTeacher()
+      ? '\n\n你是该教室的班主任。退出后教室端会重新进入班主任绑定引导，但班级资料不会被删除。'
+      : '';
+    if (!confirm(`确定退出“${room.name}”吗？\n\n教室端会同时删除你的教师记录；以后需要重新扫码或输入连接码加入。${homeroomWarning}`)) return;
+    state.leavingRoomCode = code;
+    try {
+      await requestClassroomLeave(room);
+    } catch (error) {
+      alert(`${error.message || '无法通知教室端'}\n\n请确认教室端已启动且两台电脑位于同一局域网，然后重试。为避免两端记录不一致，本次没有从教师端删除该教室。`);
+      return;
+    } finally {
+      state.leavingRoomCode = '';
+    }
     if (state.currentRoom && state.currentRoom.connectionCode === code) disconnect();
     state.rooms = state.rooms.filter(r => r.connectionCode !== code);
     renderRooms();
-    saveToDisk();
+    await saveToDisk();
   }
 
   // ═══════════════════════════════════
