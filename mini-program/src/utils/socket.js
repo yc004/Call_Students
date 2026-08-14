@@ -191,6 +191,13 @@ function connect(room, account, options = {}) {
       } else {
         emit('membershipRevoked', message);
       }
+      wx.showModal({
+        title: '已退出教室',
+        content: message.message || '班主任已将你移出当前教室，本地教室记录已删除。',
+        showCancel: false,
+        confirmText: '返回首页',
+        success: () => wx.switchTab({ url: '/pages/home/index' }),
+      });
     } else if (message.type === 'approval-rejected' || message.type === 'login-required' || message.type === 'auth-required' || message.type === 'subject-required') {
       emit('error', message);
     } else if (message.type === 'ack') emit('ack', message);
@@ -271,6 +278,12 @@ function pauseHeartbeat() { if (heartbeatTimer) clearInterval(heartbeatTimer); h
 function getState() { return { ...state }; }
 function reconnect(room, account) { connect(room, account, { force: true }); }
 
+function roomSnapshotError(roomStatus, message) {
+  const error = new Error(message || '无法读取教室状态');
+  error.roomStatus = roomStatus;
+  return error;
+}
+
 function fetchRoomSnapshot(room, account, timeoutMs = 6000) {
   return new Promise((resolve, reject) => {
     let target;
@@ -291,8 +304,16 @@ function fetchRoomSnapshot(room, account, timeoutMs = 6000) {
       let message;
       try { message = JSON.parse(data); } catch (_error) { return; }
       if (message.type === 'sync') finish(null, message);
-      else if (message.type === 'approval-required') finish(new Error('等待班主任批准'));
-      else if (message.type === 'approval-rejected' || message.type === 'auth-required' || message.type === 'subject-required') finish(new Error(message.message || '没有访问权限'));
+      else if (message.type === 'approval-required') {
+        const text = message.message || '等待班主任批准';
+        const status = /初始化|绑定班主任|首次设置/.test(text) ? 'uninitialized' : 'pending';
+        finish(roomSnapshotError(status, text));
+      } else if (message.type === 'auth-required') {
+        const text = message.message || '没有访问权限';
+        finish(roomSnapshotError(/初始化|基础配置/.test(text) ? 'uninitialized' : 'identity-error', text));
+      } else if (message.type === 'approval-rejected' || message.type === 'subject-required' || message.type === 'login-required') {
+        finish(roomSnapshotError('identity-error', message.message || '教师身份无效'));
+      }
     });
     task.onError(error => finish(new Error(error && error.errMsg || '无法连接')));
     task.onClose(() => { if (!finished) finish(new Error('连接已断开')); });

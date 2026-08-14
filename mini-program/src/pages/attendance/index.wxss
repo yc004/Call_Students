@@ -42,4 +42,21 @@
   .filter-tab { color:rgba(255,255,255,.6); }.filter-tab.active { background:#173a29; color:#35d67c; }.attendance-cell + .attendance-cell { border-color:rgba(255,255,255,.1); }
   .student-avatar.away, .attendance-state.away { background:#3b2c17; color:#ffc36b; }.attendance-state { background:#2a2a2a; color:rgba(255,255,255,.6); }.attendance-state.present { background:#173a29; color:#35d67c; }
 }
+
+.attendance-ring{animation:ring-enter .48s .08s cubic-bezier(.22,1,.36,1) both;transition:background .4s ease}
+.live-mark view{animation:live-pulse 1.5s ease-in-out infinite}
+.face-card{transition:transform .18s cubic-bezier(.22,1,.36,1),opacity .18s ease;animation:face-in .32s cubic-bezier(.22,1,.36,1) both}
+.face-pressed{opacity:.78;transform:scale(.94)}
+.filter-tab{transition:transform .16s cubic-bezier(.22,1,.36,1),background-color .2s ease,color .2s ease}
+.filter-tab.active{animation:filter-select .25s cubic-bezier(.22,1,.36,1)}
+.filter-pressed{opacity:.72;transform:scale(.96)}
+.attendance-cell{animation:student-row-in .3s cubic-bezier(.22,1,.36,1) both}
+.attendance-state view{transition:background-color .25s ease;animation:state-dot-in .3s cubic-bezier(.22,1,.36,1)}
+@keyframes ring-enter{from{opacity:0;transform:scale(.72) rotate(-20deg)}to{opacity:1;transform:none}}
+@keyframes live-pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(7,193,96,.25)}50%{opacity:.7;box-shadow:0 0 0 8rpx rgba(7,193,96,0)}}
+@keyframes face-in{from{opacity:0;transform:translateX(14rpx) scale(.96)}to{opacity:1;transform:none}}
+@keyframes filter-select{from{transform:scale(.94)}to{transform:scale(1)}}
+@keyframes student-row-in{from{opacity:0;transform:translateY(10rpx)}to{opacity:1;transform:none}}
+@keyframes state-dot-in{from{transform:scale(.35)}to{transform:scale(1)}}
+@media(prefers-reduced-motion:reduce){.attendance-ring,.live-mark view,.face-card,.filter-tab.active,.attendance-cell,.attendance-state view{animation:none}.attendance-ring,.face-card,.filter-tab,.attendance-state view{transition:none}}
 .attendance-page { padding-bottom:48rpx; }

@@ -210,6 +210,14 @@
 .teacher-manage-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
 .teacher-manage-actions .btn { min-height:34px; padding:0 10px; font-size:12px; }
 .btn-danger-text { color:#c52d35; border-color:#efc3c6; }
+.btn-transfer-text { color:#9a5b00; border-color:#efd29f; background:#fff9ed; }
+.flow-heading-students .call-multi-toggle { width:auto; min-height:36px; margin-left:auto; padding:0 13px; }
+.call-multi-toggle.active { color:#16784d; border-color:#acd9c4; background:#e9f8f1; }
+.student-card.selected { border-color:#66b991; background:#f0faf5; box-shadow:0 0 0 2px rgba(22,148,92,.08); }
+.student-card.selected .call-btn { color:#fff; border-color:var(--success); background:var(--success); }
+.call-batch-bar { position:sticky; z-index:20; bottom:12px; display:flex; align-items:center; gap:10px; margin-top:18px; padding:14px 16px; border:1px solid #cde7da; border-radius:14px; background:rgba(255,255,255,.96); box-shadow:0 12px 30px rgba(23,32,51,.14); backdrop-filter:blur(14px); }
+.call-batch-bar > div { display:flex; min-width:0; flex:1; flex-direction:column; }
+.call-batch-bar strong { font-size:14px; }.call-batch-bar small { margin-top:2px; color:var(--text-3); font-size:11px; }.call-batch-bar .btn { min-height:38px; }
 
 /* 出勤页：先看概览，再处理待匹配，最后查看学生明细。 */
 .attendance-section { gap:20px; padding:24px; background:transparent; box-shadow:none; }
@@ -293,3 +301,5 @@
   .teacher-manage-actions { justify-content:flex-start; }
 }
 .mini-scan-login { align-items:center; }.mini-scan-qr-wrap { display:flex; align-items:center; justify-content:center; width:220px; height:220px; margin:4px auto 10px; border:1px solid var(--line,#d8dee9); border-radius:18px; background:#fff; }.mini-scan-qr-wrap img { display:block; width:198px; height:198px; object-fit:contain; }.mini-scan-qr-wrap img:not([src]) { visibility:hidden; }
+.wechat-direct-settings { width:100%;margin-top:6px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;text-align:left;background:var(--surface-soft,#f7f8fa); }.wechat-direct-settings summary { color:var(--text-2);font-weight:700;cursor:pointer; }.wechat-direct-settings p,.wechat-direct-settings small { display:block;margin:7px 0 0;color:var(--text-3);font-size:11px;line-height:1.5; }.wechat-direct-settings div { display:flex;gap:7px;margin-top:8px; }.wechat-direct-settings input { min-width:0;flex:1;height:34px;padding:0 9px;border:1px solid var(--border);border-radius:8px;color:var(--text-1);background:var(--surface);font:inherit; }
+.wechat-direct-settings .direct-warning { color:#a15c08; }

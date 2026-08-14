@@ -18,7 +18,7 @@ Page({
   },
 
   onLoad(options) {
-    const room = sharedRoom.normalizeRoom({ name: options && options.name, connectionCode: options && options.code });
+    const room = sharedRoom.fromLaunchOptions(options);
     this.room = room;
     if (!room) {
       this.setData({ valid: false });

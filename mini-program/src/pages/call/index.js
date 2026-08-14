@@ -5,7 +5,7 @@ const CALL_TEXT_KEY = 'classroom_call_custom_message_v1';
 const DEFAULT_CALL_TEXT = '{name}同学，请到办公室';
 Page({
   data: {
-    status: 'offline', statusMessage: '未连接', statusDetail: '', className: '', roomName: '', students: [], filteredStudents: [], query: '', callingId: '',
+    status: 'offline', statusMessage: '未连接', statusDetail: '', className: '', roomName: '', students: [], filteredStudents: [], query: '', callingId: '', multiSelect:false,selectedCount:0,
     callText: DEFAULT_CALL_TEXT, callTextLength: DEFAULT_CALL_TEXT.length,
     templates: ['{name}同学，请到办公室', '{name}同学，请到讲台', '{name}同学，请联系老师'],
   },
@@ -35,7 +35,9 @@ Page({
     if (session.activeRoom) { this.setData({ roomName: session.activeRoom.name }); socket.connect(session.activeRoom, session.account); }
   },
   applySync(data) {
-    const students = (data.students || []).map(item => ({ ...item, initial: String(item.name || '生').slice(0, 1) }));
+    this.selectedIds=this.selectedIds||new Set();this.sentIds=this.sentIds||new Set();
+    const validIds=new Set((data.students||[]).map(item=>item.id));for(const id of this.selectedIds)if(!validIds.has(id))this.selectedIds.delete(id);
+    const students = (data.students || []).map(item => ({ ...item, initial: String(item.name || '生').slice(0, 1),selected:this.selectedIds.has(item.id),sent:this.sentIds.has(item.id) }));
     this.allStudents = students;
     this.setData({ className: data.className || '', students, filteredStudents: this.filterStudents(students, this.data.query) });
   },
@@ -65,20 +67,20 @@ Page({
     try { wx.setStorageSync(CALL_TEXT_KEY, { text: '' }); } catch (_error) {}
   },
   clearSearch() { this.setData({ query: '', filteredStudents: this.allStudents || [] }); },
+  refreshStudentViews(){const selected=this.selectedIds||new Set();const sent=this.sentIds||new Set();this.allStudents=(this.allStudents||[]).map(item=>({...item,selected:selected.has(item.id),sent:sent.has(item.id)}));this.setData({students:this.allStudents,filteredStudents:this.filterStudents(this.allStudents,this.data.query),selectedCount:selected.size});},
+  toggleMultiSelect(){const multiSelect=!this.data.multiSelect;this.selectedIds=this.selectedIds||new Set();if(!multiSelect)this.selectedIds.clear();this.setData({multiSelect});this.refreshStudentViews();},
+  handleStudentTap(event){if(this.data.multiSelect)this.toggleStudent(event);else this.callStudent(event);},
+  toggleStudent(event){const id=event.currentTarget.dataset.id;this.selectedIds=this.selectedIds||new Set();if(this.selectedIds.has(id))this.selectedIds.delete(id);else this.selectedIds.add(id);this.refreshStudentViews();wx.vibrateShort({type:'light'});},
+  selectVisible(){this.selectedIds=this.selectedIds||new Set();(this.data.filteredStudents||[]).forEach(item=>this.selectedIds.add(item.id));this.refreshStudentViews();},
+  clearSelection(){this.selectedIds=this.selectedIds||new Set();this.selectedIds.clear();this.refreshStudentViews();},
+  callSelected(){const selected=this.selectedIds||new Set();const students=(this.allStudents||[]).filter(item=>selected.has(item.id));if(!students.length){wx.showToast({title:'请至少选择一名学生',icon:'none'});return;}this.sendStudents(students);},
+  callTarget(students){const names=students.map(item=>item.name);const base=names.length<=4?names.join('、'):`${names.slice(0,3).join('、')}等${names.length}位`;return{base,display:names.length>4?`${base}同学`:base};},
+  sendStudents(students){if(!students.length||this.data.status!=='online')return;const rawMessage=String(this.data.callText||'').trim();if(!rawMessage){wx.showToast({title:'请先填写呼叫内容',icon:'none'});return;}const callId=`${Date.now().toString(36)}${Math.random().toString(36).slice(2,8)}`;const target=this.callTarget(students);const studentNames=students.map(item=>item.name);const message=rawMessage.replace(/\{name\}同学/g,`${target.base}同学`).replace(/\{name\}/g,target.display);if(!socket.send({type:'call',callId,studentName:target.display,studentNames,className:this.data.className,message})){wx.showToast({title:'连接已断开',icon:'none'});return;}this.sentIds=this.sentIds||new Set();students.forEach(item=>this.sentIds.add(item.id));this.selectedIds=this.selectedIds||new Set();this.selectedIds.clear();this.setData({multiSelect:false,callingId:students.length===1?students[0].id:''});this.refreshStudentViews();wx.vibrateShort({type:'light'});wx.showToast({title:students.length===1?'呼叫已发送':`已呼叫 ${students.length} 人`,icon:'success'});setTimeout(()=>{students.forEach(item=>this.sentIds.delete(item.id));this.setData({callingId:''});this.refreshStudentViews();},2400);},
   callStudent(event) {
     const id = event.currentTarget.dataset.id;
     const student = (this.allStudents || []).find(item => item.id === id);
-    if (!student || this.data.status !== 'online') return;
-    const rawMessage = String(this.data.callText || '').trim();
-    if (!rawMessage) { wx.showToast({ title: '请先填写呼叫内容', icon: 'none' }); return; }
-    const callId = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-    const message = rawMessage.replace(/\{name\}/g, student.name);
-    if (!socket.send({ type: 'call', callId, studentName: student.name, className: this.data.className, message })) {
-      wx.showToast({ title: '连接已断开', icon: 'none' }); return;
-    }
-    this.setData({ callingId: id });
-    wx.vibrateShort({ type: 'light' });
-    setTimeout(() => this.setData({ callingId: '' }), 2400);
+    if (!student) return;
+    this.sendStudents([student]);
   },
   reconnect() { if (this.session && this.session.activeRoom) socket.reconnect(this.session.activeRoom, this.session.account); },
 });

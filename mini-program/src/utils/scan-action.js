@@ -1,6 +1,6 @@
 const socket = require('./socket');
 const { sessionStore } = require('./session');
-const { pairWithTeacher } = require('./auth');
+const { pairWithTeacher, savePendingPairing, clearPendingPairing } = require('./auth');
 const { PREFIX: ROOM_PREFIX, parseClassroomQr } = require('./classroom-qr');
 
 function connectionGuide(title, detail, retry) {
@@ -45,13 +45,18 @@ function openClassroomConnection(room) {
 
 async function handleTeacherLogin(value, onComplete, retry) {
   const current = sessionStore.load();
-  if (!current) { wx.navigateTo({ url: '/pages/login/index' }); return; }
+  if (!current) {
+    savePendingPairing(value);
+    wx.navigateTo({ url: '/pages/login/index?from=teacherPair' });
+    return;
+  }
   wx.showLoading({ title: '正在登录教师端', mask: true });
   try {
     const synced = await pairWithTeacher(value, current);
     const previousCode = current.activeRoom && current.activeRoom.connectionCode;
     const activeRoom = synced.rooms.find(item => item.connectionCode === previousCode) || synced.rooms[0] || null;
     const updated = sessionStore.save({ ...synced, activeRoom, pairedAt: new Date().toISOString() });
+    clearPendingPairing();
     getApp().globalData.session = updated;
     if (activeRoom) socket.connect(activeRoom, updated.account, { force: true });
     wx.hideLoading();
@@ -68,6 +73,11 @@ function start(options = {}) {
     scanType: ['qrCode'],
     success: ({ result }) => {
       const value = String(result || '').trim();
+      const directRoom = require('./shared-room').parseDirectLink(value);
+      if (directRoom) {
+        openClassroomConnection(directRoom);
+        return;
+      }
       if (value.startsWith(`${ROOM_PREFIX}.`)) {
         try { openClassroomConnection(parseClassroomQr(value)); }
         catch (error) { wx.showModal({ title: '无法添加教室', content: error.message, showCancel: false }); }
@@ -81,4 +91,4 @@ function start(options = {}) {
   });
 }
 
-module.exports = { start, saveClassroom };
+module.exports = { start, saveClassroom, handleTeacherLogin };

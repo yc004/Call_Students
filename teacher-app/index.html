@@ -69,13 +69,14 @@
         <input type="hidden" id="callMessage" value="{name}同学，请到办公室">
       </div>
 
-        <div class="flow-heading flow-heading-students"><span>2</span><div><strong>选择要呼叫的学生</strong><small>点击学生卡片中的呼叫按钮即可发送</small></div></div>
+        <div class="flow-heading flow-heading-students"><span>2</span><div><strong>选择要呼叫的学生</strong><small id="callSelectionHint">点击学生卡片中的呼叫按钮即可发送</small></div><button id="multiCallToggle" class="btn call-multi-toggle" type="button">多选呼叫</button></div>
       <div id="searchRow" class="search-row hidden">
         <input type="text" id="searchInput" class="search-input" placeholder="搜索学生姓名…" autocomplete="off">
         <span id="searchResult" class="search-result"></span>
       </div>
 
       <div id="studentGrid" class="student-grid"></div>
+      <div id="callBatchBar" class="call-batch-bar hidden"><div><strong id="callBatchCount">已选 0 人</strong><small>将合并为一条大屏呼叫</small></div><button id="clearCallSelection" class="btn" type="button">清空</button><button id="sendBatchCall" class="btn btn-primary" type="button" disabled>呼叫已选学生</button></div>
       </div>
 
       <div id="emptyState" class="empty-state">
@@ -253,6 +254,13 @@
       <p id="teacherLoginQrStatus" class="account-field-hint">使用已登录的小程序扫描二维码，将教师账户同步到这台电脑。</p>
       <button id="refreshTeacherLoginQr" class="btn btn-primary account-primary" type="button">生成登录二维码</button>
       <p class="account-switch">请确保手机与电脑连接同一局域网，并保持小程序运行。</p>
+      <details class="wechat-direct-settings">
+        <summary>允许直接使用微信扫码</summary>
+        <p>先在微信公众平台配置普通链接二维码规则，再填写规则对应的 HTTPS 链接前缀。</p>
+        <p class="direct-warning">个人主体不能发布该规则，需要改用服务端生成的小程序码。</p>
+        <div><input id="teacherDirectBaseUrl" type="url" placeholder="https://example.com/classroom"><button id="saveTeacherDirectUrl" class="btn btn-sm" type="button">保存</button></div>
+        <small id="teacherDirectStatus">未配置时继续使用小程序内扫码。</small>
+      </details>
     </div>
   </div>
 </div>

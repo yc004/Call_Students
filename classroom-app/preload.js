@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('api', {
   // ── 首次安装班主任绑定引导 ──
   getOnboardingStatus: () => ipcRenderer.invoke('get-onboarding-status'),
   getClassroomQr: () => ipcRenderer.invoke('get-classroom-qr'),
+  getWechatDirectLinkSettings: () => ipcRenderer.invoke('get-wechat-direct-link-settings'),
+  setWechatDirectLinkSettings: (baseUrl) => ipcRenderer.invoke('set-wechat-direct-link-settings', baseUrl),
   getNetworkInterfaces: () => ipcRenderer.invoke('get-network-interfaces'),
   setNetworkInterface: (name) => ipcRenderer.invoke('set-network-interface', name),
   onNetworkInterfaceChanged: (cb) => ipcRenderer.on('network-interface-changed', () => cb()),

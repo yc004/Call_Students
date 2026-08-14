@@ -31,6 +31,7 @@
       "homework-view.js",
       "homework-export.js",
       "mini-program-pairing.js",
+      "wechat-direct-link.js",
       "account-auth.js",
       "preload.js",
       "index.html",

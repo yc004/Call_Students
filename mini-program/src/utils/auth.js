@@ -1,4 +1,5 @@
 const PAIRING_PREFIX = 'CLASSROOM-CALL-PAIR-1';
+const PENDING_PAIRING_KEY = 'classroom_call_pending_teacher_pairing_v1';
 const connectionCode = require('./connection-code');
 
 function authError(code, message) {
@@ -44,6 +45,49 @@ function parsePairingQr(value) {
   if (!/^[A-Za-z0-9_-]{32,128}$/.test(token)) throw authError('PAIR_QR_INVALID', '二维码中的临时配对码无效');
   if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) throw authError('PAIR_QR_EXPIRED', '二维码已过期，请在教师端重新生成');
   return { hosts, port, token, expiresAt };
+}
+
+function parseDirectPairingLink(value) {
+  let text = String(value || '').trim();
+  if (!/^https:\/\//i.test(text)) {
+    try { text = decodeURIComponent(text); } catch (_error) {}
+  }
+  if (!/^https:\/\//i.test(text)) return '';
+  const question = text.indexOf('?');
+  if (question < 0) return '';
+  const hash = text.indexOf('#', question);
+  const queryText = text.slice(question + 1, hash < 0 ? text.length : hash);
+  const query = {};
+  queryText.split('&').forEach(pair => {
+    const separator = pair.indexOf('=');
+    if (separator < 0) return;
+    const decode = part => {
+      try { return decodeURIComponent(part.replace(/\+/g, ' ')); } catch (_error) { return part; }
+    };
+    query[decode(pair.slice(0, separator))] = decode(pair.slice(separator + 1));
+  });
+  if (query.cc_action !== 'teacher-login' || !String(query.cc_pair || '').startsWith(`${PAIRING_PREFIX}.`)) return '';
+  return query.cc_pair;
+}
+
+function savePendingPairing(value) {
+  const payload = String(value || '');
+  try { parsePairingQr(payload); }
+  catch (_error) { return false; }
+  wx.setStorageSync(PENDING_PAIRING_KEY, payload);
+  return true;
+}
+
+function loadPendingPairing() {
+  try {
+    const payload = String(wx.getStorageSync(PENDING_PAIRING_KEY) || '');
+    parsePairingQr(payload);
+    return payload;
+  } catch (_error) { return ''; }
+}
+
+function clearPendingPairing() {
+  try { wx.removeStorageSync(PENDING_PAIRING_KEY); } catch (_error) {}
 }
 
 function requestHost(host, pairing, localSession) {
@@ -130,4 +174,11 @@ async function pairWithTeacher(value, localSession) {
   throw authError('PAIR_NETWORK', `无法连接教师端${detail}`);
 }
 
-module.exports = { parsePairingQr, pairWithTeacher };
+module.exports = {
+  parsePairingQr,
+  parseDirectPairingLink,
+  savePendingPairing,
+  loadPendingPairing,
+  clearPendingPairing,
+  pairWithTeacher,
+};

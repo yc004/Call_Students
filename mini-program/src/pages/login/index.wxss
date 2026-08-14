@@ -1,24 +1,26 @@
 .login-page { min-height: 100vh; padding-bottom: calc(env(safe-area-inset-bottom) + 40rpx); background: #f5f5f5; }
-.brand { display: flex; align-items: center; }
+.brand { display: flex; align-items: center; animation:login-item-in .34s cubic-bezier(.22,1,.36,1) both; }
 .brand-mark { display: flex; align-items: center; justify-content: center; width: 56rpx; height: 56rpx; border-radius: 14rpx; background: #07c160; color: #fff; font-size: 27rpx; font-weight: 600; }
 .brand > view:last-child { margin-left: 16rpx; }.brand-name { display: block; color: rgba(0, 0, 0, .9); font-size: 29rpx; font-weight: 600; }.brand-desc { display: block; margin-top: 3rpx; color: rgba(0, 0, 0, .4); font-size: 20rpx; }
 .login-content { padding: 40rpx 32rpx 0; }
-.welcome { margin-top: 64rpx; padding: 0 8rpx; }
+.welcome { margin-top: 64rpx; padding: 0 8rpx; animation:login-item-in .38s .06s cubic-bezier(.22,1,.36,1) both; }
 .welcome-title { display: block; max-width: 620rpx; color: rgba(0, 0, 0, .9); font-size: 48rpx; font-weight: 600; line-height: 1.35; }
 .welcome-desc { display: block; margin-top: 18rpx; color: rgba(0, 0, 0, .5); font-size: 28rpx; line-height: 1.65; }
-.scan-panel { margin-top: 56rpx; padding: 48rpx 40rpx 40rpx; border-radius: 20rpx; background: #fff; text-align: center; }
+.scan-panel { margin-top: 56rpx; padding: 48rpx 40rpx 40rpx; border-radius: 20rpx; background: #fff; text-align: center; animation:login-item-in .42s .12s cubic-bezier(.22,1,.36,1) both; }
 .scan-icon { position: relative; display: flex; align-items: center; justify-content: center; width: 152rpx; height: 152rpx; margin: 0 auto; border-radius: 24rpx; background: #f7f7f7; }
 .corner { position: absolute; width: 38rpx; height: 38rpx; }
 .c1 { left: 20rpx; top: 20rpx; border-left: 5rpx solid #07c160; border-top: 5rpx solid #07c160; }
 .c2 { right: 20rpx; top: 20rpx; border-right: 5rpx solid #07c160; border-top: 5rpx solid #07c160; }
 .c3 { left: 20rpx; bottom: 20rpx; border-left: 5rpx solid #07c160; border-bottom: 5rpx solid #07c160; }
 .c4 { right: 20rpx; bottom: 20rpx; border-right: 5rpx solid #07c160; border-bottom: 5rpx solid #07c160; }
-.scan-center { width: 32rpx; height: 32rpx; border: 6rpx solid #07c160; transform: rotate(45deg); }
+.scan-center { width: 32rpx; height: 32rpx; border: 6rpx solid #07c160; animation:login-scan 2.4s ease-in-out infinite; transform: rotate(45deg); }
 .scan-title { display: block; margin-top: 34rpx; color: rgba(0, 0, 0, .9); font-size: 32rpx; font-weight: 600; }
 .scan-desc { display: block; margin: 12rpx auto 0; max-width: 540rpx; color: rgba(0, 0, 0, .45); font-size: 25rpx; line-height: 1.6; }
 .scan-button { margin-top: 36rpx; }
 .privacy-row { display: flex; align-items: flex-start; margin: 28rpx 18rpx 0; color: rgba(0, 0, 0, .45); font-size: 23rpx; line-height: 1.55; }
 .privacy-icon { display: flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 34rpx; height: 34rpx; margin: 1rpx 12rpx 0 0; border-radius: 50%; background: #e9f8ef; color: #07c160; font-size: 20rpx; font-weight: 600; }
+@keyframes login-item-in{from{opacity:0;transform:translateY(20rpx)}to{opacity:1;transform:none}}
+@keyframes login-scan{0%,100%{opacity:.7;transform:rotate(45deg) scale(.88)}50%{opacity:1;transform:rotate(45deg) scale(1.08)}}
 @media (max-height: 700px) { .login-content { padding-top: 36rpx; } .scan-panel { margin-top: 30rpx; padding-top: 34rpx; } }
 @media (prefers-color-scheme: dark) {
   .brand-name, .welcome-title, .scan-title { color: rgba(255,255,255,.92); }
@@ -29,3 +31,4 @@
 .register-button { margin-top:20rpx; background:#f2f2f2; color:#191919; }
 .register-sheet { padding:14rpx 32rpx calc(32rpx + env(safe-area-inset-bottom)); background:#fff; }.register-handle { width:72rpx; height:8rpx; margin:0 auto 26rpx; border-radius:4rpx; background:#d8d8d8; }.register-title { display:flex; justify-content:space-between; color:#191919; font-size:34rpx; font-weight:600; }.register-title view { display:flex; flex-direction:column; }.register-title view text:last-child { max-width:560rpx; margin-top:8rpx; color:#888; font-size:23rpx; font-weight:400; line-height:1.5; }.register-close { display:flex; align-items:center; justify-content:center; width:64rpx; height:64rpx; border-radius:50%; background:#f2f2f2; color:#666; font-size:38rpx; }.register-label { display:block; margin:36rpx 0 14rpx; color:#191919; font-size:27rpx; font-weight:500; }.register-field { height:88rpx; padding:0 24rpx; border:1rpx solid #d8d8d8; border-radius:12rpx; color:#191919; font-size:28rpx; }.register-tip { margin-top:22rpx; padding:20rpx; border-radius:12rpx; background:#fff5e8; color:#a65f00; font-size:22rpx; line-height:1.55; }.register-confirm { margin-top:34rpx; }
 @media (prefers-color-scheme: dark) { .register-button { background:#2c2c2e; color:rgba(255,255,255,.92); }.register-sheet { background:#1c1c1e; }.register-title,.register-label { color:rgba(255,255,255,.92); }.register-field { border-color:rgba(255,255,255,.14); color:rgba(255,255,255,.92); }.register-tip { background:#3b2c17; color:#ffc36b; } }
+@media(prefers-reduced-motion:reduce){.brand,.welcome,.scan-panel,.scan-center{animation:none}}

@@ -1,4 +1,8 @@
-const { pairWithTeacher } = require('../../utils/auth');
+const {
+  pairWithTeacher,
+  loadPendingPairing,
+  clearPendingPairing,
+} = require('../../utils/auth');
 const { sessionStore } = require('../../utils/session');
 const sharedRoom = require('../../utils/shared-room');
 
@@ -7,8 +11,28 @@ Page({
   onLoad(options) { this.fromRoomShare = !!(options && options.from === 'roomShare'); },
   onShow() {
     if (!sessionStore.load()) return;
+    const pendingPairing = loadPendingPairing();
+    if (pendingPairing) { this.completePendingPairing(pendingPairing); return; }
     if (this.fromRoomShare && sharedRoom.resumePending()) return;
     wx.switchTab({ url: '/pages/home/index' });
+  },
+  async completePendingPairing(payload) {
+    if (this.completingPendingPairing) return;
+    this.completingPendingPairing = true;
+    wx.showLoading({ title:'正在连接教师端', mask:true });
+    try {
+      const session = await pairWithTeacher(payload, sessionStore.load());
+      sessionStore.save(session);
+      getApp().globalData.session = session;
+      clearPendingPairing();
+      wx.hideLoading();
+      wx.showToast({ title:`欢迎，${session.account.name}`, icon:'success' });
+      setTimeout(() => wx.switchTab({ url:'/pages/home/index' }), 300);
+    } catch (error) {
+      wx.hideLoading();
+      clearPendingPairing();
+      this.showPairingFailure(error);
+    } finally { this.completingPendingPairing = false; }
   },
   scanLogin() {
     if (this.data.scanning) return;
@@ -50,7 +74,9 @@ Page({
     getApp().globalData.session = session;
     this.setData({ registerOpen: false });
     wx.showToast({ title: '账户创建成功', icon: 'success' });
-    setTimeout(() => { if (!sharedRoom.resumePending()) wx.switchTab({ url: '/pages/home/index' }); }, 300);
+    const pendingPairing = loadPendingPairing();
+    if (pendingPairing) setTimeout(() => this.completePendingPairing(pendingPairing), 300);
+    else setTimeout(() => { if (!sharedRoom.resumePending()) wx.switchTab({ url: '/pages/home/index' }); }, 300);
   },
   showPairingFailure(error) {
     const code = error && error.code;

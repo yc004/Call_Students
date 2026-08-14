@@ -380,6 +380,7 @@
             name: t.name,
             similarity: t.similarity,
             isRecognized: t.isRecognized,
+            seenCount: t.seenCount || 1,
           };
         });
 
@@ -498,6 +499,7 @@
           name: t.name,
           similarity: t.similarity,
           isRecognized: t.isRecognized,
+          seenCount: t.seenCount || 1,
         };
       });
 

@@ -13,6 +13,48 @@ function normalizeRoom(input) {
   return { name, connectionCode: code };
 }
 
+function parseQueryString(value) {
+  const text = String(value || '').replace(/^\?/, '');
+  return text.split('&').reduce((result, pair) => {
+    const separator = pair.indexOf('=');
+    if (separator < 0) return result;
+    const key = decodeOption(pair.slice(0, separator).replace(/\+/g, ' '));
+    const itemValue = decodeOption(pair.slice(separator + 1).replace(/\+/g, ' '));
+    result[key] = itemValue;
+    return result;
+  }, {});
+}
+
+function parseDirectLink(value) {
+  let text = String(value || '').trim();
+  if (!/^https:\/\//i.test(text)) text = decodeOption(text).trim();
+  if (!/^https:\/\//i.test(text)) return null;
+  const question = text.indexOf('?');
+  if (question < 0) return null;
+  const hash = text.indexOf('#', question);
+  const query = parseQueryString(text.slice(question + 1, hash < 0 ? text.length : hash));
+  if (query.cc_action !== 'connect') return null;
+  return normalizeRoom({
+    name: query.cc_name || '扫码连接的教室',
+    connectionCode: query.cc_code,
+  });
+}
+
+function parseScene(value) {
+  const text = decodeOption(value).trim();
+  if (!text) return null;
+  const query = parseQueryString(text);
+  const code = query.cc_code || query.c || (/^\d{9}$/.test(text) ? text : '');
+  return normalizeRoom({ name: query.cc_name || query.n || '扫码连接的教室', connectionCode: code });
+}
+
+function fromLaunchOptions(options) {
+  const query = options && options.query && typeof options.query === 'object' ? options.query : options || {};
+  return parseDirectLink(query.q || options && options.q)
+    || parseScene(query.scene || options && options.scene)
+    || normalizeRoom({ name:query.name, connectionCode:query.code });
+}
+
 function createPath(room) {
   const normalized = normalizeRoom(room);
   if (!normalized) return '/pages/home/index';
@@ -42,4 +84,14 @@ function resumePending() {
   return true;
 }
 
-module.exports = { normalizeRoom, createPath, savePending, loadPending, clearPending, resumePending };
+module.exports = {
+  normalizeRoom,
+  parseDirectLink,
+  parseScene,
+  fromLaunchOptions,
+  createPath,
+  savePending,
+  loadPending,
+  clearPending,
+  resumePending,
+};

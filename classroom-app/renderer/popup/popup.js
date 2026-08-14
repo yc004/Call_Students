@@ -63,7 +63,11 @@
     if (!call) return;
 
     if (callClass)   callClass.textContent   = call.className || '';
-    if (callStudent) callStudent.textContent = call.studentName || '';
+    const studentNames = Array.isArray(call.studentNames) ? call.studentNames.filter(Boolean) : [];
+    if (callStudent) {
+      callStudent.textContent = call.studentName || '';
+      callStudent.classList.toggle('batch', studentNames.length > 1);
+    }
     if (callMessage) callMessage.textContent = call.message || '办公室';
 
     // 倒计时条

@@ -8,6 +8,7 @@ const {
   makeStoredAccount,
 } = require('./account-auth');
 const { startPairingServer } = require('./mini-program-pairing');
+const { normalizeWechatDirectBaseUrl, createTeacherPairingDirectLink } = require('./wechat-direct-link');
 const { buildHomeworkWorkbookBuffer, normalizePayload, safeFilePart } = require('./homework-export');
 const connectionCode = require('./connection-code');
 
@@ -38,10 +39,15 @@ function loadAllData() {
     if (fs.existsSync(DATA_FILE)) {
       const raw = fs.readFileSync(DATA_FILE, 'utf-8');
       const parsed = JSON.parse(raw);
-      return { account: parsed.account || null, rooms: parsed.rooms || [], callHistory: parsed.callHistory || [] };
+      return {
+        account: parsed.account || null,
+        rooms: parsed.rooms || [],
+        callHistory: parsed.callHistory || [],
+        settings: parsed.settings && typeof parsed.settings === 'object' ? parsed.settings : {},
+      };
     }
   } catch (e) { console.error('loadAllData error:', e.message); }
-  return { account: null, rooms: [], callHistory: [] };
+  return { account: null, rooms: [], callHistory: [], settings: {} };
 }
 
 function loadData() {
@@ -75,6 +81,7 @@ function saveData(data) {
     account: data.account !== undefined ? data.account : existing.account,
     rooms: data.rooms !== undefined ? data.rooms : existing.rooms,
     callHistory: data.callHistory !== undefined ? data.callHistory : existing.callHistory,
+    settings: data.settings !== undefined ? data.settings : existing.settings,
   };
   const dir = path.dirname(DATA_FILE);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -87,6 +94,18 @@ ipcMain.handle('get-data', () => {
   return { ...data, rooms };
 });
 ipcMain.handle('save-data', (_, data) => { saveData(data); return true; });
+ipcMain.handle('get-wechat-direct-link-settings', () => {
+  const baseUrl = String(loadAllData().settings.wechatDirectBaseUrl || '');
+  return { enabled:!!baseUrl, baseUrl };
+});
+ipcMain.handle('set-wechat-direct-link-settings', (_, value) => {
+  try {
+    const baseUrl = normalizeWechatDirectBaseUrl(value);
+    const stored = loadAllData();
+    saveData({ settings:{ ...stored.settings, wechatDirectBaseUrl:baseUrl } });
+    return { ok:true, enabled:!!baseUrl, baseUrl };
+  } catch (error) { return { ok:false, message:error.message }; }
+});
 ipcMain.handle('generate-mini-program-qr', async () => {
   const stored = loadAllData();
   try {
@@ -110,7 +129,11 @@ ipcMain.handle('generate-mini-program-qr', async () => {
         };
       },
     });
-    const qrDataUrl = await QRCode.toDataURL(activeMiniProgramPairing.payload, {
+    const directBaseUrl = String(loadAllData().settings.wechatDirectBaseUrl || '');
+    const qrPayload = directBaseUrl
+      ? createTeacherPairingDirectLink(directBaseUrl, activeMiniProgramPairing.payload)
+      : activeMiniProgramPairing.payload;
+    const qrDataUrl = await QRCode.toDataURL(qrPayload, {
       width: 360,
       margin: 2,
       errorCorrectionLevel: 'M',
@@ -121,6 +144,7 @@ ipcMain.handle('generate-mini-program-qr', async () => {
       qrDataUrl,
       roomCount: activeMiniProgramPairing.roomCount,
       expiresAt: activeMiniProgramPairing.expiresAt,
+      qrMode: directBaseUrl ? 'wechat-direct' : 'mini-program-scan',
     };
   } catch (error) {
     if (activeMiniProgramPairing) activeMiniProgramPairing.stop();

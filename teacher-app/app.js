@@ -13,7 +13,7 @@
   // ── DOM ──
   let connectionCodeInput, connectBtn, roomList, noRooms, connDot, connLabel;
   let roomHeader, roomTitle, studentCount, msgRow, callMessageInp, callFlow;
-  let studentGrid, emptyState, historyTbody, noHistory;
+  let studentGrid, emptyState, historyTbody, noHistory, multiCallToggle, callBatchBar, callBatchCount, clearCallSelection, sendBatchCall, callSelectionHint;
   let searchInput, searchRow, searchResult;
   let msgEditor;
   let mainTabs, mainTabBtns, mainTabContents;
@@ -80,6 +80,8 @@
   };
   const MAX_HISTORY = 500;
   const MAX_CONNECT_ATTEMPTS = 5;
+  let multiCallMode = false;
+  const selectedCallStudentIds = new Set();
 
   // ═══════════════════════════════════
   //  持久化
@@ -107,6 +109,7 @@
     document.getElementById('miniScanLogin')?.classList.remove('hidden');
     if (accountTitle) accountTitle.textContent = '使用小程序登录';
     if (accountDesc) accountDesc.textContent = '在小程序中登录或创建教师账户，然后扫描下方二维码。';
+    loadTeacherDirectSettings();
     setTimeout(() => handleTeacherLoginQr(), 0);
   }
 
@@ -135,11 +138,22 @@
       const result = await api.generateMiniProgramQr();
       if (!result || !result.ok) { if (status) status.textContent = result && result.message || '二维码生成失败'; return; }
       if (image) image.src = result.qrDataUrl;
-      if (status) status.textContent = '打开小程序“我的—登录电脑教师端”扫码。二维码 2 分钟内有效。';
+      if (status) status.textContent = result.qrMode === 'wechat-direct'
+        ? '打开微信直接扫描即可登录教师端。二维码 2 分钟内有效。'
+        : '打开小程序“我的—登录电脑教师端”扫码。二维码 2 分钟内有效。';
       if (button) button.textContent = '刷新二维码';
       miniLoginPollTimer = setInterval(checkMiniProgramLoginStatus, 700);
     } catch (_error) { if (status) status.textContent = '二维码生成失败，请检查局域网后重试。'; }
     finally { if (button) button.disabled = false; }
+  }
+
+  async function loadTeacherDirectSettings() {
+    if (!api.getWechatDirectLinkSettings) return;
+    const input = document.getElementById('teacherDirectBaseUrl');
+    const status = document.getElementById('teacherDirectStatus');
+    const settings = await api.getWechatDirectLinkSettings();
+    if (input) input.value = settings && settings.baseUrl || '';
+    if (status) status.textContent = settings && settings.enabled ? '已启用微信直接扫码。' : '未配置时继续使用小程序内扫码。';
   }
 
   async function checkMiniProgramLoginStatus() {
@@ -817,7 +831,7 @@
       const homeroom = teacher.role === '班主任';
       return `<div class="teacher-manage-item">
         <div class="teacher-manage-main"><div class="teacher-role-line"><strong>${esc(teacher.name)}</strong><span class="teacher-role-chip${homeroom ? ' homeroom' : ''}">${esc(teacher.role)}</span></div><small>${esc(teacherSubjectText(teacher))} · ${esc(teacher.connection_id.slice(-8))}</small></div>
-        <div class="teacher-manage-actions">${homeroom ? `<button class="btn" data-teacher-action="edit" data-id="${esc(teacher.connection_id)}">设置科目</button>` : `<button class="btn" data-teacher-action="edit" data-id="${esc(teacher.connection_id)}">科目授权</button><button class="btn btn-danger-text" data-teacher-action="remove" data-id="${esc(teacher.connection_id)}">移除</button>`}</div>
+        <div class="teacher-manage-actions">${homeroom ? `<button class="btn" data-teacher-action="edit" data-id="${esc(teacher.connection_id)}">设置科目</button>` : `<button class="btn" data-teacher-action="edit" data-id="${esc(teacher.connection_id)}">科目授权</button><button class="btn btn-transfer-text" data-teacher-action="transfer" data-id="${esc(teacher.connection_id)}">转让班主任</button><button class="btn btn-danger-text" data-teacher-action="remove" data-id="${esc(teacher.connection_id)}">移除</button>`}</div>
       </div>`;
     }).join('') : '<div class="teacher-manage-empty">暂无已加入教师</div>';
   }
@@ -828,6 +842,9 @@
   }
 
   function hideRoomUI() {
+    multiCallMode = false;
+    selectedCallStudentIds.clear();
+    updateCallBatchUI();
     // 离线状态始终回到“呼叫”空页面，不能停留在上一教室的作业/出勤 Tab。
     switchMainTab('call');
     if (mainTabs)   mainTabs.classList.add('hidden');
@@ -845,7 +862,7 @@
     if (studentCount) studentCount.textContent = '';
     if (searchResult) searchResult.textContent = '';
 
-    if (!state.currentRoom || state.students.length === 0) return;
+    if (!state.currentRoom || state.students.length === 0) { updateCallBatchUI(); return; }
 
     const q = state.searchQuery || '';
     const list = q ? state.students.filter(s => s.name.toLowerCase().includes(q)) : state.students;
@@ -861,16 +878,18 @@
 
     list.forEach(s => {
       const card = document.createElement('div');
-      card.className = 'student-card';
+      const selected = selectedCallStudentIds.has(s.id);
+      card.className = `student-card${selected ? ' selected' : ''}`;
       card.innerHTML = `<div class="stu-name">${esc(s.name)}</div>`;
 
       const btn = document.createElement('button');
       btn.className = 'call-btn';
-      btn.textContent = '呼叫';
-      btn.addEventListener('click', () => callStudent(s, btn));
+      btn.textContent = multiCallMode ? (selected ? '✓ 已选择' : '选择') : '呼叫';
+      btn.addEventListener('click', () => multiCallMode ? toggleCallStudent(s.id) : callStudent(s, btn));
       card.appendChild(btn);
       studentGrid.appendChild(card);
     });
+    updateCallBatchUI();
   }
 
   // ═══════════════════════════════════
@@ -878,33 +897,7 @@
   // ═══════════════════════════════════
 
   function callStudent(student, btnEl) {
-    if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
-      alert('未连接到教室，请先输入连接码并连接');
-      return;
-    }
-
-    const callId = genId();
-    const rawMsg = (callMessageInp && callMessageInp.value.trim()) || '{name}同学，请到办公室';
-    const msg = rawMsg.replace(/\{name\}/g, student.name);
-
-    state.ws.send(JSON.stringify({
-      type: 'call', callId,
-      studentName: student.name,
-      className: state.className,
-      message: msg,
-    }));
-
-    state.callHistory.unshift({
-      id: callId,
-      roomName: state.className || (state.currentRoom ? state.currentRoom.name : ''),
-      studentName: student.name,
-      time: new Date().toISOString(),
-      status: 'sent',
-    });
-    if (state.callHistory.length > MAX_HISTORY) state.callHistory.length = MAX_HISTORY;
-    renderHistory();
-    saveToDisk();
-
+    if (!sendCallToStudents([student])) return;
     btnEl.classList.add('called');
     btnEl.textContent = '✓ 已发送';
     clearTimeout(state.callTimers[student.name]);
@@ -912,6 +905,84 @@
       btnEl.classList.remove('called');
       btnEl.textContent = '呼叫';
     }, 5000);
+  }
+
+  function formatCallTarget(students) {
+    const names = students.map(student => student.name);
+    const base = names.length <= 4 ? names.join('、') : `${names.slice(0, 3).join('、')}等${names.length}位`;
+    return { base, display:names.length > 4 ? `${base}同学` : base };
+  }
+
+  function sendCallToStudents(students) {
+    if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
+      alert('未连接到教室，请先输入连接码并连接');
+      return false;
+    }
+    if (!students.length) return false;
+
+    const callId = genId();
+    const rawMsg = (callMessageInp && callMessageInp.value.trim()) || '{name}同学，请到办公室';
+    const target = formatCallTarget(students);
+    const studentName = target.display;
+    const studentNames = students.map(student => student.name);
+    const msg = rawMsg.replace(/\{name\}同学/g, `${target.base}同学`).replace(/\{name\}/g, studentName);
+
+    state.ws.send(JSON.stringify({
+      type: 'call', callId,
+      studentName,
+      studentNames,
+      className: state.className,
+      message: msg,
+    }));
+
+    state.callHistory.unshift({
+      id: callId,
+      roomName: state.className || (state.currentRoom ? state.currentRoom.name : ''),
+      studentName,
+      time: new Date().toISOString(),
+      status: 'sent',
+    });
+    if (state.callHistory.length > MAX_HISTORY) state.callHistory.length = MAX_HISTORY;
+    renderHistory();
+    saveToDisk();
+    return true;
+  }
+
+  function updateCallBatchUI() {
+    if (multiCallToggle) {
+      multiCallToggle.classList.toggle('active', multiCallMode);
+      multiCallToggle.textContent = multiCallMode ? '取消多选' : '多选呼叫';
+    }
+    if (callSelectionHint) callSelectionHint.textContent = multiCallMode ? '勾选多名学生后统一发送' : '点击学生卡片中的呼叫按钮即可发送';
+    if (callBatchBar) callBatchBar.classList.toggle('hidden', !multiCallMode);
+    if (callBatchCount) callBatchCount.textContent = `已选 ${selectedCallStudentIds.size} 人`;
+    if (sendBatchCall) sendBatchCall.disabled = selectedCallStudentIds.size === 0;
+    if (clearCallSelection) clearCallSelection.disabled = selectedCallStudentIds.size === 0;
+  }
+
+  function toggleCallMultiMode() {
+    multiCallMode = !multiCallMode;
+    if (!multiCallMode) selectedCallStudentIds.clear();
+    renderStudents();
+  }
+
+  function toggleCallStudent(studentId) {
+    if (selectedCallStudentIds.has(studentId)) selectedCallStudentIds.delete(studentId);
+    else selectedCallStudentIds.add(studentId);
+    renderStudents();
+  }
+
+  function clearSelectedCallStudents() {
+    selectedCallStudentIds.clear();
+    renderStudents();
+  }
+
+  function sendSelectedCallStudents() {
+    const students = state.students.filter(student => selectedCallStudentIds.has(student.id));
+    if (!students.length || !sendCallToStudents(students)) return;
+    selectedCallStudentIds.clear();
+    multiCallMode = false;
+    renderStudents();
   }
 
   function updateCallStatus(callId, status) {
@@ -1937,6 +2008,9 @@
         renderStudents();
       });
     }
+    if (multiCallToggle) multiCallToggle.addEventListener('click', toggleCallMultiMode);
+    if (clearCallSelection) clearCallSelection.addEventListener('click', clearSelectedCallStudents);
+    if (sendBatchCall) sendBatchCall.addEventListener('click', sendSelectedCallStudents);
 
     initEditor();
 
@@ -1992,6 +2066,10 @@
         teacherEditSubjects.value = (teacher.subjects || []).join(', ');
         teacherEditModal.classList.remove('hidden');
         teacherEditSubjects.focus();
+      } else if (action === 'transfer') {
+        const teacher = (state.teachers.approved || []).find(item => item.connection_id === connectionId);
+        if (!teacher || !confirm(`确认将班主任身份转让给“${teacher.name}”吗？\n\n转让后，对方将获得全部班级管理权限；你会变为普通任课教师并保留当前授课科目。`)) return;
+        sendTeacherManagement(action, connectionId);
       } else if ((action === 'remove' || action === 'reject') && !confirm(action === 'remove' ? '确定移除这位任课教师吗？' : '确定拒绝这条加入请求吗？')) {
         return;
       } else {
@@ -2042,6 +2120,21 @@
 
     const refreshTeacherLoginQr = document.getElementById('refreshTeacherLoginQr');
     if (refreshTeacherLoginQr) refreshTeacherLoginQr.addEventListener('click', handleTeacherLoginQr);
+    const saveTeacherDirectUrl = document.getElementById('saveTeacherDirectUrl');
+    if (saveTeacherDirectUrl) saveTeacherDirectUrl.addEventListener('click', async () => {
+      const input = document.getElementById('teacherDirectBaseUrl');
+      const status = document.getElementById('teacherDirectStatus');
+      saveTeacherDirectUrl.disabled = true;
+      if (status) status.textContent = '正在保存…';
+      try {
+        const result = await api.setWechatDirectLinkSettings(input && input.value || '');
+        if (!result || !result.ok) throw new Error(result && result.message || '保存失败');
+        if (input) input.value = result.baseUrl || '';
+        if (status) status.textContent = result.enabled ? '已启用微信直接扫码。' : '已关闭，继续使用小程序内扫码。';
+        await handleTeacherLoginQr();
+      } catch (error) { if (status) status.textContent = error.message || '保存失败'; }
+      finally { saveTeacherDirectUrl.disabled = false; }
+    });
     const generateMiniProgramQrBtn = document.getElementById('generateMiniProgramQrBtn');
     if (generateMiniProgramQrBtn) generateMiniProgramQrBtn.addEventListener('click', handleGenerateMiniProgramQr);
     if (accountMenuBtn) accountMenuBtn.addEventListener('click', openAccountModal);
@@ -2132,6 +2225,12 @@
     searchInput    = document.getElementById('searchInput');
     searchRow      = document.getElementById('searchRow');
     searchResult   = document.getElementById('searchResult');
+    multiCallToggle = document.getElementById('multiCallToggle');
+    callBatchBar = document.getElementById('callBatchBar');
+    callBatchCount = document.getElementById('callBatchCount');
+    clearCallSelection = document.getElementById('clearCallSelection');
+    sendBatchCall = document.getElementById('sendBatchCall');
+    callSelectionHint = document.getElementById('callSelectionHint');
     historyTbody   = document.querySelector('#historyTable tbody');
     noHistory      = document.getElementById('noHistory');
 

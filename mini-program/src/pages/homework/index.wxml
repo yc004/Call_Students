@@ -4,16 +4,16 @@
     <button class="header-action compose-button" size="mini" data-type="{{contentType}}" bindtap="openComposer" wx:if="{{canCompose}}">{{contentType === 'notice' ? '发布通知' : '布置作业'}}</button>
   </view>
 
-  <view class="content-switch"><view class="{{contentType === 'homework' ? 'active' : ''}}" data-type="homework" bindtap="selectContentType">作业</view><view class="{{contentType === 'notice' ? 'active' : ''}}" data-type="notice" bindtap="selectContentType">通知</view></view>
+  <view class="content-switch"><view class="{{contentType === 'homework' ? 'active' : ''}}" data-type="homework" bindtap="selectContentType" hover-class="segment-pressed">作业</view><view class="{{contentType === 'notice' ? 'active' : ''}}" data-type="notice" bindtap="selectContentType" hover-class="segment-pressed">通知</view></view>
 
   <view class="stage-switch surface">
-    <view class="stage-option {{homeworkStage === 'pending' ? 'active' : ''}}" data-stage="pending" bindtap="selectStage"><view><text>{{contentType === 'notice' ? '生效中通知' : '待提交作业'}}</text><text>{{contentType === 'notice' ? '未到结束时间' : '未到截止时间'}}</text></view><text class="stage-count">{{contentType === 'notice' ? activeNoticeCount : pendingCount}}</text></view>
-    <view class="stage-option {{homeworkStage === 'closed' ? 'active' : ''}}" data-stage="closed" bindtap="selectStage"><view><text>{{contentType === 'notice' ? '历史通知' : '提交统计'}}</text><text>{{contentType === 'notice' ? '已到结束时间' : '已到截止时间'}}</text></view><text class="stage-count">{{contentType === 'notice' ? endedNoticeCount : closedCount}}</text></view>
+    <view class="stage-option {{homeworkStage === 'pending' ? 'active' : ''}}" data-stage="pending" bindtap="selectStage" hover-class="segment-pressed"><view><text>{{contentType === 'notice' ? '生效中通知' : '待提交作业'}}</text><text>{{contentType === 'notice' ? '未到结束时间' : '未到截止时间'}}</text></view><text class="stage-count">{{contentType === 'notice' ? activeNoticeCount : pendingCount}}</text></view>
+    <view class="stage-option {{homeworkStage === 'closed' ? 'active' : ''}}" data-stage="closed" bindtap="selectStage" hover-class="segment-pressed"><view><text>{{contentType === 'notice' ? '历史通知' : '提交统计'}}</text><text>{{contentType === 'notice' ? '已到结束时间' : '已到截止时间'}}</text></view><text class="stage-count">{{contentType === 'notice' ? endedNoticeCount : closedCount}}</text></view>
   </view>
 
   <view class="subject-filter" wx:if="{{subjects.length}}">
     <scroll-view scroll-x enhanced show-scrollbar="{{false}}">
-      <view class="filter-inner"><view class="filter-chip {{selectedSubject === '' ? 'active' : ''}}" data-subject="" bindtap="selectSubject">全部</view><view class="filter-chip {{selectedSubject === item ? 'active' : ''}}" wx:for="{{subjects}}" wx:key="*this" data-subject="{{item}}" bindtap="selectSubject">{{item}}</view></view>
+      <view class="filter-inner"><view class="filter-chip {{selectedSubject === '' ? 'active' : ''}}" data-subject="" bindtap="selectSubject" hover-class="chip-pressed">全部</view><view class="filter-chip {{selectedSubject === item ? 'active' : ''}}" wx:for="{{subjects}}" wx:key="*this" data-subject="{{item}}" bindtap="selectSubject" hover-class="chip-pressed">{{item}}</view></view>
     </scroll-view>
   </view>
 
@@ -40,7 +40,7 @@
     <view class="bottom-sheet composer-sheet">
       <view class="sheet-handle"></view>
       <view class="sheet-title"><view><text>{{editingAssignmentId ? (publishType === 'notice' ? '编辑通知' : '编辑作业') : (publishType === 'notice' ? '发布通知' : '布置作业')}}</text><text class="sheet-subtitle">{{editingAssignmentId ? '修改后将同步到教室端和其他教师设备' : (publishType === 'notice' ? '结束后自动进入历史通知' : '截止后自动进入提交统计')}}</text></view><text class="sheet-close" bindtap="closeComposer">×</text></view>
-      <view class="publish-switch" wx:if="{{!editingAssignmentId}}"><view class="{{publishType === 'homework' ? 'active' : ''}}" data-type="homework" bindtap="selectPublishType">作业</view><view class="{{publishType === 'notice' ? 'active' : ''}}" data-type="notice" bindtap="selectPublishType">通知</view></view>
+      <view class="publish-switch" wx:if="{{!editingAssignmentId}}"><view class="{{publishType === 'homework' ? 'active' : ''}}" data-type="homework" bindtap="selectPublishType" hover-class="segment-pressed">作业</view><view class="{{publishType === 'notice' ? 'active' : ''}}" data-type="notice" bindtap="selectPublishType" hover-class="segment-pressed">通知</view></view>
       <text class="label">授课学科</text>
       <picker mode="selector" range="{{allowedSubjects}}" value="{{draftSubjectIndex}}" disabled="{{editingAssignmentId && !isHomeroom}}" bindchange="setDraftSubject"><view class="picker-field {{editingAssignmentId && !isHomeroom ? 'disabled' : ''}}"><text>{{allowedSubjects[draftSubjectIndex] || '请选择学科'}}</text><text class="picker-arrow" wx:if="{{!editingAssignmentId || isHomeroom}}">›</text></view></picker>
       <text class="label">{{publishType === 'notice' ? '通知内容' : '作业内容'}}</text>

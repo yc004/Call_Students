@@ -1,6 +1,6 @@
 .profile-page { min-height: 100vh; padding: 20rpx 32rpx calc(150rpx + env(safe-area-inset-bottom)); background: #f5f5f5; color: #191919; }
-.profile-account { display: flex; align-items: center; min-height: 160rpx; padding: 24rpx 8rpx; }
-.avatar { display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 104rpx; height: 104rpx; border-radius: 22rpx; background: #07c160; color: #fff; font-size: 38rpx; font-weight: 600; }
+.profile-account { display: flex; align-items: center; min-height: 160rpx; padding: 24rpx 8rpx; animation:profile-in .35s cubic-bezier(.22,1,.36,1) both; }
+.avatar { display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 104rpx; height: 104rpx; border-radius: 22rpx; background: #07c160; color: #fff; font-size: 38rpx; font-weight: 600; animation:avatar-pop .46s .08s cubic-bezier(.22,1,.36,1) both; }
 .account-main { flex: 1; min-width: 0; margin-left: 24rpx; }
 .account-name { display: block; color: #191919; font-size: 36rpx; font-weight: 600; line-height: 1.35; }
 .account-role { display: block; margin-top: 4rpx; color: #888; font-size: 24rpx; }
@@ -9,7 +9,7 @@
 .profile-section { margin: 18rpx 8rpx 14rpx; }
 .profile-section-title { display: block; color: #191919; font-size: 28rpx; font-weight: 600; }
 .profile-section-note { display: block; margin-top: 5rpx; color: #888; font-size: 22rpx; }
-.weui-cells { overflow: hidden; margin: 0; border-radius: 20rpx; background: #fff; }
+.weui-cells { overflow: hidden; margin: 0; border-radius: 20rpx; background: #fff; animation:profile-in .38s .08s cubic-bezier(.22,1,.36,1) both; }
 .weui-cell { position: relative; display: flex; align-items: center; min-height: 112rpx; padding: 18rpx 24rpx; }
 .weui-cell + .weui-cell::before { position: absolute; top: 0; right: 0; left: 108rpx; height: 1rpx; background: #ededed; content: ""; }
 .weui-cell__hd { flex-shrink: 0; margin-right: 20rpx; }
@@ -52,6 +52,8 @@
 .field { width: 100%; height: 88rpx; padding: 0 24rpx; border: 1rpx solid #d8d8d8; border-radius: 12rpx; background: #fff; color: #191919; font-size: 28rpx; }
 .network-tip { margin-top: 24rpx; padding: 20rpx 22rpx; border-radius: 12rpx; background: #fff5e8; color: #a65f00; font-size: 22rpx; line-height: 1.55; }
 .save-room { margin-top: 34rpx; }
+@keyframes profile-in{from{opacity:0;transform:translateY(16rpx)}to{opacity:1;transform:none}}
+@keyframes avatar-pop{0%{opacity:0;transform:scale(.68) rotate(-7deg)}70%{transform:scale(1.06)}100%{opacity:1;transform:none}}
 @media (prefers-color-scheme: dark) {
   .profile-page { background:#111; color:rgba(255,255,255,.9); }
   .account-name, .profile-section-title, .setting-copy text, .room-main text { color:rgba(255,255,255,.92); }
@@ -73,3 +75,4 @@
   .network-tip { background:#3b2c17; color:#ffc36b; }
   .field { border-color:rgba(255,255,255,.14); background:#242424; color:rgba(255,255,255,.92); }
 }
+@media(prefers-reduced-motion:reduce){.profile-account,.avatar,.weui-cells{animation:none}}

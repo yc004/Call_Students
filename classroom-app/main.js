@@ -5,7 +5,11 @@ const path = require('path');
 const os = require('os');
 const { getLanInterfaces: selectLanInterfaces } = require('./lan-addresses');
 const connectionCode = require('./connection-code');
-const { createClassroomQrPayload } = require('./classroom-qr');
+const {
+  createClassroomQrPayload,
+  createWechatDirectLink,
+  normalizeWechatDirectBaseUrl,
+} = require('./classroom-qr');
 let Database = null;
 let QRCode = null;
 
@@ -30,6 +34,9 @@ let nativeFaceEngine = null;
 let NATIVE_AVAILABLE = false;
 let ACTIVE_EMBEDDING_MODEL = LEGACY_EMBEDDING_MODEL;
 const SFACE_COSINE_THRESHOLD = 0.363;
+// 与渲染进程的连续识别确认次数保持一致：单帧未识别可能只是姿态、光照或模型确认延迟，
+// 不应立即进入班主任待匹配库。
+const PENDING_FACE_CONFIRM_COUNT = 2;
 const CI_SMOKE_TEST = process.argv.includes('--ci-smoke-test');
 
 function getDatabaseConstructor() {
@@ -463,11 +470,36 @@ async function getClassroomQrData() {
   const connectionCodes = getConnectionCodes();
   if (!connectionCodes.length) return { success: false, message: '未检测到可用的局域网连接', network };
   const className = getDb().prepare("SELECT value FROM meta WHERE key='className'").get()?.value || '本教室';
+  const wechatDirectBaseUrl = getDb().prepare("SELECT value FROM meta WHERE key='wechatDirectBaseUrl'").get()?.value || '';
   const connectionCodeValue = connectionCodes[0];
   if (!QRCode) QRCode = require('qrcode');
-  const payload = createClassroomQrPayload(className, connectionCodeValue);
+  const payload = wechatDirectBaseUrl
+    ? createWechatDirectLink(wechatDirectBaseUrl, className, connectionCodeValue)
+    : createClassroomQrPayload(className, connectionCodeValue);
   const qrDataUrl = await QRCode.toDataURL(payload, { errorCorrectionLevel: 'M', width: 360, margin: 2 });
-  return { success: true, name: className || '本教室', connectionCode: connectionCodeValue, qrDataUrl, network };
+  return {
+    success: true,
+    name: className || '本教室',
+    connectionCode: connectionCodeValue,
+    qrDataUrl,
+    qrMode: wechatDirectBaseUrl ? 'wechat-direct' : 'mini-program-scan',
+    wechatDirectBaseUrl,
+    network,
+  };
+}
+
+function getWechatDirectLinkSettings() {
+  const baseUrl = getDb().prepare("SELECT value FROM meta WHERE key='wechatDirectBaseUrl'").get()?.value || '';
+  return { enabled: !!baseUrl, baseUrl };
+}
+
+function setWechatDirectLinkSettings(baseUrl) {
+  let normalized = '';
+  try { normalized = normalizeWechatDirectBaseUrl(baseUrl); }
+  catch (error) { return { success:false, message:error.message, ...getWechatDirectLinkSettings() }; }
+  if (normalized) getDb().prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('wechatDirectBaseUrl', ?)").run(normalized);
+  else getDb().prepare("DELETE FROM meta WHERE key='wechatDirectBaseUrl'").run();
+  return { success:true, ...getWechatDirectLinkSettings() };
 }
 
 function getOnboardingStatus() {
@@ -917,6 +949,7 @@ function createPopupWindow() {
       popupWin.webContents.send('show-call', {
         callId:      call.callId,
         studentName: call.studentName,
+        studentNames: call.studentNames || [call.studentName],
         className:   call.className,
         message:     call.message,
       });
@@ -1176,6 +1209,7 @@ function prunePendingFacesRecognizedByGallery(galleryManager = getGallery()) {
 
 function storePendingFace(det) {
   if (!Array.isArray(det.descriptor) || det.descriptor.length !== 128 || det.descriptor.some(value => !Number.isFinite(value))) return false;
+  if (Number.isFinite(det.seenCount) && det.seenCount < PENDING_FACE_CONFIRM_COUNT) return false;
   const descriptor = det.descriptor.map(Number);
   // 标注后的短时间内，渲染进程可能仍上报旧的“未识别”追踪；以最新底库为准二次拦截。
   const galleryManager = getGallery();
@@ -1299,7 +1333,9 @@ function startWSServer() {
               type: 'approval-required',
               className: data.className,
               teacher,
-              message: isHomeroomBound() ? '等待教室管理员批准' : '请在教室端首次设置中将班主任账户完成绑定',
+              message: !isHomeroomBound()
+                ? '教室端尚未绑定班主任，请先完成首次设置'
+                : (!isClassroomConfigured() ? '等待班主任完成教室初始化配置' : '等待班主任批准加入'),
             }));
           }
           console.log(`[WS] connect from ${remote}, teacher=${teacher.name}, role=${teacher.role}, status=${teacher.status}`);
@@ -1371,11 +1407,15 @@ function startWSServer() {
         case 'call': {
           if (!checkTeacherPerm(ws, msg)) return;
           if (!msg.callId || !msg.studentName) return;
+          const studentNames = (Array.isArray(msg.studentNames) ? msg.studentNames : [msg.studentName])
+            .map(name => String(name || '').trim().slice(0, 20)).filter(Boolean).slice(0, 60);
+          if (!studentNames.length) return;
           enqueueCall({
             callId: msg.callId,
-            studentName: msg.studentName,
-            className: msg.className || '',
-            message: msg.message || '办公室',
+            studentName: String(msg.studentName).trim().slice(0, 160),
+            studentNames,
+            className: String(msg.className || '').slice(0, 40),
+            message: String(msg.message || '办公室').slice(0, 240),
           }, ws);
           break;
         }
@@ -1527,7 +1567,26 @@ function startWSServer() {
             const target = d.prepare('SELECT role FROM approved_teachers WHERE connection_id=?').get(connectionId);
             if (!target || target.role === '班主任') return;
             removeTeacher(connectionId);
-            refreshTeacherConnections(connectionId, true);
+            refreshTeacherConnections(connectionId, true, true);
+          } else if (action === 'transfer') {
+            const target = d.prepare('SELECT role, subjects FROM approved_teachers WHERE connection_id=?').get(connectionId);
+            const current = d.prepare('SELECT role FROM approved_teachers WHERE connection_id=?').get(operator.connectionId);
+            if (!target || target.role === '班主任' || !current || current.role !== '班主任') {
+              ws.send(JSON.stringify({ type: 'auth-required', message: '班主任转让对象无效，请刷新教师成员列表后重试' }));
+              return;
+            }
+            if (!normalizeSubjects(JSON.parse(target.subjects || '[]')).length) {
+              ws.send(JSON.stringify({ type: 'auth-required', message: '接任教师必须先设置至少一个授课科目' }));
+              return;
+            }
+            d.transaction(() => {
+              d.prepare("UPDATE approved_teachers SET role='授课教师' WHERE connection_id=? AND role='班主任'")
+                .run(operator.connectionId);
+              d.prepare("UPDATE approved_teachers SET role='班主任' WHERE connection_id=? AND role<>'班主任'")
+                .run(connectionId);
+            })();
+            refreshTeacherConnections(connectionId, false);
+            refreshTeacherConnections(operator.connectionId, false);
           } else {
             return;
           }
@@ -1665,14 +1724,16 @@ function sendTeacherSync(ws, data) {
   }));
 }
 
-function refreshTeacherConnections(connectionId, rejected) {
+function refreshTeacherConnections(connectionId, rejected, removed = false) {
   if (!wss) return;
   const data = loadData();
   wss.clients.forEach(ws => {
     if (!ws._teacher || ws._teacher.connectionId !== connectionId || ws.readyState !== WebSocket.OPEN) return;
     if (rejected) {
-      ws._teacher.status = 'rejected';
-      ws.send(JSON.stringify({ type: 'approval-rejected', className: data.className, message: '管理员未批准或已移除此账户' }));
+      ws._teacher.status = removed ? 'left' : 'rejected';
+      ws.send(JSON.stringify(removed
+        ? { type: 'membership-revoked', className: data.className, message: `班主任已将你移出“${data.className || '当前教室'}”，本地教室记录已删除` }
+        : { type: 'approval-rejected', className: data.className, message: '班主任未批准此次加入申请' }));
       return;
     }
     const current = findTeacher(connectionId);
@@ -1746,6 +1807,8 @@ ipcMain.on('move-homework-float', (event, dx, dy) => {
 
 ipcMain.handle('get-onboarding-status', () => getOnboardingStatus());
 ipcMain.handle('get-classroom-qr', () => getClassroomQrData());
+ipcMain.handle('get-wechat-direct-link-settings', () => getWechatDirectLinkSettings());
+ipcMain.handle('set-wechat-direct-link-settings', (_, baseUrl) => setWechatDirectLinkSettings(baseUrl));
 ipcMain.handle('get-network-interfaces', () => getNetworkInterfaceStatus());
 ipcMain.handle('set-network-interface', (_, name) => setNetworkInterface(name));
 ipcMain.handle('bind-homeroom-teacher', (_, connectionId) => bindHomeroomTeacher(connectionId));
