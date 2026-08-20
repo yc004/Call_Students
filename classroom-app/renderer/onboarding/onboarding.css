@@ -74,6 +74,11 @@ button { -webkit-tap-highlight-color:transparent; }
 .primary-button:hover:not(:disabled) { background:var(--blue-dark); }
 .primary-button:disabled { border-color:#c8d0df; color:#8e9aad; background:#e7ebf2; box-shadow:none; cursor:not-allowed; }
 .security-note { margin:9px 0 0; color:var(--faint); font-size:11px; text-align:center; }
+#rejectBtn { margin-top:10px; padding:8px 10px; color:#c0392b; }
+#rejectBtn:hover { text-decoration:underline; }
+.secondary-button { width:100%; min-height:44px; margin-top:10px; border:1px solid #e2b13c; border-radius:10px; color:#8a6116; background:#fff8e6; font-weight:750; cursor:pointer; }
+.secondary-button:hover:not(:disabled) { background:#fff1cf; }
+.secondary-button:disabled { border-color:#e5d8b8; color:#b9a87f; background:#f7f1e2; cursor:not-allowed; }
 
 .success-overlay { position:fixed; inset:0; z-index:10; display:grid; place-items:center; padding:24px; background:rgba(18,31,55,.48); backdrop-filter:blur(6px); }
 .success-card { width:min(390px,100%); padding:34px; border-radius:20px; background:#fff; box-shadow:0 28px 80px rgba(15,28,54,.25); text-align:center; }

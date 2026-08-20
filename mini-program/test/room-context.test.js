@@ -18,4 +18,10 @@ assert.strictEqual(context.featureUrl('settings',room),'/pages/classroom-setting
 const removed = require('../src/utils/session').sessionStore.removeRoom(room.connectionCode);
 assert.deepStrictEqual(removed.rooms,[]);
 assert.strictEqual(removed.activeRoom,null);
+const cloudRoom={id:'cloud-room',cloudClassroomId:'8ad0e55d-5e19-41f0-9573-771cbbed6069',transport:'cloud',name:'云端班级',connectionCode:'',subjects:['数学']};
+stored={account:{name:'刘老师',connectionId:'mini-test-account'},rooms:[cloudRoom],activeRoom:null,cloud:{serverUrl:'https://cloud.example.com',accessToken:'a',refreshToken:'r'}};
+const cloudResult=context.activateByCode(`cloud:${cloudRoom.cloudClassroomId}`);
+assert.strictEqual(cloudResult.room.name,'云端班级');
+assert.strictEqual(context.featureUrl('homework',cloudRoom),`/pages/homework/index?code=cloud%3A${cloudRoom.cloudClassroomId}`);
+assert.deepStrictEqual(require('../src/utils/session').sessionStore.removeRoom(cloudRoom).rooms,[]);
 console.log('room context tests passed');

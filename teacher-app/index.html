@@ -111,6 +111,8 @@
           <span id="faceSummary" class="face-summary">等待同步</span>
         </header>
 
+        <div id="faceLanWarning" class="face-lan-warning hidden"><span>!</span><div><strong>当前局域网连接失败，人脸服务不可用</strong><small>云服务仍可正常使用。请确认教师电脑与教室电脑处于同一局域网后重试。</small></div><button id="retryFaceLanBtn" class="btn btn-sm" type="button">重新连接</button></div>
+
         <div class="attendance-overview" aria-label="出勤概览">
           <div class="attendance-stat stat-total">
             <span class="attendance-stat-icon" aria-hidden="true">全</span>
@@ -316,6 +318,14 @@
     </div>
     <div class="account-id-row"><span>连接 ID</span><code id="accountConnectionId"></code></div>
     <p class="account-field-hint">教室管理员可通过此身份批准你的设备。</p>
+    <details class="wechat-direct-settings cloud-account-settings">
+      <summary>云服务设置</summary>
+      <p>使用管理员分配给当前教师账号的 tk_ 身份密钥接入云服务。教室关系由教室端和云管理员统一同步。</p>
+      <input id="accountCloudServer" type="url" placeholder="https://cloud.example.com">
+      <input id="accountCloudKey" type="password" placeholder="分配给当前教师的 tk_ 身份密钥">
+      <div><button id="accountCloudConnectBtn" class="btn btn-sm" type="button">接入教师云账号</button><button id="accountCloudRefreshBtn" class="btn btn-sm" type="button">刷新教室</button></div>
+      <small id="accountCloudStatus">尚未连接云服务</small>
+    </details>
     <section class="mini-login-section" aria-labelledby="miniLoginTitle">
       <div class="login-key-heading">
         <div><strong id="miniLoginTitle">微信小程序安全配对</strong><small>通过局域网一次性传输身份和已保存教室</small></div>
@@ -359,6 +369,7 @@
 
   <script src="connection-code.js"></script>
   <script src="homework-view.js"></script>
-  <script src="app.js?v=15"></script>
+  <script src="cloud-client.js"></script>
+  <script src="app.js?v=16"></script>
 </body>
 </html>

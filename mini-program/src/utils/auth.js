@@ -107,7 +107,7 @@ function requestHost(host, pairing, localSession) {
       try { socket.close(); } catch (_error) {}
       if (error) reject(error); else resolve(data);
     }
-    socket.onConnect(() => socket.write(`${JSON.stringify({ token: pairing.token, account: localSession.account, rooms: localSession.rooms || [] })}\n`));
+    socket.onConnect(() => socket.write(`${JSON.stringify({ token: pairing.token, account: localSession.account, rooms: localSession.rooms || [], cloud:localSession.cloud || null })}\n`));
     socket.onMessage(({ message }) => {
       const bytes = new Uint8Array(message);
       for (let index = 0; index < bytes.length; index += 1) receivedBytes.push(bytes[index]);
@@ -152,6 +152,7 @@ function normalizeSession(data) {
     account: { name, connectionId, subjects: [] },
     rooms,
     activeRoom: rooms[0] || null,
+    cloud: data && data.cloud || null,
     pairedAt: new Date().toISOString(),
   };
 }

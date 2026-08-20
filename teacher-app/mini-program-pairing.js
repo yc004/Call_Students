@@ -61,6 +61,17 @@ function parsePairingPayload(value) {
 
 function safeRooms(rooms) {
   return (Array.isArray(rooms) ? rooms : []).slice(0, 50).map(room => {
+    if (room && room.transport === 'cloud' && room.cloudClassroomId) {
+      return {
+        id:String(room.id || room.cloudClassroomId).slice(0, 80),
+        cloudClassroomId:String(room.cloudClassroomId).slice(0, 80),
+        name:String(room.name || '云端教室').slice(0, 40),
+        transport:'cloud',
+        connectionCode:connectionCode.isValid(room.connectionCode) ? connectionCode.format(room.connectionCode) : '',
+        subjects:Array.from(new Set((room.subjects || []).map(value => String(value).trim().slice(0, 30)).filter(Boolean))).slice(0, 20),
+        role:String(room.role || '').slice(0, 20),
+      };
+    }
     const code = connectionCode.format(room.connectionCode);
     if (!connectionCode.isValid(code)) return null;
     return {
@@ -70,6 +81,14 @@ function safeRooms(rooms) {
       subjects: Array.from(new Set((room.subjects || []).map(value => String(value).trim().slice(0, 30)).filter(Boolean))).slice(0, 20),
     };
   }).filter(Boolean);
+}
+
+function safeCloud(cloud) {
+  if (!cloud || !/^https?:\/\//i.test(String(cloud.serverUrl || ''))) return null;
+  const accessToken = String(cloud.accessToken || '');
+  const refreshToken = String(cloud.refreshToken || '');
+  if (!accessToken || !refreshToken) return null;
+  return { version:1, serverUrl:String(cloud.serverUrl).replace(/\/+$/, '').slice(0, 500), userId:String(cloud.userId || '').slice(0, 80), accessToken:accessToken.slice(0, 4096), accessExpiresAt:String(cloud.accessExpiresAt || '').slice(0, 80), refreshToken:refreshToken.slice(0, 512), expiresAt:String(cloud.expiresAt || '').slice(0, 80) };
 }
 
 function sendJson(socket, body) {
@@ -106,7 +125,7 @@ async function startPairingServer({ ttlMs = DEFAULT_TTL_MS, hosts = getLanAddres
     socket.on('data', chunk => {
       if (processed) return;
       input += chunk.toString('utf8');
-      if (Buffer.byteLength(input, 'utf8') > 4096) {
+      if (Buffer.byteLength(input, 'utf8') > 32768) {
         processed = true;
         sendJson(socket, { ok: false, message: '配对请求过大' });
         return;
@@ -138,10 +157,11 @@ async function startPairingServer({ ttlMs = DEFAULT_TTL_MS, hosts = getLanAddres
       const account = { name, connectionId, subjects: [] };
       // 扫码登录以小程序为唯一身份与教室数据源，不混入这台电脑残留的数据。
       const syncedRooms = safeRooms(body.rooms);
+      const cloud = safeCloud(body.cloud);
       used = true;
-      sendJson(socket, { ok: true, account, rooms: syncedRooms });
+      sendJson(socket, { ok: true, account, rooms: syncedRooms, cloud });
       if (typeof onComplete === 'function') {
-        try { onComplete({ account, rooms: syncedRooms }); } catch (_error) {}
+        try { onComplete({ account, rooms: syncedRooms, cloud }); } catch (_error) {}
       }
       setTimeout(() => server.close(), 100).unref?.();
     });

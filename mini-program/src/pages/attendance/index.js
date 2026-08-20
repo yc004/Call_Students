@@ -1,6 +1,7 @@
 const socket = require('../../utils/socket');
 const { sessionStore } = require('../../utils/session');
 const roomContext = require('../../utils/room-context');
+const faceLan = require('../../utils/face-lan');
 
 function formatTime(value) {
   const date = new Date(value); if (!value || Number.isNaN(date.getTime())) return '';
@@ -8,7 +9,7 @@ function formatTime(value) {
 }
 
 Page({
-  data: { status:'offline',statusMessage:'未连接',className:'',roomName:'',students:[],visibleStudents:[],liveFaces:[],pendingFaces:[],filter:'all',query:'',presentCount:0,arrivedCount:0,awayCount:0,unseenCount:0,totalCount:0,presentPercent:0,pendingFaceCount:0,isHomeroom:false,updatedText:'等待数据' },
+  data: { status:'offline',statusMessage:'未连接',faceLanUnavailable:false,faceLanMessage:'',className:'',roomName:'',students:[],visibleStudents:[],liveFaces:[],pendingFaces:[],filter:'all',query:'',presentCount:0,arrivedCount:0,awayCount:0,unseenCount:0,totalCount:0,presentPercent:0,pendingFaceCount:0,isHomeroom:false,updatedText:'等待数据' },
   onLoad(options) {
     const session=sessionStore.load(); if(!session){ wx.reLaunch({url:'/pages/login/index'}); return; }
     const context=roomContext.activateByCode(options && options.code);if(!context){wx.showToast({title:'教室信息已失效',icon:'none'});setTimeout(()=>wx.navigateBack(),300);return;}
@@ -20,12 +21,23 @@ Page({
       if(event==='presence') this.applyPresence(payload.detections || []);
       if(event==='pendingFaces') this.applyPendingFaces(payload.faces || []);
     });
-    socket.connect(context.room,context.session.account,{force:true});
+    if (context.room.transport === 'cloud') this.connectFaceLan(context.room, context.session.account);
+    else socket.connect(context.room,context.session.account,{force:true});
   },
-  onUnload(){ this.unsubscribe && this.unsubscribe(); },
+  onUnload(){ this.unsubscribe && this.unsubscribe(); this.faceLanConnection && this.faceLanConnection.close(); },
   onShow(){
     const session=sessionStore.load(); if(!session){ wx.reLaunch({url:'/pages/login/index'}); return; }
-    this.session=session; if(session.activeRoom){ this.setData({roomName:session.activeRoom.name}); socket.connect(session.activeRoom,session.account); }
+    this.session=session; if(session.activeRoom){ this.setData({roomName:session.activeRoom.name}); if (session.activeRoom.transport === 'cloud') { if (!this.faceLanConnection) this.connectFaceLan(session.activeRoom,session.account); } else socket.connect(session.activeRoom,session.account); }
+  },
+  connectFaceLan(room, account) {
+    this.setData({ status:'connecting', statusMessage:'正在连接教室局域网', faceLanUnavailable:false, faceLanMessage:'' });
+    this.faceLanConnection = faceLan.connect(room, account, (event, payload) => {
+      if (event === 'available') { this.setData({ status:'online', statusMessage:'局域网人脸服务已连接', faceLanUnavailable:false }); this.applySync(payload); }
+      else if (event === 'unavailable') this.setData({ status:'offline', statusMessage:'人脸服务不可用', faceLanUnavailable:true, faceLanMessage:payload.message });
+      else if (event === 'attendance') this.applyAttendance(payload.attendance || []);
+      else if (event === 'presence') this.applyPresence(payload.detections || []);
+      else if (event === 'pendingFaces') this.applyPendingFaces(payload.faces || []);
+    });
   },
   applySync(data){ this.rawStudents=data.students || []; this.attendance=data.attendance || []; this.presentIds=this.presentIds || new Set(); this.isHomeroom=!!(data.teacher && data.teacher.role==='班主任'); this.setData({className:data.className || '',isHomeroom:this.isHomeroom}); this.applyPendingFaces(data.pendingFaces || []); this.rebuild(); },
   applyAttendance(attendance){ this.attendance=attendance; this.rebuild(); },
@@ -58,5 +70,11 @@ Page({
     if(!this.validFaceImage(image)) return;
     wx.previewImage({ current:image, urls:[image], showmenu:false });
   },
-  refresh(){ socket.send({type:'request-sync'}); wx.showToast({title:'正在刷新',icon:'none'}); },
+  refresh(){
+    if (this.session && this.session.activeRoom && this.session.activeRoom.transport === 'cloud') {
+      if (this.faceLanConnection) this.faceLanConnection.close(); this.faceLanConnection = null;
+      this.connectFaceLan(this.session.activeRoom, this.session.account);
+    } else socket.send({type:'request-sync'});
+    wx.showToast({title:'正在刷新',icon:'none'});
+  },
 });

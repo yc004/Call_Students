@@ -1,6 +1,7 @@
 {
   "pages": [
     "pages/login/index",
+    "pages/room-preflight/index",
     "pages/room-connect/index",
     "pages/home/index",
     "pages/call/index",

@@ -149,6 +149,9 @@
     try {
       if (api.faceAPI && api.faceAPI.getGallery) {
         galleryData = await api.faceAPI.getGallery();
+        if (galleryData && galleryData.config && Number.isFinite(galleryData.config.recognitionThreshold)) {
+          recognitionThreshold = galleryData.config.recognitionThreshold;
+        }
       }
     } catch (e) {}
   }

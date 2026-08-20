@@ -53,6 +53,31 @@ jobs:
           node teacher-app/test/connection-code.test.js
           node teacher-app/test/homework-view.test.js
           node teacher-app/test/homework-export.test.js
+          node --test teacher-app/test/cloud-client.test.js
+          node --test mini-program/test/*.test.js
+
+      - name: Install and verify cloud server
+        working-directory: cloud-server
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm run build
+          pnpm test
+
+  cloud-container:
+    name: Cloud server container
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+      - name: Build production container
+        uses: docker/build-push-action@v7
+        with:
+          context: cloud-server
+          push: false
+          tags: banda-cloud:${{ github.sha }}
 
   classroom-windows:
     name: Classroom app (Windows x64)
@@ -109,6 +134,7 @@ jobs:
       - name: Build and test native face engine
         working-directory: classroom-app
         run: |
+          node --test test/cloud-bridge.test.js
           npm run build:native
           npm run test:native
 
@@ -290,6 +316,7 @@ jobs:
       - name: Build and test native face engine
         working-directory: classroom-app
         run: |
+          node --test test/cloud-bridge.test.js
           npm run build:native
           file native/build/Release/face_native_addon.node | grep '${{ matrix.machine }}'
           npm run test:native
@@ -468,7 +495,7 @@ jobs:
   release:
     name: Publish tagged release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [classroom-windows, teacher-windows, classroom-macos, teacher-macos]
+    needs: [cloud-container, classroom-windows, teacher-windows, classroom-macos, teacher-macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write

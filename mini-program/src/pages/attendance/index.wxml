@@ -4,6 +4,8 @@
     <button class="header-action" size="mini" bindtap="refresh">刷新</button>
   </view>
 
+  <view class="lan-warning" wx:if="{{faceLanUnavailable}}"><view>!</view><view><text>当前局域网连接失败，人脸服务不可用</text><text>{{faceLanMessage}}</text></view></view>
+
   <view class="attendance-summary surface">
     <view class="summary-top">
       <view class="attendance-ring" style="background:conic-gradient(#07c160 {{presentPercent}}%,#ededed 0)"><view><text>{{presentCount}}</text><text>/{{totalCount}}</text></view></view>

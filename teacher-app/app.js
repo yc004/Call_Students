@@ -70,6 +70,8 @@
     pendingFaces: [],   // 教室端持久化的待标注人脸库，仅班主任可匹配姓名
     pendingLabelFace: null, // 待标注的人脸 { faceId, descriptor }
     account: null,      // 登录后才存在：{ name, subjects, connectionId }
+    cloud: null,        // 小程序扫码同步的云服务会话
+    faceLanWs: null,
     teacherStatus: null,
     classroomConfigured: false,
     teachers: { approved: [], pending: [] },
@@ -91,7 +93,7 @@
     if (!api.getData) return { rooms: [], callHistory: [], account: null };
     try {
       const d = await api.getData();
-      return { rooms: d.rooms || [], callHistory: d.callHistory || [], account: d.account || null };
+      return { rooms: d.rooms || [], callHistory: d.callHistory || [], account: d.account || null, cloud:d.cloud || null };
     } catch (e) { return { rooms: [], callHistory: [], account: null }; }
   }
 
@@ -164,6 +166,7 @@
     disconnect();
     resetRoomWorkspace(false);
     state.rooms = result.rooms || [];
+    state.cloud = result.cloud || null;
     state.callHistory = result.callHistory || [];
     state.currentRoom = null;
     state.connectingRoomCode = '';
@@ -225,6 +228,36 @@
     if (connectionId) connectionId.textContent = state.account.connectionId;
     document.getElementById('miniProgramQrResult')?.classList.add('hidden');
     accountModal.classList.remove('hidden');
+    renderCloudAccountSettings();
+  }
+
+  function renderCloudAccountSettings() {
+    const status = document.getElementById('accountCloudStatus');
+    const server = document.getElementById('accountCloudServer');
+    if (server && state.cloud && state.cloud.serverUrl) server.value = state.cloud.serverUrl;
+    if (status) status.textContent = state.cloud ? `已连接 ${state.cloud.serverUrl}` : '尚未连接云服务';
+  }
+
+  async function enrollTeacherCloud() {
+    if (!api.enrollTeacherCloud) return;
+    const button = document.getElementById('accountCloudConnectBtn');
+    const status = document.getElementById('accountCloudStatus');
+    button.disabled = true; status.textContent = '正在连接云服务…';
+    const result = await api.enrollTeacherCloud({ serverUrl:document.getElementById('accountCloudServer').value, key:document.getElementById('accountCloudKey').value });
+    button.disabled = false;
+    if (!result.ok) { status.textContent = result.message || '连接失败'; return; }
+    state.cloud = result.cloud; state.rooms = [...state.rooms.filter(room => room.transport !== 'cloud'), ...(result.rooms || [])];
+    document.getElementById('accountCloudKey').value = ''; renderRooms(); renderCloudAccountSettings();
+    status.textContent = `教师云账号已接入 ${result.cloud.serverUrl}`;
+  }
+
+  async function refreshCloudRooms(options={}) {
+    if (!api.refreshCloudClassrooms) return;
+    const status = document.getElementById('accountCloudStatus');
+    if (status && !options.silent) status.textContent = '正在同步云端教室…';
+    const result = await api.refreshCloudClassrooms();
+    if (!result.ok) { if(status&&!options.silent)status.textContent=result.message||'同步失败'; return; }
+    state.cloud = result.cloud; state.rooms = [...state.rooms.filter(room => room.transport !== 'cloud'), ...(result.rooms || [])]; renderRooms(); renderCloudAccountSettings();
   }
 
   function handleLogout() {
@@ -233,6 +266,12 @@
     accountModal && accountModal.classList.add('hidden');
     state.account = null;
     state.teacherStatus = null;
+    state.cloud = null;
+    state.rooms = [];
+    state.callHistory = [];
+    api.clearTeacherSession && api.clearTeacherSession();
+    renderRooms();
+    renderHistory();
     accountMenuBtn && accountMenuBtn.classList.add('hidden');
     showAccountOverlay();
   }
@@ -266,22 +305,64 @@
   //  连接
   // ═══════════════════════════════════
 
-  function connect(codeValue, options = {}) {
-    const formattedCode = connectionCode.format(codeValue);
+  function setFaceLanUnavailable(unavailable) {
+    document.getElementById('faceLanWarning')?.classList.toggle('hidden', !unavailable);
+  }
+
+  function closeFaceLan() {
+    if (!state.faceLanWs) return;
+    state.faceLanWs.onclose = null;
+    state.faceLanWs.onerror = null;
+    try { state.faceLanWs.close(); } catch (_error) {}
+    state.faceLanWs = null;
+  }
+
+  function startFaceLan(room) {
+    closeFaceLan();
+    if (!room || !connectionCode.isValid(room.connectionCode)) { setFaceLanUnavailable(true); return; }
     let ip;
-    try { ip = connectionCode.decode(formattedCode); }
-    catch (error) {
-      setStatus('offline', '连接码有误');
-      if (connectionCodeInput) { connectionCodeInput.focus(); connectionCodeInput.select(); }
-      alert(error.message || '连接码有误，请检查后重新输入');
-      return;
+    try { ip = connectionCode.decode(room.connectionCode); } catch (_error) { setFaceLanUnavailable(true); return; }
+    const faceWs = new WebSocket(`ws://${ip}:3456`);
+    state.faceLanWs = faceWs;
+    let verified = false;
+    const timer = setTimeout(() => { if (!verified) { setFaceLanUnavailable(true); try { faceWs.close(); } catch (_error) {} } }, 8000);
+    faceWs.onopen = () => faceWs.send(JSON.stringify({ type:'connect', connectionId:state.account.connectionId, name:state.account.name, subjects:room.subjects || [] }));
+    faceWs.onmessage = event => {
+      let msg;
+      try { msg = JSON.parse(event.data); } catch (_error) { return; }
+      if (msg.type === 'sync') {
+        verified = true; clearTimeout(timer); setFaceLanUnavailable(false);
+        state.studentStatus = msg.attendance || []; state.pendingFaces = msg.pendingFaces || []; renderFaceDetections();
+      } else if (msg.type === 'face-detections') { state.faceDetections = msg.detections || []; renderFaceDetections(); }
+      else if (msg.type === 'pending-face-library') { state.pendingFaces = msg.faces || []; renderFaceDetections(); }
+      else if (msg.type === 'face-status') { state.studentStatus = msg.attendance || []; renderFaceDetections(); }
+      else if (msg.type === 'face-labeled') { state.pendingFaces = (state.pendingFaces || []).filter(face => face.faceId !== msg.faceId); renderFaceDetections(); }
+      else if (['approval-required','login-required','auth-required','subject-required'].includes(msg.type)) setFaceLanUnavailable(true);
+    };
+    faceWs.onerror = () => { clearTimeout(timer); setFaceLanUnavailable(true); };
+    faceWs.onclose = () => { clearTimeout(timer); if (state.faceLanWs === faceWs) { state.faceLanWs = null; setFaceLanUnavailable(true); } };
+  }
+
+  function connect(codeValue, options = {}) {
+    const explicitRoom = codeValue && typeof codeValue === 'object' ? codeValue : null;
+    const cloudRoom = explicitRoom && explicitRoom.transport === 'cloud' ? explicitRoom : null;
+    const formattedCode = cloudRoom ? String(cloudRoom.cloudClassroomId) : connectionCode.format(explicitRoom ? explicitRoom.connectionCode : codeValue);
+    let ip = '';
+    if (!cloudRoom) {
+      try { ip = connectionCode.decode(formattedCode); }
+      catch (error) {
+        setStatus('offline', '连接码有误');
+        if (connectionCodeInput) { connectionCodeInput.focus(); connectionCodeInput.select(); }
+        alert(error.message || '连接码有误，请检查后重新输入');
+        return;
+      }
     }
     if (!state.account) {
       state.pendingRoomCode = formattedCode;
       showAccountOverlay();
       return;
     }
-    const savedRoom = state.rooms.find(room => room.connectionCode === formattedCode);
+    const savedRoom = explicitRoom || state.rooms.find(room => room.connectionCode === formattedCode);
     let requestedSubjects = (savedRoom && savedRoom.subjects || []).map(value => String(value).trim()).filter(Boolean);
     if (!requestedSubjects.length) {
       if (options.isRetry) {
@@ -300,7 +381,7 @@
         saveToDisk();
       }
     }
-    if (connectionCodeInput) connectionCodeInput.value = formattedCode;
+    if (connectionCodeInput && !cloudRoom) connectionCodeInput.value = formattedCode;
 
     // 断开旧连接；自动重连时保留本轮失败次数，手动连接时重新计数。
     if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
@@ -316,13 +397,18 @@
 
     // 连接尚未完成时也立即记录用户选择的教室，避免失败后仍沿用旧教室界面。
     state.connectingRoomCode = formattedCode;
-    state.currentRoom = state.rooms.find(room => room.connectionCode === formattedCode) || null;
+    state.currentRoom = cloudRoom || state.rooms.find(room => room.connectionCode === formattedCode) || null;
     renderRooms();
 
     setStatus('connecting', '连接中…');
+    const useCloud = savedRoom && savedRoom.transport === 'cloud' && state.cloud && state.cloud.accessToken;
     const url = `ws://${ip}:3456`;
     let ws;
-    try { ws = new WebSocket(url); }
+    try {
+      ws = useCloud
+        ? new CloudClassroomSocket({ serverUrl:state.cloud.serverUrl, accessToken:state.cloud.accessToken, accessExpiresAt:state.cloud.accessExpiresAt, refreshToken:state.cloud.refreshToken, classroomId:savedRoom.cloudClassroomId, onSession:session => { state.cloud={ ...state.cloud, ...session }; api.setCloudSettings && api.setCloudSettings(state.cloud); } })
+        : new WebSocket(url);
+    }
     catch (error) { state.ws = null; recordConnectionFailure(error, formattedCode); return; }
 
     state.ws = ws;
@@ -373,7 +459,7 @@
         }
         alert(msg.message || '当前教师已退出教室，教室端记录已删除');
       } else if (msg.type === 'sync') {
-        const name = msg.className || `教室 ${formattedCode}`;
+        const name = msg.className || (cloudRoom ? cloudRoom.name : `教室 ${formattedCode}`);
         state.className = name;
         state.students  = msg.students || [];
         state.subjects  = msg.subjects || [];
@@ -392,8 +478,12 @@
         hideApprovalOverlay();
 
         // 自动添加到教室列表
-        addOrUpdateRoom(formattedCode, name, requestedSubjects);
-        state.currentRoom = state.rooms.find(r => r.connectionCode === formattedCode) || null;
+        if (cloudRoom) {
+          cloudRoom.name = name;
+          if (requestedSubjects.length) cloudRoom.subjects = [...requestedSubjects];
+          saveToDisk();
+        } else addOrUpdateRoom(formattedCode, name, requestedSubjects);
+        state.currentRoom = cloudRoom || state.rooms.find(r => r.connectionCode === formattedCode) || null;
         renderRooms();
         applyTeacherPermissions();
 
@@ -403,13 +493,15 @@
         renderHomework();
         renderFaceDetections();
         renderClassroomManagement();
+        if (useCloud) startFaceLan(savedRoom);
+        else setFaceLanUnavailable(false);
         if (isHomeroomTeacher() && !state.classroomConfigured) showClassroomSetup();
         else hideClassroomSetup();
       } else if (msg.type === 'approval-required') {
-        const name = msg.className || `教室 ${formattedCode}`;
+        const name = msg.className || (cloudRoom ? cloudRoom.name : `教室 ${formattedCode}`);
         state.teacherStatus = msg.teacher || { status: 'pending' };
         state.pendingRoomCode = formattedCode;
-        awaitRoomSave(formattedCode, name, requestedSubjects);
+        if (!cloudRoom) awaitRoomSave(formattedCode, name, requestedSubjects);
         setStatus('connecting', '等待管理员审核');
         showApprovalOverlay(name, msg.message);
       } else if (msg.type === 'approval-rejected') {
@@ -429,8 +521,10 @@
         } else {
           alert(msg.message || '当前账户没有执行此操作的权限');
         }
+      } else if (msg.type === 'delivery-unavailable') {
+        alert(msg.message || '教室端当前离线，本次操作未送达');
       } else if (msg.type === 'subject-required') {
-        const room = state.rooms.find(item => item.connectionCode === formattedCode);
+        const room = cloudRoom || state.rooms.find(item => item.connectionCode === formattedCode);
         if (room) { room.subjects = []; saveToDisk(); }
         setStatus('offline', '需要设置授课科目');
         alert(msg.message || '请重新连接教室并先填写授课科目');
@@ -483,6 +577,7 @@
   function disconnect() {
     if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
     resetConnectionFailures();
+    closeFaceLan();
     if (state.ws) {
       state.ws.onclose = null;
       state.ws.close();
@@ -629,25 +724,25 @@
 
     state.rooms.forEach(room => {
       const li = document.createElement('li');
-      const isActive = state.currentRoom && state.currentRoom.connectionCode === room.connectionCode;
+      const isActive = state.currentRoom && state.currentRoom.id === room.id;
       li.className = 'room-item' + (isActive ? ' active' : '');
       const cls = isActive ? (state.ws ? 'online' : 'connecting') : 'offline';
 
       li.innerHTML =
         `<span class="dot ${cls}"></span>` +
         `<span class="room-name">${esc(room.name)}</span>` +
-        `<span class="room-ip">连接码 ${esc(room.connectionCode)}</span>` +
+        `<span class="room-ip">${room.transport === 'cloud' ? `云服务 · ${esc(room.cloudStatus === 'online' ? '教室在线' : '教室离线')}` : `连接码 ${esc(room.connectionCode)}`}</span>` +
         `<span class="room-del" data-code="${esc(room.connectionCode)}" title="退出教室">×</span>`;
 
       li.addEventListener('click', (e) => {
         if (e.target.classList.contains('room-del')) return;
-        connect(room.connectionCode);
+        connect(room);
       });
 
       const del = li.querySelector('.room-del');
       if (del) del.addEventListener('click', async (e) => {
         e.stopPropagation();
-        await removeRoom(room.connectionCode);
+        await removeRoom(room);
       });
 
       roomList.appendChild(li);
@@ -671,16 +766,19 @@
   }
 
   function requestClassroomLeave(room) {
-    const code = room.connectionCode;
-    const activeRoom = state.currentRoom && state.currentRoom.connectionCode === code;
+    const code = room.transport === 'cloud' ? room.cloudClassroomId : room.connectionCode;
+    const activeRoom = state.currentRoom && state.currentRoom.id === room.id;
     if (activeRoom && state.ws && state.ws.readyState === WebSocket.OPEN) {
       return sendLeaveRequest(state.ws, code);
     }
     return new Promise((resolve, reject) => {
-      let ip;
-      try { ip = connectionCode.decode(code); }
-      catch (error) { reject(error); return; }
-      const ws = new WebSocket(`ws://${ip}:3456`);
+      let ws;
+      try {
+        if (room.transport === 'cloud') {
+          if (!state.cloud) throw new Error('云服务登录已失效');
+          ws = new CloudClassroomSocket({ serverUrl:state.cloud.serverUrl, accessToken:state.cloud.accessToken, accessExpiresAt:state.cloud.accessExpiresAt, refreshToken:state.cloud.refreshToken, classroomId:room.cloudClassroomId, onSession:session => { state.cloud={ ...state.cloud, ...session }; api.setCloudSettings && api.setCloudSettings(state.cloud); } });
+        } else ws = new WebSocket(`ws://${connectionCode.decode(code)}:3456`);
+      } catch (error) { reject(error); return; }
       let finished = false;
       let authenticated = false;
       const timer = setTimeout(() => finish(new Error('无法连接教室端，退出操作尚未完成')), 8000);
@@ -712,11 +810,12 @@
     });
   }
 
-  async function removeRoom(code) {
+  async function removeRoom(roomInput) {
     if (state.leavingRoomCode) return;
-    const room = state.rooms.find(item => item.connectionCode === code);
+    const room = roomInput && typeof roomInput === 'object' ? roomInput : state.rooms.find(item => item.connectionCode === roomInput);
     if (!room || !state.account) return;
-    const homeroomWarning = state.currentRoom && state.currentRoom.connectionCode === code && isHomeroomTeacher()
+    const code = room.transport === 'cloud' ? room.cloudClassroomId : room.connectionCode;
+    const homeroomWarning = state.currentRoom && state.currentRoom.id === room.id && isHomeroomTeacher()
       ? '\n\n你是该教室的班主任。退出后教室端会重新进入班主任绑定引导，但班级资料不会被删除。'
       : '';
     if (!confirm(`确定退出“${room.name}”吗？\n\n教室端会同时删除你的教师记录；以后需要重新扫码或输入连接码加入。${homeroomWarning}`)) return;
@@ -724,13 +823,13 @@
     try {
       await requestClassroomLeave(room);
     } catch (error) {
-      alert(`${error.message || '无法通知教室端'}\n\n请确认教室端已启动且两台电脑位于同一局域网，然后重试。为避免两端记录不一致，本次没有从教师端删除该教室。`);
+      alert(`${error.message || '无法通知教室端'}\n\n${room.transport === 'cloud' ? '请检查云服务网络连接后重试。' : '请确认教室端已启动且两台电脑位于同一局域网，然后重试。'}为避免两端记录不一致，本次没有从教师端删除该教室。`);
       return;
     } finally {
       state.leavingRoomCode = '';
     }
-    if (state.currentRoom && state.currentRoom.connectionCode === code) disconnect();
-    state.rooms = state.rooms.filter(r => r.connectionCode !== code);
+    if (state.currentRoom && state.currentRoom.id === room.id) disconnect();
+    state.rooms = state.rooms.filter(r => r.id !== room.id);
     renderRooms();
     await saveToDisk();
   }
@@ -1216,8 +1315,9 @@
     }
 
     // 发送标注到教室端
-    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-      state.ws.send(JSON.stringify({
+    const faceTransport = state.faceLanWs && state.faceLanWs.readyState === WebSocket.OPEN ? state.faceLanWs : state.ws;
+    if (faceTransport && faceTransport.readyState === WebSocket.OPEN) {
+      faceTransport.send(JSON.stringify({
         type: 'label-face',
         faceId: state.pendingLabelFace.faceId,
         studentId,
@@ -2141,6 +2241,8 @@
     const accountModalClose = document.getElementById('accountModalClose');
     const logoutBtn = document.getElementById('logoutBtn');
     if (accountModalClose) accountModalClose.addEventListener('click', () => accountModal && accountModal.classList.add('hidden'));
+    document.getElementById('accountCloudConnectBtn')?.addEventListener('click', enrollTeacherCloud);
+    document.getElementById('accountCloudRefreshBtn')?.addEventListener('click', refreshCloudRooms);
     if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
     if (accountModal) accountModal.addEventListener('click', event => {
       if (event.target === accountModal) accountModal.classList.add('hidden');
@@ -2323,13 +2425,17 @@
     labelConfirm      = document.getElementById('labelConfirm');
 
     bindEvents();
+    document.getElementById('retryFaceLanBtn')?.addEventListener('click', () => startFaceLan(state.currentRoom));
     loadFromDisk().then(data => {
       state.rooms       = data.rooms;
       state.callHistory = data.callHistory;
+      state.cloud       = data.cloud || null;
       renderRooms();
       renderHistory();
-      // 每次启动只允许从已登录小程序同步身份。
-      showAccountOverlay();
+      if (data.account) {
+        setSignedInAccount(data.account);
+        if (state.cloud) refreshCloudRooms({ silent:true });
+      } else showAccountOverlay();
     });
   }
 

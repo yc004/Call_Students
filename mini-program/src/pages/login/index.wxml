@@ -1,38 +1,79 @@
 <view class="login-page">
   <view class="login-content">
     <view class="brand"><view class="brand-mark">班</view><view><text class="brand-name">班达教师端</text><text class="brand-desc">班级事务，一触即达</text></view></view>
-    <view class="welcome">
-      <text class="welcome-title">连接教室，随时处理班级事务</text>
-      <text class="welcome-desc">先创建小程序教师账户，再用它登录电脑教师端。</text>
+
+    <view class="mode-tabs">
+      <view class="mode-tab {{mode === 'local' ? 'active' : ''}}" data-mode="local" bindtap="setMode">本地模式</view>
+      <view class="mode-tab {{mode === 'cloud' ? 'active' : ''}}" data-mode="cloud" bindtap="setMode">云服务模式</view>
     </view>
 
-    <view class="scan-panel">
-      <view class="scan-icon">
-        <view class="corner c1"></view><view class="corner c2"></view><view class="corner c3"></view><view class="corner c4"></view>
-        <view class="scan-center"></view>
+    <block wx:if="{{mode === 'local'}}">
+      <view class="form-tabs">
+        <view class="form-tab {{localTab === 'register' ? 'active' : ''}}" data-tab="register" bindtap="setLocalTab">注册</view>
+        <view class="form-tab {{localTab === 'login' ? 'active' : ''}}" data-tab="login" bindtap="setLocalTab">登录</view>
       </view>
-      <text class="scan-title">创建小程序教师账户</text>
-      <text class="scan-desc">账户创建成功后，进入“我的—登录电脑教师端”扫描电脑二维码。</text>
-      <button class="primary scan-button" bindtap="openRegister">创建教师账户</button>
-    </view>
 
-    <view class="privacy-row">
-      <view class="privacy-icon">✓</view>
-      <text>二维码不含账户和教室数据，配对成功后立即失效。</text>
-    </view>
-    <view class="privacy-row">
-      <view class="privacy-icon">i</view>
-      <text>连接失败时会显示网络检查步骤，调整后可直接重新扫码。</text>
-    </view>
+      <view class="panel" wx:if="{{localTab === 'register'}}">
+        <text class="label">教师姓名</text>
+        <input class="field" maxlength="20" placeholder="请输入真实姓名" value="{{localName}}" bindinput="onLocalNameInput" />
+        <text class="label">登录账号</text>
+        <input class="field" maxlength="40" placeholder="默认同教师姓名" value="{{localLoginName}}" bindinput="onLocalLoginNameInput" />
+        <text class="label">密码</text>
+        <input class="field" password maxlength="40" placeholder="至少 6 位" value="{{localPassword}}" bindinput="onLocalPasswordInput" />
+        <text class="label">确认密码</text>
+        <input class="field" password maxlength="40" placeholder="再次输入密码" value="{{localConfirmPassword}}" bindinput="onLocalConfirmInput" />
+        <button class="primary" bindtap="registerLocal">注册并进入</button>
+      </view>
+
+      <view class="panel" wx:else>
+        <text class="label">账号或姓名</text>
+        <input class="field" maxlength="40" placeholder="请输入登录账号" value="{{localLoginName}}" bindinput="onLocalLoginNameInput" />
+        <text class="label">密码</text>
+        <input class="field" password maxlength="40" placeholder="请输入密码" value="{{localPassword}}" bindinput="onLocalPasswordInput" />
+        <button class="primary" bindtap="loginLocal">登录</button>
+      </view>
+
+      <button class="secondary scan-entry" loading="{{scanning}}" bindtap="scanLogin">扫码登录电脑教师端</button>
+    </block>
+
+    <block wx:else>
+      <view class="form-tabs">
+        <view class="form-tab {{cloudTab === 'register' ? 'active' : ''}}" data-tab="register" bindtap="setCloudTab">注册</view>
+        <view class="form-tab {{cloudTab === 'login' ? 'active' : ''}}" data-tab="login" bindtap="setCloudTab">登录</view>
+      </view>
+
+      <view class="panel" wx:if="{{cloudTab === 'register'}}">
+        <text class="label">服务器地址</text>
+        <input class="field" type="text" value="{{cloudServerUrl}}" bindinput="onCloudServerInput" placeholder="https://cloud.example.com" />
+        <text class="label">教师身份密钥</text>
+        <input class="field" password value="{{cloudKey}}" bindinput="onCloudKeyInput" placeholder="tk_..." />
+        <text class="label">登录账号</text>
+        <input class="field" maxlength="40" value="{{cloudLoginName}}" bindinput="onCloudLoginNameInput" placeholder="设置云服务登录账号" />
+        <text class="label">密码</text>
+        <input class="field" password maxlength="40" value="{{cloudPassword}}" bindinput="onCloudPasswordInput" placeholder="至少 10 位" />
+        <text class="label">昵称</text>
+        <input class="field" type="nickname" maxlength="40" value="{{cloudNickname}}" bindinput="onCloudNicknameInput" placeholder="可沿用微信昵称" />
+        <view class="avatar-row">
+          <button class="avatar-button" open-type="chooseAvatar" bindchooseavatar="onChooseAvatar">选择头像</button>
+          <image wx:if="{{cloudAvatar}}" class="avatar-preview" src="{{cloudAvatar}}" mode="aspectFill"></image>
+        </view>
+        <button class="primary" loading="{{busy}}" disabled="{{busy}}" bindtap="registerCloud">注册并连接云服务</button>
+      </view>
+
+      <view class="panel" wx:else>
+        <text class="label">服务器地址</text>
+        <input class="field" type="text" value="{{cloudServerUrl}}" bindinput="onCloudServerInput" placeholder="https://cloud.example.com" />
+        <text class="label">登录账号</text>
+        <input class="field" maxlength="40" value="{{cloudLoginName}}" bindinput="onCloudLoginNameInput" placeholder="云服务登录账号" />
+        <text class="label">密码</text>
+        <input class="field" password maxlength="40" value="{{cloudPassword}}" bindinput="onCloudPasswordInput" placeholder="云服务密码" />
+        <button class="primary" loading="{{busy}}" disabled="{{busy}}" bindtap="loginCloud">账号密码登录</button>
+        <button class="wechat-button" loading="{{busy}}" disabled="{{busy}}" bindtap="wechatLogin">微信一键登录</button>
+      </view>
+
+      <button class="secondary scan-entry" loading="{{scanning}}" bindtap="scanLogin">扫码登录电脑教师端</button>
+    </block>
+
+    <view class="privacy-row"><view class="privacy-icon">✓</view><text>本地模式数据仅保存在当前微信设备；云模式数据会上传至所选服务器。</text></view>
   </view>
-  <page-container show="{{registerOpen}}" position="bottom" round overlay bind:clickoverlay="closeRegister">
-    <view class="register-sheet">
-      <view class="register-handle"></view>
-      <view class="register-title"><view><text>创建教师账户</text><text>创建后可独立添加教室，也可生成连接码与电脑教师端同步。</text></view><text class="register-close" bindtap="closeRegister">×</text></view>
-      <text class="register-label">教师姓名</text>
-      <input class="register-field" maxlength="20" placeholder="请输入真实姓名" value="{{registerName}}" bindinput="setRegisterName"/>
-      <view class="register-tip">账户身份仅保存在当前微信设备；登录电脑教师端时通过扫码安全传输。</view>
-      <button class="primary register-confirm" bindtap="registerAccount">创建账户</button>
-    </view>
-  </page-container>
 </view>

@@ -38,7 +38,7 @@ async function saveClassroom(room, subjects) {
 
 function openClassroomConnection(room) {
   wx.navigateTo({
-    url:`/pages/room-connect/index?name=${encodeURIComponent(room.name)}&code=${encodeURIComponent(room.connectionCode)}&auto=1`,
+    url:`/pages/room-preflight/index?name=${encodeURIComponent(room.name)}&code=${encodeURIComponent(room.connectionCode)}`,
     fail:error=>wx.showModal({title:'无法打开连接页面',content:error&&error.errMsg||'请返回首页后重试',showCancel:false}),
   });
 }
@@ -91,4 +91,4 @@ function start(options = {}) {
   });
 }
 
-module.exports = { start, saveClassroom, handleTeacherLogin };
+module.exports = { start, saveClassroom, handleTeacherLogin, openClassroomConnection };

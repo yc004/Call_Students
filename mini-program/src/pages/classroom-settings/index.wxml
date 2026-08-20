@@ -11,7 +11,8 @@
     <view class="surface teacher-invite-card">
       <view class="invite-icon"><view></view><view></view></view>
       <view class="invite-copy"><text>邀请教师加入</text><small>通过微信发送教室邀请，对方设置授课科目并申请加入后，由你在这里审核。</small></view>
-      <button open-type="share" data-action="invite-teacher" hover-class="invite-button-pressed">微信邀请</button>
+      <button wx:if="{{!isCloudRoom}}" open-type="share" data-action="invite-teacher" hover-class="invite-button-pressed">微信邀请</button>
+      <button wx:else bindtap="showCloudInviteHelp" hover-class="invite-button-pressed">添加云端教师</button>
     </view>
     <view class="section-heading"><view><text class="section-title">待审核</text><text class="section-note">新教师加入教室前需要班主任批准</text></view><text class="count-badge">{{pendingTeachers.length}}</text></view>
     <view class="surface member-list"><view class="empty-inline" wx:if="{{!pendingTeachers.length}}"><text>暂无待审核教师</text><small>邀请发出后，新的加入申请会显示在这里</small></view><view class="member-row" wx:for="{{pendingTeachers}}" wx:key="id"><view class="member-avatar">{{item.avatar}}</view><view class="member-copy"><text>{{item.name}}</text><small>{{item.subjectText}} · {{item.shortId}}</small></view><view class="member-actions"><button loading="{{managingTeacherId===item.id}}" disabled="{{managingTeacherId}}" data-action="approve" data-id="{{item.id}}" data-name="{{item.name}}" bindtap="manageTeacher">批准</button><button class="danger-text" disabled="{{managingTeacherId}}" data-action="reject" data-id="{{item.id}}" data-name="{{item.name}}" bindtap="manageTeacher">拒绝</button></view></view></view>

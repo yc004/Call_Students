@@ -33,6 +33,7 @@
       "mini-program-pairing.js",
       "wechat-direct-link.js",
       "account-auth.js",
+      "cloud-client.js",
       "preload.js",
       "index.html",
       "style.css",

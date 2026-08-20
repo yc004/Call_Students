@@ -1,12 +1,59 @@
 const STORAGE_KEY = 'classroom_call_teacher_session_v1';
 const connectionCode = require('./connection-code');
 
+function createSalt() {
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`.slice(0, 32);
+}
+
+function hashLocalPassword(password, salt) {
+  const saltValue = String(salt || '').slice(0, 32);
+  const input = `${saltValue}::${String(password || '')}`;
+  let hash = 2166136261;
+  for (let round = 0; round < 512; round += 1) {
+    for (let index = 0; index < input.length; index += 1) {
+      const byte = input.charCodeAt(index) ^ ((round + index) & 0xff);
+      hash ^= byte;
+      hash = (hash + ((hash << 1) >>> 0) + ((hash << 4) >>> 0) + ((hash << 7) >>> 0) + ((hash << 8) >>> 0) + ((hash << 24) >>> 0)) >>> 0;
+    }
+  }
+  return `${saltValue}$${hash.toString(16).padStart(8, '0')}`;
+}
+
+function hashPassword(password) {
+  return hashLocalPassword(password, createSalt());
+}
+
+function verifyPassword(password, storedHash) {
+  const value = String(storedHash || '');
+  const separator = value.indexOf('$');
+  if (separator <= 0) return false;
+  const salt = value.slice(0, separator);
+  return hashLocalPassword(password, salt) === value;
+}
+
 function migrateRoom(room) {
   if (!room) return null;
   const subjects = Array.from(new Set((room.subjects || []).map(value => String(value).trim()).filter(Boolean))).slice(0, 20);
+  if (room.transport === 'cloud' && room.cloudClassroomId) {
+    return { ...room, id:String(room.id || room.cloudClassroomId), cloudClassroomId:String(room.cloudClassroomId), transport:'cloud', subjects, connectionCode:room.connectionCode && connectionCode.isValid(room.connectionCode) ? connectionCode.format(room.connectionCode) : '' };
+  }
   if (connectionCode.isValid(room.connectionCode)) return { ...room, subjects, connectionCode: connectionCode.format(room.connectionCode), ip: undefined };
   try { return { id: room.id, name: room.name || '教室', subjects, connectionCode: connectionCode.encode(room.ip) }; }
   catch (_error) { return null; }
+}
+
+function sanitizeCloud(cloud) {
+  if (!cloud) return null;
+  const serverUrl = String(cloud.serverUrl || '').trim().replace(/\/+$/, '');
+  const accessToken = String(cloud.accessToken || '');
+  const refreshToken = String(cloud.refreshToken || '');
+  if (!/^https?:\/\//i.test(serverUrl) || !accessToken || !refreshToken) return null;
+  const result = { version:1, serverUrl, userId:String(cloud.userId || ''), userName:String(cloud.userName || '').trim().slice(0,40), accessToken, accessExpiresAt:String(cloud.accessExpiresAt || ''), refreshToken, expiresAt:String(cloud.expiresAt || '') };
+  const nickname = String(cloud.nickname || '').trim().slice(0, 40);
+  if (nickname) result.nickname = nickname;
+  const avatarUrl = String(cloud.avatarUrl || '').trim().slice(0, 500);
+  if (avatarUrl) result.avatarUrl = avatarUrl;
+  return result;
 }
 
 function sanitizeAccount(account) {
@@ -14,7 +61,13 @@ function sanitizeAccount(account) {
   const name = String(account.name || '').trim();
   const connectionId = String(account.connectionId || '').trim();
   if (!name || !connectionId) return null;
-  return { name, connectionId, subjects: [] };
+  const subjects = Array.from(new Set((account.subjects || []).map(value => String(value).trim()).filter(Boolean))).slice(0, 20);
+  const result = { name, connectionId, subjects };
+  const loginName = String(account.loginName || '').trim().slice(0, 40);
+  if (loginName) result.loginName = loginName;
+  const passwordHash = String(account.passwordHash || '').slice(0, 160);
+  if (passwordHash) result.passwordHash = passwordHash;
+  return result;
 }
 
 function sanitizeSession(session) {
@@ -27,6 +80,7 @@ function sanitizeSession(session) {
     account,
     rooms,
     activeRoom,
+    cloud: sanitizeCloud(session.cloud),
     pairedAt: session.pairedAt || session.pairingAt || new Date().toISOString(),
   };
 }
@@ -64,11 +118,26 @@ function setActiveRoom(room) {
 function removeRoom(connectionCodeValue) {
   const current = load();
   if (!current) return null;
-  const target = String(connectionCodeValue || '').replace(/[^0-9]/g, '');
-  current.rooms = (current.rooms || []).filter(room => String(room.connectionCode || '').replace(/[^0-9]/g, '') !== target);
+  const inputRoom = connectionCodeValue && typeof connectionCodeValue === 'object' ? connectionCodeValue : null;
+  const targetCloudId = inputRoom && inputRoom.transport === 'cloud' ? String(inputRoom.cloudClassroomId || inputRoom.id || '') : '';
+  const target = targetCloudId ? '' : String(inputRoom ? inputRoom.connectionCode : connectionCodeValue || '').replace(/[^0-9]/g, '');
+  current.rooms = (current.rooms || []).filter(room => targetCloudId ? String(room.cloudClassroomId || '') !== targetCloudId : String(room.connectionCode || '').replace(/[^0-9]/g, '') !== target);
   const activeCode = String(current.activeRoom && current.activeRoom.connectionCode || '').replace(/[^0-9]/g, '');
-  if (activeCode === target) current.activeRoom = current.rooms[0] || null;
+  const activeCloudId = String(current.activeRoom && current.activeRoom.cloudClassroomId || '');
+  if ((targetCloudId && activeCloudId === targetCloudId) || (!targetCloudId && activeCode === target)) current.activeRoom = current.rooms[0] || null;
   return save(current);
 }
 
-module.exports = { sessionStore: { load, save, clear, setActiveRoom, removeRoom } };
+function updateCloud(cloud, rooms) {
+  const current = load();
+  if (!current) return null;
+  current.cloud = cloud;
+  if (Array.isArray(rooms)) {
+    const localRooms = current.rooms.filter(room => room.transport !== 'cloud');
+    current.rooms = [...localRooms, ...rooms];
+    if (!current.activeRoom || !current.rooms.some(room => room.id === current.activeRoom.id)) current.activeRoom = current.rooms[0] || null;
+  }
+  return save(current);
+}
+
+module.exports = { sessionStore: { load, save, clear, setActiveRoom, removeRoom, updateCloud }, hashPassword, verifyPassword };

@@ -60,3 +60,5 @@
 @keyframes state-dot-in{from{transform:scale(.35)}to{transform:scale(1)}}
 @media(prefers-reduced-motion:reduce){.attendance-ring,.live-mark view,.face-card,.filter-tab.active,.attendance-cell,.attendance-state view{animation:none}.attendance-ring,.face-card,.filter-tab,.attendance-state view{transition:none}}
 .attendance-page { padding-bottom:48rpx; }
+.lan-warning{display:flex;gap:18rpx;margin-bottom:24rpx;padding:22rpx;border-radius:16rpx;background:#fff3e6;color:#8a5200}.lan-warning>view:first-child{display:flex;flex-shrink:0;align-items:center;justify-content:center;width:42rpx;height:42rpx;border-radius:50%;background:#f59e0b;color:#fff;font-weight:700}.lan-warning text{display:block;font-size:25rpx;font-weight:600;line-height:1.45}.lan-warning text:last-child{margin-top:5rpx;color:#a46d1c;font-size:21rpx;font-weight:400}
+@media (prefers-color-scheme:dark){.lan-warning{background:#3a2b17;color:#ffd38a}.lan-warning text:last-child{color:#d9ad68}}

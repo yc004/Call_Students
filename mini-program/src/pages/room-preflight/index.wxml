@@ -1,0 +1,28 @@
+<view class="preflight-page state-{{state}}">
+  <view class="ambient ambient-one"></view>
+  <view class="ambient ambient-two"></view>
+
+  <view class="preflight-main">
+    <view class="connection-visual">
+      <view class="outer-ring"></view>
+      <view class="middle-ring"></view>
+      <view class="room-symbol">室</view>
+      <view class="success-mark">✓</view>
+      <view class="error-mark">!</view>
+    </view>
+
+    <text class="room-name">{{roomName}}</text>
+    <text class="state-title">{{title}}</text>
+    <text class="state-detail">{{detail}}</text>
+    <text class="elapsed" wx:if="{{elapsedText}}">{{elapsedText}}</text>
+  </view>
+
+  <view class="preflight-footer">
+    <view class="network-pill"><view class="network-dot"></view><text>{{networkText}}</text></view>
+    <block wx:if="{{state === 'failed'}}">
+      <button class="retry-button" bindtap="retry">重新连接</button>
+      <button class="back-button" bindtap="goBack">返回</button>
+    </block>
+    <text class="waiting-tip" wx:else>{{state === 'success' ? '连接已确认' : '连接过程中请勿退出微信'}}</text>
+  </view>
+</view>

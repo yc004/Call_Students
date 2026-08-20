@@ -5,17 +5,19 @@
 ## 架构
 
 ```
-教师端（办公室）── WebSocket ──→ 教室端（教室大屏）
-微信小程序（手机）──────┘              ↑
-  扫码登录 / 自动连接              托盘驻留 + 呼叫弹窗
-  呼叫 / 布置作业                  后台人脸识别
+教师端 / 微信小程序 ── HTTPS/WSS ── 云服务 ── WSS ── 教室端
+        └──────────── 局域网 WebSocket ────────────┘
+                  （仅人脸与离线直连）
 ```
 
-- 教室端内置 WebSocket 服务，教师端直连教室 IP 即可
-- 配套微信小程序通过教师端二维码登录，复用同一局域网连接
-- 无需服务器，无需数据库，局域网即用
+- 默认继续支持无需服务器的局域网分布式模式；
+- 可选配置 `cloud-server/`，通过服务器地址和一次性连接密钥接入云端；
+- 云端负责教师身份、教室成员、作业、通知、呼叫路由和离线快照；
+- 人脸图片、特征、识别结果和人脸出勤永不进入云服务。打开出勤页面时客户端会单独尝试局域网握手，失败时仅禁用人脸服务。
 
 微信小程序工程位于 `mini-program/`，具体使用和真机网络要求见 [`mini-program/README.md`](mini-program/README.md)。
+
+云服务部署与配置说明见 [`cloud-server/README.md`](cloud-server/README.md)，完整设计与实施边界见 [`docs/CLOUD-SERVICE-IMPLEMENTATION-PLAN.md`](docs/CLOUD-SERVICE-IMPLEMENTATION-PLAN.md)。
 
 ## 快速开始
 
@@ -64,5 +66,6 @@ cd teacher-app   && npm run build    # 输出 dist/教室呼叫-教师端 Setup 
 |----|------|
 | 框架 | Electron 42 |
 | 通信 | WebSocket (ws) |
+| 云服务 | Fastify + PostgreSQL + TypeScript |
 | 语音 | Web Speech API (系统 TTS) |
 | 打包 | electron-builder (NSIS) |

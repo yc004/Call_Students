@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: banda
+      POSTGRES_USER: banda
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - banda-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U banda -d banda"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  cloud-server:
+    build: .
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - banda-uploads:/app/uploads
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 8080
+      PUBLIC_URL: ${PUBLIC_URL:?set PUBLIC_URL}
+      DATABASE_URL: postgresql://banda:${POSTGRES_PASSWORD}@postgres:5432/banda
+      ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:?set ACCESS_TOKEN_SECRET}
+      KEY_PEPPER: ${KEY_PEPPER:?set KEY_PEPPER}
+      SETUP_TOKEN: ${SETUP_TOKEN:?set SETUP_TOKEN}
+      TRUST_PROXY: "true"
+      WECHAT_APP_ID: ${WECHAT_APP_ID:-}
+      WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:-}
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  banda-postgres:
+  banda-uploads:

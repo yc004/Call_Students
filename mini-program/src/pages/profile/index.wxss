@@ -1,6 +1,9 @@
 .profile-page { min-height: 100vh; padding: 20rpx 32rpx calc(150rpx + env(safe-area-inset-bottom)); background: #f5f5f5; color: #191919; }
 .profile-account { display: flex; align-items: center; min-height: 160rpx; padding: 24rpx 8rpx; animation:profile-in .35s cubic-bezier(.22,1,.36,1) both; }
 .avatar { display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 104rpx; height: 104rpx; border-radius: 22rpx; background: #07c160; color: #fff; font-size: 38rpx; font-weight: 600; animation:avatar-pop .46s .08s cubic-bezier(.22,1,.36,1) both; }
+.avatar-image { flex-shrink: 0; width: 104rpx; height: 104rpx; border-radius: 22rpx; background: #f2f2f2; }
+.cloud-id-row { display: flex; align-items: center; justify-content: space-between; margin-top: 18rpx; padding-top: 18rpx; border-top: 1rpx solid #ededed; color: #888; font-size: 22rpx; }
+.cloud-id-row text:last-child { color: #191919; font-size: 22rpx; }
 .account-main { flex: 1; min-width: 0; margin-left: 24rpx; }
 .account-name { display: block; color: #191919; font-size: 36rpx; font-weight: 600; line-height: 1.35; }
 .account-role { display: block; margin-top: 4rpx; color: #888; font-size: 24rpx; }
@@ -30,6 +33,16 @@
 .weui-btn::after { border: 0; }
 .weui-btn_warn { background: #fa5151; color: #fff; }
 .logout { margin-top: 28rpx; }
+.cloud-card { padding:24rpx; border-radius:20rpx; background:#fff; }
+.cloud-label { display:block; margin:0 0 12rpx; color:#576b95; font-size:24rpx; }
+.cloud-label:not(:first-child) { margin-top:22rpx; }
+.cloud-hint { display:block; margin:22rpx 0; color:#7a8599; font-size:24rpx; line-height:1.65; }
+.cloud-action { margin-top:24rpx; }
+.cloud-connected { display:flex; align-items:center; min-width:0; }
+.cloud-connected > view:last-child { min-width:0; }
+.cloud-connected text { display:block; color:#191919; font-size:28rpx; }
+.cloud-connected text:last-child { overflow:hidden; margin-top:6rpx; color:#888; font-size:22rpx; text-overflow:ellipsis; white-space:nowrap; }
+.cloud-dot { flex-shrink:0; width:18rpx; height:18rpx; margin-right:18rpx; border-radius:50%; background:#07c160; box-shadow:0 0 0 8rpx #e9f8ef; }
 .bottom-sheet { width: 100%; max-height: 88vh; overflow: auto; padding: 14rpx 32rpx calc(32rpx + env(safe-area-inset-bottom)); background: #fff; }
 .sheet-handle { width: 72rpx; height: 8rpx; margin: 0 auto 26rpx; border-radius: 4rpx; background: #d8d8d8; }
 .sheet-title { display: flex; align-items: center; justify-content: space-between; color: #191919; font-size: 34rpx; font-weight: 600; }
@@ -62,6 +75,9 @@
   .identity-icon { background:#252d40; color:#aebff2; }
   .room-icon, .add-icon, .security-icon { background:#173a29; color:#35d67c; }
   .weui-cells { background:#1e1e1e; }
+  .cloud-card { background:#1e1e1e; }
+  .cloud-connected text { color:rgba(255,255,255,.92); }
+  .cloud-connected text:last-child { color:rgba(255,255,255,.55); }
   .weui-cell + .weui-cell::before { background:rgba(255,255,255,.1); }
   .weui-cell_active, .cell-hover { background:#292929; }
   .room-cell { border-color:rgba(255,255,255,.1); }

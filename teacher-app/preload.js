@@ -14,4 +14,9 @@ contextBridge.exposeInMainWorld('api', {
   getWechatDirectLinkSettings: () => ipcRenderer.invoke('get-wechat-direct-link-settings'),
   setWechatDirectLinkSettings: (baseUrl) => ipcRenderer.invoke('set-wechat-direct-link-settings', baseUrl),
   exportHomework: (data) => ipcRenderer.invoke('export-homework', data),
+  getCloudSettings: () => ipcRenderer.invoke('get-cloud-settings'),
+  setCloudSettings: (value) => ipcRenderer.invoke('set-cloud-settings', value),
+  refreshCloudClassrooms: () => ipcRenderer.invoke('refresh-cloud-classrooms'),
+  enrollTeacherCloud: (input) => ipcRenderer.invoke('enroll-teacher-cloud', input),
+  clearTeacherSession: () => ipcRenderer.invoke('clear-teacher-session'),
 });

@@ -88,7 +88,7 @@ Page({
         wx.showModal({ title: '无法添加教室', content: error.message || '请扫描教室端显示的连接二维码', showCancel: false });
         return;
       }
-      wx.navigateTo({url:`/pages/room-connect/index?name=${encodeURIComponent(room.name)}&code=${encodeURIComponent(room.connectionCode)}&auto=1`});
+      scanAction.openClassroomConnection(room);
     });
   },
 

@@ -1,4 +1,5 @@
 node_modules/
+.pnpm-store/
 dist/
 .reasonix/
 *.exe
@@ -21,6 +22,9 @@ project.private.config.json
 mini-program/project.local.config.json
 *.log
 *.tmp
+.env
+cloud-server/backups/
+cloud-server/uploads/
 
 # Native addon build artifacts (C++ / ONNX Runtime)
 native/build/

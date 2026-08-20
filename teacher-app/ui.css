@@ -243,6 +243,7 @@
 .attendance-content .subtab-count { min-width:21px; padding:1px 7px; color:#667085; background:#e9edf3; }
 .attendance-content .face-subtab.active .subtab-count { color:#2457c5; background:#dbe7ff; }
 .attendance-content .face-hint-row { display:flex; align-items:flex-start; gap:9px; margin:14px 0 18px; padding:10px 12px; border:0; border-radius:10px; color:#667085; background:#f7f9fc; font-size:12px; line-height:1.55; }
+.face-lan-warning{display:flex;align-items:center;gap:12px;margin:0 0 16px;padding:12px 14px;border-radius:12px;background:#fff4e5;color:#8a5200}.face-lan-warning>span{display:grid;flex:0 0 28px;height:28px;place-items:center;border-radius:50%;background:#f59e0b;color:#fff;font-weight:800}.face-lan-warning>div{flex:1}.face-lan-warning strong,.face-lan-warning small{display:block}.face-lan-warning small{margin-top:3px;color:#a36d1f}
 .face-hint-icon { display:grid; width:18px; height:18px; flex:0 0 18px; place-items:center; margin-top:1px; border-radius:50%; color:#3568e8; background:#e4edff; font-size:11px; font-weight:800; }
 .attendance-content .face-grid { grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:12px; }
 .attendance-content .face-card { min-height:194px; justify-content:center; gap:12px; padding:18px 14px; border:1px solid var(--border) !important; border-radius:13px; background:#fff; box-shadow:none; }
