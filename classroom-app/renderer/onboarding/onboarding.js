@@ -8,9 +8,6 @@
   const candidateList = document.getElementById('candidateList');
   const refreshBtn = document.getElementById('refreshBtn');
   const bindBtn = document.getElementById('bindBtn');
-  const transferBtn = document.getElementById('transferBtn');
-  const rejectBtn = document.getElementById('rejectBtn');
-  const securityNote = document.getElementById('securityNote');
   const errorText = document.getElementById('errorText');
   const successOverlay = document.getElementById('successOverlay');
   const successDesc = document.getElementById('successDesc');
@@ -19,7 +16,6 @@
   const networkDetail = document.getElementById('networkDetail');
   let selectedId = '';
   let refreshing = false;
-  let bound = false;
 
   function reportError(title, error, context, suggestions) {
     if (window.clientErrors) window.clientErrors.show({ title, error, context, suggestions:suggestions || ['稍后重试刚才的操作', '如果仍然失败，请复制错误信息提交管理员'] });
@@ -87,43 +83,23 @@
     bindBtn.disabled = !selectedId;
   }
 
-  function updateActionButtons() {
-    if (bound) {
-      bindBtn.textContent = '批准加入';
-      transferBtn.classList.remove('hidden');
-      rejectBtn.classList.remove('hidden');
-      securityNote.textContent = '批准后该教师以授课教师身份加入；设为班主任会转让班级管理权限。';
-    } else {
-      bindBtn.textContent = '确认绑定班主任';
-      transferBtn.classList.add('hidden');
-      rejectBtn.classList.add('hidden');
-      securityNote.textContent = '绑定后该账户将成为班主任，可管理班级资料、学生名单和人脸标注。';
-    }
-    bindBtn.disabled = !selectedId;
-    transferBtn.disabled = !selectedId;
-  }
-
   async function refresh() {
     if (refreshing || !api.getOnboardingStatus) return;
     refreshing = true;
     refreshBtn.disabled = true;
     try {
       const status = await api.getOnboardingStatus();
-      bound = !!(status && status.bound);
-      const candidates = bound
-        ? ((status && status.candidates) || []).filter(item => item.source === 'pending')
-        : ((status && status.candidates) || []);
-      if (bound && !candidates.length) {
+      if (status && status.bound) {
         successDesc.textContent = `已绑定班主任 ${status.homeroom.name}。`;
         successOverlay.classList.remove('hidden');
         return;
       }
+      const candidates = (status && status.candidates) || [];
       successOverlay.classList.add('hidden');
       renderAddresses(status);
       renderNetworks(status.network);
       renderClassroomQr();
       renderCandidates(candidates);
-      updateActionButtons();
     } catch (_) {
       setError('暂时无法读取绑定状态，请稍后重试');
     } finally {
@@ -138,7 +114,6 @@
     selectedId = radio.value;
     candidateList.querySelectorAll('.candidate').forEach(item => item.classList.toggle('selected', item.contains(radio)));
     bindBtn.disabled = !selectedId;
-    transferBtn.disabled = !selectedId;
     setError('');
   });
 
@@ -157,61 +132,22 @@
     finally { networkInterface.disabled = false; }
   });
   bindBtn.addEventListener('click', async () => {
-    if (!selectedId) { setError(bound ? '请先选择需要批准的教师' : '请先选择需要绑定的班主任账户'); return; }
+    if (!selectedId) { setError('请先选择需要绑定的班主任账户'); return; }
     bindBtn.disabled = true;
-    bindBtn.textContent = bound ? '正在批准…' : '正在绑定…';
+    bindBtn.textContent = '正在绑定…';
     try {
-      const result = bound ? await api.approvePendingTeacher(selectedId) : await api.bindHomeroomTeacher(selectedId);
+      const result = await api.bindHomeroomTeacher(selectedId);
       if (!result || !result.success) {
-        throw new Error(result && result.message ? result.message : (bound ? '批准失败，请重试' : '绑定失败，请重试'));
+        throw new Error(result && result.message ? result.message : '绑定失败，请重试');
       }
-      if (bound) {
-        setError('');
-        await refresh();
-      } else {
-        successDesc.textContent = `已绑定班主任 ${result.teacher.name}。`;
-        successOverlay.classList.remove('hidden');
-      }
+      successDesc.textContent = `已绑定班主任 ${result.teacher.name}。`;
+      successOverlay.classList.remove('hidden');
     } catch (error) {
-      setError(bound ? '批准服务暂时不可用，请重试' : '绑定服务暂时不可用，请重试');
-      reportError(bound ? '批准教师失败' : '绑定班主任失败', error, '首次设置－教师身份确认');
+      setError('绑定服务暂时不可用，请重试');
+      reportError('绑定班主任失败', error, '首次设置－教师身份确认');
     } finally {
-      bindBtn.textContent = bound ? '批准加入' : '确认绑定班主任';
+      bindBtn.textContent = '确认绑定班主任';
       bindBtn.disabled = !selectedId;
-    }
-  });
-
-  rejectBtn.addEventListener('click', async () => {
-    if (!bound || !selectedId) return;
-    rejectBtn.disabled = true;
-    try {
-      const result = await api.rejectPendingTeacher(selectedId);
-      if (!result || !result.success) throw new Error(result && result.message ? result.message : '拒绝失败，请重试');
-      setError('');
-      await refresh();
-    } catch (error) {
-      setError('拒绝服务暂时不可用，请重试');
-      reportError('拒绝教师请求失败', error, '首次设置－教师身份确认');
-    } finally {
-      rejectBtn.disabled = false;
-    }
-  });
-
-  transferBtn.addEventListener('click', async () => {
-    if (!bound || !selectedId) return;
-    transferBtn.disabled = true;
-    transferBtn.textContent = '正在转让…';
-    try {
-      const result = await api.transferHomeroomTeacher(selectedId);
-      if (!result || !result.success) throw new Error(result && result.message ? result.message : '转让失败，请重试');
-      setError('');
-      await refresh();
-    } catch (error) {
-      setError('转让服务暂时不可用，请重试');
-      reportError('班主任转让失败', error, '首次设置－班主任转让');
-    } finally {
-      transferBtn.textContent = '设为班主任';
-      transferBtn.disabled = !selectedId;
     }
   });
 

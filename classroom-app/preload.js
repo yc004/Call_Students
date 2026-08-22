@@ -25,9 +25,6 @@ contextBridge.exposeInMainWorld('api', {
   disconnectCloud: () => ipcRenderer.invoke('disconnect-cloud'),
   onNetworkInterfaceChanged: (cb) => ipcRenderer.on('network-interface-changed', () => cb()),
   bindHomeroomTeacher: (connectionId) => ipcRenderer.invoke('bind-homeroom-teacher', connectionId),
-  approvePendingTeacher: (connectionId) => ipcRenderer.invoke('approve-pending-teacher', connectionId),
-  rejectPendingTeacher: (connectionId) => ipcRenderer.invoke('reject-pending-teacher', connectionId),
-  transferHomeroomTeacher: (connectionId) => ipcRenderer.invoke('transfer-homeroom-teacher', connectionId),
   finishOnboarding: () => ipcRenderer.send('finish-onboarding'),
   onOnboardingChanged: (cb) => ipcRenderer.on('onboarding-changed', () => cb()),
 

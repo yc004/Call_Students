@@ -306,7 +306,8 @@ function focusClassroomWindow() {
     return;
   }
   if (isSystemReady()) openBoardWindow();
-  else createOnboardingWindow();
+  else if (!isHomeroomBound()) createOnboardingWindow();
+  else createConnectionQrWindow();
 }
 
 if (HAS_SINGLE_INSTANCE_LOCK) {
@@ -657,64 +658,6 @@ function bindHomeroomTeacher(connectionId) {
   return { success: true, teacher: getHomeroomTeacher() };
 }
 
-function approvePendingTeacher(connectionId) {
-  const id = String(connectionId || '').trim();
-  if (!id) return { success: false, message: '请选择需要批准的教师' };
-  const d = getDb();
-  const pending = d.prepare('SELECT * FROM pending_requests WHERE connection_id=?').get(id);
-  if (!pending) return { success: false, message: '该教师请求已失效，请刷新后重试' };
-  const requestedSubjects = normalizeSubjects(JSON.parse(pending.subjects || '[]'));
-  if (!requestedSubjects.length) return { success: false, message: '该教师尚未设置授课科目，请让其重新发起加入请求' };
-  d.transaction(() => {
-    d.prepare('DELETE FROM pending_requests WHERE connection_id=?').run(id);
-    d.prepare('INSERT OR REPLACE INTO approved_teachers (connection_id, name, role, subjects, approved_at) VALUES (?,?,?,?,?)')
-      .run(id, pending.name, '授课教师', JSON.stringify(requestedSubjects), new Date().toISOString());
-  })();
-  refreshTeacherConnections(id, false);
-  broadcastSync(loadData());
-  notifyTeacherCandidatesChanged();
-  rebuildTrayMenu();
-  return { success: true, teacher: { connection_id: id, name: pending.name, role: '授课教师', subjects: requestedSubjects } };
-}
-
-function rejectPendingTeacher(connectionId) {
-  const id = String(connectionId || '').trim();
-  if (!id) return { success: false, message: '请选择需要拒绝的教师' };
-  const pending = getDb().prepare('SELECT * FROM pending_requests WHERE connection_id=?').get(id);
-  if (!pending) return { success: false, message: '该教师请求已失效，请刷新后重试' };
-  rejectTeacher(id);
-  refreshTeacherConnections(id, true);
-  broadcastSync(loadData());
-  notifyTeacherCandidatesChanged();
-  return { success: true };
-}
-
-function transferHomeroomTeacher(connectionId) {
-  const id = String(connectionId || '').trim();
-  if (!id) return { success: false, message: '请选择需要设为班主任的教师' };
-  const d = getDb();
-  const candidate = d.prepare('SELECT * FROM pending_requests WHERE connection_id=?').get(id)
-    || d.prepare('SELECT * FROM approved_teachers WHERE connection_id=?').get(id);
-  if (!candidate) return { success: false, message: '该教师请求已失效，请刷新后重试' };
-  const subjects = normalizeSubjects(JSON.parse(candidate.subjects || '[]'));
-  if (!subjects.length) return { success: false, message: '该教师尚未设置授课科目，请让其重新发起加入请求' };
-  const existingHomeroom = getHomeroomTeacher();
-  d.transaction(() => {
-    if (existingHomeroom && existingHomeroom.connection_id !== id) {
-      d.prepare("UPDATE approved_teachers SET role='授课教师' WHERE connection_id=?").run(existingHomeroom.connection_id);
-    }
-    d.prepare('DELETE FROM pending_requests WHERE connection_id=?').run(id);
-    d.prepare('INSERT OR REPLACE INTO approved_teachers (connection_id, name, role, subjects, approved_at) VALUES (?,?,?,?,?)')
-      .run(id, candidate.name, '班主任', JSON.stringify(subjects), new Date().toISOString());
-  })();
-  if (existingHomeroom && existingHomeroom.connection_id !== id) refreshTeacherConnections(existingHomeroom.connection_id, false);
-  refreshTeacherConnections(id, false);
-  broadcastSync(loadData());
-  notifyTeacherCandidatesChanged();
-  rebuildTrayMenu();
-  return { success: true, teacher: { connection_id: id, name: candidate.name, role: '班主任', subjects } };
-}
-
 function normalizeSubjects(values) {
   return Array.from(new Set((Array.isArray(values) ? values : [])
     .map(value => String(value).trim().slice(0, 30))
@@ -873,7 +816,11 @@ function createTray() {
   tray.setToolTip('教室呼叫系统 - 运行中');
 
   rebuildTrayMenu();
-  tray.on('double-click', () => isSystemReady() ? openBoardWindow() : createOnboardingWindow());
+  tray.on('double-click', () => {
+    if (isSystemReady()) openBoardWindow();
+    else if (!isHomeroomBound()) createOnboardingWindow();
+    else createConnectionQrWindow();
+  });
 }
 
 function rebuildTrayMenu() {
@@ -922,7 +869,7 @@ function rebuildTrayMenu() {
       cloudServiceItem,
       { type: 'separator' },
       { label: '等待班主任完成教室配置', enabled: false },
-      { label: '查看绑定状态', click: () => createOnboardingWindow() },
+      { label: '班主任已绑定 · 等待教师端完成配置', enabled: false },
       { label: (autoLaunch ? '✓ ' : '') + '开机自启', click: () => {
         const current = app.getLoginItemSettings().openAtLogin;
         app.setLoginItemSettings({ openAtLogin: !current });
@@ -968,7 +915,12 @@ function rebuildTrayMenu() {
 // ═══════════════════════════════════════
 
 function createOnboardingWindow() {
-  if (isSystemReady() && !getPendingRequests().length) { openBoardWindow(); return; }
+  // 教室端只负责首次班主任绑定。绑定完成后的教师审核必须由班主任客户端处理，
+  // 即使存在待审核教师，也不能重新打开教室端绑定窗口。
+  if (isHomeroomBound()) {
+    if (isSystemReady()) openBoardWindow();
+    return;
+  }
   if (onboardingWin && !onboardingWin.isDestroyed()) {
     onboardingWin.show(); onboardingWin.focus(); return;
   }
@@ -1600,11 +1552,14 @@ function startWSServer() {
 
           // 通知绑定引导与班主任教师端：待审核列表有变化
           if (teacher.status === 'pending') {
-            // 首次绑定时让确认窗口主动出现在教室大屏，避免候选身份已登记但窗口仍停留后台。
-            createOnboardingWindow();
-            if (onboardingWin && !onboardingWin.isDestroyed()) {
-              onboardingWin.show();
-              onboardingWin.focus();
+            // 只有尚未绑定班主任时，候选身份才需要出现在教室端首次设置窗口。
+            // 后续普通教师申请只同步给班主任的小程序或教师桌面端审核。
+            if (!isHomeroomBound()) {
+              createOnboardingWindow();
+              if (onboardingWin && !onboardingWin.isDestroyed()) {
+                onboardingWin.show();
+                onboardingWin.focus();
+              }
             }
             notifyTeacherCandidatesChanged();
             broadcastSync(loadData());
@@ -2104,9 +2059,6 @@ ipcMain.handle('set-wechat-direct-link-settings', (_, baseUrl) => setWechatDirec
 ipcMain.handle('get-network-interfaces', () => getNetworkInterfaceStatus());
 ipcMain.handle('set-network-interface', (_, name) => setNetworkInterface(name));
 ipcMain.handle('bind-homeroom-teacher', (_, connectionId) => bindHomeroomTeacher(connectionId));
-ipcMain.handle('approve-pending-teacher', (_, connectionId) => approvePendingTeacher(connectionId));
-ipcMain.handle('reject-pending-teacher', (_, connectionId) => rejectPendingTeacher(connectionId));
-ipcMain.handle('transfer-homeroom-teacher', (_, connectionId) => transferHomeroomTeacher(connectionId));
 ipcMain.on('finish-onboarding', () => finishBindingStage());
 
 // 弹窗展示完毕 → 回传 ack 给教师端
@@ -2595,7 +2547,8 @@ app.on('before-quit', () => {
 });
 
 app.on('activate', () => {
-  // macOS Dock 点击：初始化阶段显示绑定状态，正常阶段打开作业看板。
+  // macOS Dock 点击：只有未绑定状态进入首次设置；已绑定但待配置时显示连接二维码。
   if (isSystemReady()) openBoardWindow();
-  else createOnboardingWindow();
+  else if (!isHomeroomBound()) createOnboardingWindow();
+  else createConnectionQrWindow();
 });
