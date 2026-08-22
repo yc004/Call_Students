@@ -7,14 +7,12 @@
       <view class="camera-mark">✎</view>
     </view>
     <text class="avatar-title">更换头像</text>
-    <text class="avatar-note">可选，仅在你主动点击后调用微信头像选择组件</text>
   </view>
 
   <view class="form-section">
     <view class="field-row"><text class="field-label">用户名</text><input class="name-input" type="text" maxlength="40" value="{{editName}}" bindinput="onNameInput" placeholder="请输入用户名"/></view>
   </view>
 
-  <view class="storage-note"><view class="storage-icon">✓</view><view><text>{{storageTitle}}</text><text>{{storageDetail}}</text></view></view>
   <view class="organization-note" wx:if="{{usageMode === 'tob' && organizationName}}">当前组织：{{organizationName}}</view>
 
   <button class="save-button" loading="{{profileBusy}}" disabled="{{profileBusy}}" bindtap="saveProfile">保存</button>

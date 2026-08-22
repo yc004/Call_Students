@@ -22,8 +22,8 @@ test('头像只在进入个人资料页后由用户主动选择', () => {
   assert.match(profileView, /open-type=["']chooseAvatar["']/i);
   assert.match(profileView, /class=["']avatar-frame["']/i);
   assert.match(profileView, /mode=["']aspectFit["']/i);
+  assert.match(profileView, /aria-label=["']更换头像["']/i);
   assert.doesNotMatch(profileView, /getPhoneNumber/i);
-  assert.match(profileView, /仅在你主动点击后调用微信头像选择组件/);
 });
 
 test('我的页面通过顶部账户区域进入独立个人信息页', () => {
