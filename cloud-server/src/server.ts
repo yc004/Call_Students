@@ -111,7 +111,7 @@ export async function buildServer(dependencies:ServerDependencies) {
     reply.header('Referrer-Policy', 'no-referrer');
     reply.header('X-Frame-Options', 'DENY');
     reply.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-    reply.header('Content-Security-Policy', "default-src 'self'; connect-src 'self' ws: wss:; img-src 'self' data:; style-src 'self'; script-src 'self'");
+    reply.header('Content-Security-Policy', "default-src 'self'; connect-src 'self' ws: wss:; img-src 'self' data: https:; style-src 'self'; script-src 'self'");
     return payload;
   });
 
@@ -134,23 +134,6 @@ export async function buildServer(dependencies:ServerDependencies) {
     return current.count <= 8;
   }
 
-  async function exchangeWechatCode(code:string): Promise<string> {
-    if (!config.WECHAT_APP_ID || !config.WECHAT_APP_SECRET) {
-      throw Object.assign(new Error('服务端尚未配置微信登录，请联系管理员'), { statusCode:503 });
-    }
-    const url = new URL('https://api.weixin.qq.com/sns/jscode2session');
-    url.searchParams.set('appid', config.WECHAT_APP_ID);
-    url.searchParams.set('secret', config.WECHAT_APP_SECRET);
-    url.searchParams.set('js_code', code);
-    url.searchParams.set('grant_type', 'authorization_code');
-    const response = await fetch(url);
-    const data = await response.json() as { openid?:string; errcode?:number; errmsg?:string };
-    if (!response.ok || !data.openid) {
-      throw Object.assign(new Error(data.errmsg || '微信登录失败'), { statusCode:401 });
-    }
-    return data.openid;
-  }
-
   async function createTeacherSession(userId:string, deviceName:string, deviceType:'mini-program'|'teacher-desktop') {
     const device = await database.query(
       'INSERT INTO user_devices (user_id,device_name,device_type,last_seen_at) VALUES ($1,$2,$3,now()) RETURNING id',
@@ -158,6 +141,21 @@ export async function buildServer(dependencies:ServerDependencies) {
     );
     const subject:AccessSubject = { subjectType:'user', subjectId:userId, organizationId:(await database.query('SELECT organization_id FROM users WHERE id=$1', [userId])).rows[0].organization_id, role:'teacher' };
     return createSession(database, subject, device.rows[0].id, config);
+  }
+
+  async function organizationFor(organizationId:string) {
+    const result = await database.query(
+      'SELECT id,name,short_name,logo_url,primary_color FROM organizations WHERE id=$1',
+      [organizationId],
+    );
+    const organization = result.rows[0];
+    return organization ? {
+      id:organization.id,
+      name:organization.name,
+      shortName:organization.short_name || organization.name,
+      logoUrl:organization.logo_url || '',
+      primaryColor:organization.primary_color || '#2563EB',
+    } : null;
   }
 
   app.setErrorHandler((error, _request, reply) => {
@@ -176,11 +174,15 @@ export async function buildServer(dependencies:ServerDependencies) {
       const subject = await verifyAccessToken(bearerToken(request), config);
       if (subject.subjectType !== 'user') throw new Error('user token required');
       const device = await database.query(
-        `SELECT d.id,d.device_type,u.status,u.server_role FROM user_devices d JOIN users u ON u.id=d.user_id
+        `SELECT d.id,d.device_type,u.status,u.server_role,u.must_change_password FROM user_devices d JOIN users u ON u.id=d.user_id
          WHERE d.user_id=$1 AND ($2::uuid IS NULL OR d.id=$2::uuid) AND d.revoked_at IS NULL ORDER BY d.last_seen_at DESC NULLS LAST,d.created_at DESC LIMIT 1`,
         [subject.subjectId, subject.deviceId || null],
       );
       if (!device.rowCount || device.rows[0].status !== 'active' || device.rows[0].server_role !== subject.role || !compatibleUserClient(subject.role, device.rows[0].device_type, declaredClient(request))) throw new Error('device identity invalid');
+      if (['mini-program','teacher-desktop'].includes(device.rows[0].device_type) && device.rows[0].must_change_password
+        && !request.url.startsWith('/api/v1/teacher/profile') && !request.url.startsWith('/api/v1/teacher/avatar')) {
+        return reply.code(403).send({ error:'PROFILE_SETUP_REQUIRED', message:'请先修改默认密码并完善个人资料' });
+      }
       subject.deviceId = device.rows[0].id;
       request.cloudSubject = subject;
       void database.query('UPDATE user_devices SET last_seen_at=now() WHERE id=$1', [subject.deviceId]);
@@ -301,17 +303,21 @@ export async function buildServer(dependencies:ServerDependencies) {
     });
     const roleName = (role:string) => role === 'homeroom' ? '班主任' : '授课教师';
     const member = membership.rows[0];
+    const isHomeroom = member.role === 'homeroom';
+    const teacherSubjects = Array.isArray(member.subjects_json) ? member.subjects_json.map(String) : [];
+    const allowedSubjects = new Set(teacherSubjects);
+    const visibleAssignments = isHomeroom ? assignments.rows : assignments.rows.filter(item => allowedSubjects.has(String(item.subject || '')));
     return {
       type:'sync', cloudSnapshot:true, faceLanRequired:true,
       className:classroom.rows[0].name, classroomConfigured:classroom.rows[0].configured,
       students:students.rows,
-      assignments:assignments.rows.map(item => ({ id:item.id, subject:item.subject, type:item.type, title:item.title, date:new Date(item.publish_at).toISOString().slice(0, 10), deadline:item.deadline, source:item.source, submissions:submissionMap.get(item.id) || {} })),
-      subjects:Array.from(new Set(members.rows.flatMap(row => Array.isArray(row.subjects_json) ? row.subjects_json.map(String) : []))),
+      assignments:visibleAssignments.map(item => ({ id:item.id, subject:item.subject, type:item.type, title:item.title, date:new Date(item.publish_at).toISOString().slice(0, 10), deadline:item.deadline, source:item.source, submissions:submissionMap.get(item.id) || {} })),
+      subjects:isHomeroom ? Array.from(new Set(members.rows.flatMap(row => Array.isArray(row.subjects_json) ? row.subjects_json.map(String) : []))) : teacherSubjects,
       teacher:{ connectionId:member.legacy_connection_id || `cloud-${userId}`, name:member.name, role:roleName(member.role), subjects:member.subjects_json || [], status:'approved' },
-      teachers:{
+      teachers:isHomeroom ? {
         approved:members.rows.filter(row => row.status === 'approved').map(row => ({ connection_id:row.legacy_connection_id || `cloud-${row.id}`, name:row.name, role:roleName(row.role), subjects:row.subjects_json || [] })),
         pending:members.rows.filter(row => row.status === 'pending').map(row => ({ connection_id:row.legacy_connection_id || `cloud-${row.id}`, name:row.name, role:roleName(row.role), subjects:row.subjects_json || [] })),
-      },
+      } : null,
     };
   }
 
@@ -343,6 +349,7 @@ export async function buildServer(dependencies:ServerDependencies) {
     const member = memberResult.rows[0];
     const isHomeroom = member.role === 'homeroom';
     const subjects = Array.isArray(member.subjects_json) ? member.subjects_json.map(String) : [];
+    if (!isHomeroom) return false;
     if (message.type === 'update-classroom') {
       if (!isHomeroom) return false;
       const input = message.classroom && typeof message.classroom === 'object' ? message.classroom as Record<string, unknown> : {};
@@ -474,6 +481,29 @@ export async function buildServer(dependencies:ServerDependencies) {
     return { classrooms:classrooms.rows[0].count, users:users.rows[0].count, onlineDevices:onlineDevices.rows[0].count, pendingTargets:pendingTargets.rows[0].count };
   });
 
+  app.get('/api/v1/admin/organization', { preHandler:requireAdmin }, async (request:AuthenticatedRequest, reply) => {
+    const organization = await organizationFor(request.cloudSubject!.organizationId);
+    if (!organization) return reply.code(404).send({ error:'ORGANIZATION_NOT_FOUND', message:'组织不存在' });
+    return { organization };
+  });
+
+  app.patch('/api/v1/admin/organization', { preHandler:requireAdmin }, async (request:AuthenticatedRequest, reply) => {
+    const input = parseBody(z.object({
+      name:z.string().trim().min(1).max(120),
+      shortName:z.string().trim().min(1).max(40),
+      logoUrl:z.string().url().max(500).optional().or(z.literal('')),
+      primaryColor:z.string().regex(/^#[0-9A-Fa-f]{6}$/),
+    }), request);
+    const result = await database.query(
+      `UPDATE organizations SET name=$2,short_name=$3,logo_url=$4,primary_color=UPPER($5)
+       WHERE id=$1 RETURNING id,name,short_name,logo_url,primary_color`,
+      [request.cloudSubject!.organizationId, input.name, input.shortName, input.logoUrl || null, input.primaryColor],
+    );
+    if (!result.rowCount) return reply.code(404).send({ error:'ORGANIZATION_NOT_FOUND', message:'组织不存在' });
+    await audit(request.cloudSubject, request, 'organization.update', 'organization', request.cloudSubject!.organizationId, input);
+    return { organization:await organizationFor(request.cloudSubject!.organizationId) };
+  });
+
   app.get('/api/v1/admin/classrooms', { preHandler:requireAdmin }, async (request:AuthenticatedRequest) => {
     const result = await database.query(
       `SELECT c.*,
@@ -600,7 +630,7 @@ export async function buildServer(dependencies:ServerDependencies) {
 
   app.get('/api/v1/admin/users', { preHandler:requireAdmin }, async (request:AuthenticatedRequest) => {
     const result = await database.query(
-      `SELECT id,name,login_name,wechat_openid,legacy_connection_id,server_role,status,created_at,updated_at
+      `SELECT id,name,login_name,wechat_openid,legacy_connection_id,server_role,status,must_change_password,created_at,updated_at
        FROM users u WHERE organization_id=$1 AND server_role='teacher'
        ORDER BY created_at DESC`, [request.cloudSubject!.organizationId],
     );
@@ -610,7 +640,7 @@ export async function buildServer(dependencies:ServerDependencies) {
   app.get('/api/v1/admin/users/:id', { preHandler:requireAdmin }, async (request:AuthenticatedRequest, reply) => {
     const params = z.object({ id:z.string().uuid() }).parse(request.params);
     const [teacher, memberships, devices] = await Promise.all([
-      database.query("SELECT id,name,login_name,wechat_openid,legacy_connection_id,status,created_at,updated_at FROM users WHERE id=$1 AND organization_id=$2 AND server_role='teacher'", [params.id, request.cloudSubject!.organizationId]),
+      database.query("SELECT id,name,login_name,wechat_openid,legacy_connection_id,status,must_change_password,created_at,updated_at FROM users WHERE id=$1 AND organization_id=$2 AND server_role='teacher'", [params.id, request.cloudSubject!.organizationId]),
       database.query(`SELECT c.id AS classroom_id,c.name AS classroom_name,m.role,m.status,m.subjects_json FROM classroom_members m JOIN classrooms c ON c.id=m.classroom_id WHERE m.user_id=$1 AND c.organization_id=$2 AND c.status<>'archived' ORDER BY c.name`, [params.id, request.cloudSubject!.organizationId]),
       database.query('SELECT count(*)::int AS count,max(last_seen_at) AS last_seen_at FROM user_devices WHERE user_id=$1 AND revoked_at IS NULL', [params.id]),
     ]);
@@ -619,10 +649,19 @@ export async function buildServer(dependencies:ServerDependencies) {
   });
 
   app.post('/api/v1/admin/users', { preHandler:requireAdmin }, async (request:AuthenticatedRequest, reply) => {
-    const input = parseBody(z.object({ name:z.string().trim().min(1).max(40) }), request);
+    const input = parseBody(z.object({
+      name:z.string().trim().min(1).max(40),
+      loginName:z.string().trim().min(3).max(80),
+      defaultPassword:z.string().min(8).max(200),
+    }), request);
+    const duplicate = await database.query("SELECT 1 FROM users WHERE organization_id=$1 AND login_name=$2 AND server_role='teacher'", [request.cloudSubject!.organizationId, input.loginName]);
+    if (duplicate.rowCount) return reply.code(409).send({ error:'LOGIN_NAME_TAKEN', message:'该登录账号已被使用' });
+    const passwordHash = await hashPassword(input.defaultPassword);
     const result = await database.query(
-      "INSERT INTO users (organization_id,name,server_role,status) VALUES ($1,$2,'teacher','active') RETURNING id,name,server_role,status,created_at",
-      [request.cloudSubject!.organizationId, input.name],
+      `INSERT INTO users (organization_id,name,login_name,password_hash,must_change_password,server_role,status)
+       VALUES ($1,$2,$3,$4,true,'teacher','active')
+       RETURNING id,name,login_name,server_role,status,must_change_password,created_at`,
+      [request.cloudSubject!.organizationId, input.name, input.loginName, passwordHash],
     );
     await audit(request.cloudSubject, request, 'teacher.create', 'user', result.rows[0].id);
     return reply.code(201).send(result.rows[0]);
@@ -630,11 +669,19 @@ export async function buildServer(dependencies:ServerDependencies) {
 
   app.patch('/api/v1/admin/users/:id', { preHandler:requireAdmin }, async (request:AuthenticatedRequest, reply) => {
     const params = z.object({ id:z.string().uuid() }).parse(request.params);
-    const input = parseBody(z.object({ name:z.string().trim().min(1).max(40).optional(), status:z.enum(['active','disabled']).optional() }).refine(value => value.name !== undefined || value.status !== undefined, { message:'至少提供一个需要修改的字段' }), request);
-    const result = await database.query("UPDATE users SET name=COALESCE($3,name),status=COALESCE($4,status),updated_at=now() WHERE id=$1 AND organization_id=$2 AND server_role='teacher' RETURNING id,name,status", [params.id, request.cloudSubject!.organizationId, input.name || null, input.status || null]);
+    const input = parseBody(z.object({ name:z.string().trim().min(1).max(40).optional(), status:z.enum(['active','disabled']).optional(), loginName:z.string().trim().min(3).max(80).optional(), defaultPassword:z.string().min(8).max(200).optional() }).refine(value => Object.values(value).some(item => item !== undefined), { message:'至少提供一个需要修改的字段' }), request);
+    if (input.loginName) {
+      const duplicate = await database.query("SELECT 1 FROM users WHERE organization_id=$1 AND login_name=$2 AND id<>$3", [request.cloudSubject!.organizationId, input.loginName, params.id]);
+      if (duplicate.rowCount) return reply.code(409).send({ error:'LOGIN_NAME_TAKEN', message:'该登录账号已被使用' });
+    }
+    const passwordHash = input.defaultPassword ? await hashPassword(input.defaultPassword) : null;
+    const result = await database.query(`UPDATE users SET name=COALESCE($3,name),status=COALESCE($4,status),login_name=COALESCE($5,login_name),password_hash=COALESCE($6,password_hash),must_change_password=CASE WHEN $6::text IS NOT NULL THEN true ELSE must_change_password END,updated_at=now() WHERE id=$1 AND organization_id=$2 AND server_role='teacher' RETURNING id,name,login_name,status,must_change_password`, [params.id, request.cloudSubject!.organizationId, input.name || null, input.status || null, input.loginName || null, passwordHash]);
     if (!result.rowCount) return reply.code(404).send({ error:'USER_NOT_FOUND', message:'教师不存在' });
-    if (input.status === 'disabled') await database.query("UPDATE refresh_tokens SET revoked_at=now() WHERE subject_type='user' AND subject_id=$1 AND revoked_at IS NULL", [params.id]);
-    if (input.status === 'disabled') clientSockets.forEach(sockets => sockets.forEach(socket => { if (clientSubjects.get(socket)?.subjectId === params.id) socket.close(4403, 'account disabled'); }));
+    if (input.status === 'disabled' || input.defaultPassword) {
+      await database.query("UPDATE refresh_tokens SET revoked_at=now() WHERE subject_type='user' AND subject_id=$1 AND revoked_at IS NULL", [params.id]);
+      await database.query('UPDATE user_devices SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL', [params.id]);
+      clientSockets.forEach(sockets => sockets.forEach(socket => { if (clientSubjects.get(socket)?.subjectId === params.id) socket.close(4403, input.status === 'disabled' ? 'account disabled' : 'password reset'); }));
+    }
     await audit(request.cloudSubject, request, 'user.update', 'user', params.id, input);
     return result.rows[0];
   });
@@ -853,73 +900,68 @@ export async function buildServer(dependencies:ServerDependencies) {
 
   app.post('/api/v1/auth/mini-program/register', async (request, reply) => {
     if (!clientAllowed(request, 'mini-program')) return reply.code(403).send({ error:'CLIENT_IDENTITY_MISMATCH', message:'该接口只能由小程序使用' });
-    const input = parseBody(z.object({
-      key:z.string().startsWith('tk_'),
-      loginName:z.string().trim().min(3).max(80),
-      password:z.string().min(10).max(200),
-      nickname:z.string().trim().min(1).max(40),
-      avatarUrl:z.string().url().optional().or(z.literal('')),
-      legacyConnectionId:z.string().trim().max(128).optional(),
-      deviceName:z.string().trim().min(1).max(120).default('微信小程序'),
-      wechatCode:z.string().optional(),
-    }), request);
-    const existing = await database.query("SELECT 1 FROM users WHERE login_name=$1 AND server_role='teacher' LIMIT 1", [input.loginName]);
-    if (existing.rowCount) return reply.code(409).send({ error:'LOGIN_NAME_TAKEN', message:'该登录账号已被注册' });
-    const openid = input.wechatCode ? await exchangeWechatCode(input.wechatCode) : null;
-    const enrollment = await transaction(database, async client => {
-      const keyResult = await client.query(
-        `SELECT e.*,u.id AS user_id,u.name AS user_name,u.organization_id,u.legacy_connection_id,u.server_role,u.status AS user_status
-         FROM enrollment_keys e JOIN users u ON u.id=e.target_user_id AND u.organization_id=e.organization_id
-         WHERE e.key_hash=$1 AND e.key_type='teacher' AND e.revoked_at IS NULL AND e.expires_at>now() AND e.used_count<e.max_uses
-         FOR UPDATE OF e,u`,
-        [hashOpaqueToken(input.key, config.KEY_PEPPER)],
-      );
-      const key = keyResult.rows[0];
-      if (!key || key.user_status !== 'active' || key.server_role !== 'teacher') return null;
-      if (key.legacy_connection_id && input.legacyConnectionId && key.legacy_connection_id !== input.legacyConnectionId) {
-        throw Object.assign(new Error('该教师密钥已经分配给另一个本地教师身份'), { statusCode:409 });
-      }
-      if (input.legacyConnectionId) {
-        const duplicate = await client.query('SELECT 1 FROM users WHERE organization_id=$1 AND legacy_connection_id=$2 AND id<>$3 LIMIT 1', [key.organization_id, input.legacyConnectionId, key.user_id]);
-        if (duplicate.rowCount) throw Object.assign(new Error('当前本地教师身份已经绑定其他云账号'), { statusCode:409 });
-        await client.query('UPDATE users SET legacy_connection_id=COALESCE(legacy_connection_id,$2),updated_at=now() WHERE id=$1', [key.user_id, input.legacyConnectionId]);
-      }
-      await client.query(
-        `UPDATE users SET login_name=$2,password_hash=$3,nickname=$4,avatar_url=$5,wechat_openid=COALESCE($6,wechat_openid),updated_at=now()
-         WHERE id=$1`,
-        [key.user_id, input.loginName, await hashPassword(input.password), input.nickname, input.avatarUrl || null, openid],
-      );
-      await client.query('UPDATE enrollment_keys SET used_count=used_count+1 WHERE id=$1', [key.id]);
-      return key;
-    });
-    if (!enrollment) return reply.code(401).send({ error:'ENROLLMENT_KEY_INVALID', message:'教师身份密钥无效、已过期或已使用' });
-    const session = await createTeacherSession(enrollment.user_id, input.deviceName, 'mini-program');
-    await audit({ subjectType:'user', subjectId:enrollment.user_id, organizationId:enrollment.organization_id, role:'teacher' }, request, 'mini-program.register', 'user', enrollment.user_id);
-    return reply.code(201).send({ user:{ id:enrollment.user_id, name:enrollment.user_name, nickname:input.nickname, avatarUrl:input.avatarUrl || null }, ...session });
+    return reply.code(410).send({ error:'REGISTRATION_DISABLED', message:'组织账号由管理员统一创建，请使用组织发放的账号和默认密码登录' });
   });
 
   app.post('/api/v1/auth/mini-program/login', async (request, reply) => {
-    if (!clientAllowed(request, 'mini-program')) return reply.code(403).send({ error:'CLIENT_IDENTITY_MISMATCH', message:'该接口只能由小程序使用' });
+    if (!clientAllowed(request, 'mini-program', 'teacher-desktop')) return reply.code(403).send({ error:'CLIENT_IDENTITY_MISMATCH', message:'该接口只能由受支持的教师客户端使用' });
     const input = parseBody(z.object({ loginName:z.string().trim().min(3).max(80), password:z.string().min(1).max(200), deviceName:z.string().trim().min(1).max(120).default('微信小程序') }), request);
     if (!consumeLoginAttempt(request.ip + ':' + input.loginName.toLowerCase())) return reply.code(429).send({ error:'TOO_MANY_ATTEMPTS', message:'登录尝试过多，请 15 分钟后再试' });
-    const found = await database.query("SELECT id,name,nickname,avatar_url,password_hash,status FROM users WHERE login_name=$1 AND server_role='teacher' AND status='active' ORDER BY created_at LIMIT 1", [input.loginName]);
+    const found = await database.query("SELECT id,organization_id,name,nickname,avatar_url,password_hash,status,must_change_password FROM users WHERE login_name=$1 AND server_role='teacher' AND status='active' ORDER BY created_at LIMIT 1", [input.loginName]);
     const user = found.rows[0];
     if (!user || !user.password_hash || !(await verifyPassword(input.password, user.password_hash))) return reply.code(401).send({ error:'LOGIN_FAILED', message:'账号或密码错误' });
     await database.query('UPDATE users SET last_login_at=now() WHERE id=$1', [user.id]);
-    const session = await createTeacherSession(user.id, input.deviceName, 'mini-program');
-    return { user:{ id:user.id, name:user.name, nickname:user.nickname, avatarUrl:user.avatar_url }, ...session };
+    const deviceType = declaredClient(request) === 'teacher-desktop' ? 'teacher-desktop' : 'mini-program';
+    const session = await createTeacherSession(user.id, input.deviceName, deviceType);
+    return { user:{ id:user.id, name:user.name, nickname:user.nickname, avatarUrl:user.avatar_url, mustChangePassword:user.must_change_password }, organization:await organizationFor(user.organization_id), ...session };
+  });
+
+  app.patch('/api/v1/teacher/profile', { preHandler:authenticate }, async (request:AuthenticatedRequest, reply) => {
+    if (request.cloudSubject?.role !== 'teacher') return reply.code(403).send({ error:'PERMISSION_DENIED', message:'教师账号权限不足' });
+    const input = parseBody(z.object({
+      name:z.string().trim().min(1).max(40).optional(),
+      nickname:z.string().trim().min(1).max(40).optional(),
+      currentPassword:z.string().min(1).max(200).optional(),
+      newPassword:z.string().min(10).max(200).optional(),
+    }), request);
+    if (!input.name && !input.nickname && !input.newPassword) return reply.code(400).send({ error:'PROFILE_UPDATE_EMPTY', message:'没有需要保存的个人资料' });
+    const current = await database.query("SELECT id,name,nickname,password_hash,must_change_password FROM users WHERE id=$1 AND server_role='teacher' AND status='active'", [request.cloudSubject.subjectId]);
+    if (!current.rowCount) return reply.code(404).send({ error:'USER_NOT_FOUND', message:'教师账号不存在' });
+    const existing = current.rows[0];
+    if (existing.must_change_password && (!input.name || !input.nickname || !input.newPassword)) {
+      return reply.code(400).send({ error:'PROFILE_SETUP_INCOMPLETE', message:'首次登录必须完善用户名并修改默认密码' });
+    }
+    if (input.newPassword && !existing.must_change_password) {
+      if (!input.currentPassword || !existing.password_hash || !(await verifyPassword(input.currentPassword, existing.password_hash))) {
+        return reply.code(401).send({ error:'CURRENT_PASSWORD_INVALID', message:'当前密码不正确' });
+      }
+    }
+    if (input.newPassword && existing.password_hash && await verifyPassword(input.newPassword, existing.password_hash)) {
+      return reply.code(400).send({ error:'PASSWORD_UNCHANGED', message:'新密码不能与当前密码相同' });
+    }
+    const passwordHash = input.newPassword ? await hashPassword(input.newPassword) : null;
+    const result = await database.query(
+      `UPDATE users SET name=COALESCE($2,name),nickname=COALESCE($3,nickname),password_hash=COALESCE($4,password_hash),must_change_password=CASE WHEN $4::text IS NOT NULL THEN false ELSE must_change_password END,updated_at=now()
+       WHERE id=$1 AND server_role='teacher' AND status='active'
+       RETURNING id,organization_id,name,nickname,avatar_url,must_change_password`,
+      [request.cloudSubject.subjectId, input.name || null, input.nickname || null, passwordHash],
+    );
+    const user = result.rows[0];
+    await audit(request.cloudSubject, request, input.newPassword ? 'teacher.profile.password' : 'teacher.profile.update', 'user', user.id);
+    return { user:{ id:user.id, name:user.name, nickname:user.nickname, avatarUrl:user.avatar_url, mustChangePassword:user.must_change_password }, organization:await organizationFor(user.organization_id) };
+  });
+
+  app.get('/api/v1/teacher/profile', { preHandler:authenticate }, async (request:AuthenticatedRequest, reply) => {
+    if (request.cloudSubject?.role !== 'teacher') return reply.code(403).send({ error:'PERMISSION_DENIED', message:'教师账号权限不足' });
+    const found = await database.query('SELECT id,organization_id,name,nickname,avatar_url,must_change_password FROM users WHERE id=$1 AND status=\'active\'', [request.cloudSubject.subjectId]);
+    if (!found.rowCount) return reply.code(404).send({ error:'USER_NOT_FOUND', message:'教师账号不存在' });
+    const user = found.rows[0];
+    return { user:{ id:user.id, name:user.name, nickname:user.nickname, avatarUrl:user.avatar_url, mustChangePassword:user.must_change_password }, organization:await organizationFor(user.organization_id) };
   });
 
   app.post('/api/v1/auth/mini-program/wechat', async (request, reply) => {
     if (!clientAllowed(request, 'mini-program')) return reply.code(403).send({ error:'CLIENT_IDENTITY_MISMATCH', message:'该接口只能由小程序使用' });
-    const input = parseBody(z.object({ code:z.string().min(1), deviceName:z.string().trim().min(1).max(120).default('微信小程序') }), request);
-    const openid = await exchangeWechatCode(input.code);
-    const found = await database.query("SELECT id,name,nickname,avatar_url,status FROM users WHERE wechat_openid=$1 AND server_role='teacher' AND status='active' LIMIT 1", [openid]);
-    if (!found.rowCount) return reply.code(404).send({ error:'WECHAT_NOT_BOUND', message:'该微信尚未绑定教师云账号，请先使用身份密钥注册' });
-    const user = found.rows[0];
-    await database.query('UPDATE users SET last_login_at=now() WHERE id=$1', [user.id]);
-    const session = await createTeacherSession(user.id, input.deviceName, 'mini-program');
-    return { user:{ id:user.id, name:user.name, nickname:user.nickname, avatarUrl:user.avatar_url }, ...session };
+    return reply.code(410).send({ error:'WECHAT_LOGIN_DISABLED', message:'组织模式仅支持组织发放的账号密码登录' });
   });
 
   app.post('/api/v1/teacher/avatar', { preHandler:authenticate }, async (request:AuthenticatedRequest, reply) => {
@@ -958,20 +1000,48 @@ export async function buildServer(dependencies:ServerDependencies) {
       database.query(`SELECT m.user_id,u.name,m.role,m.status,m.subjects_json FROM classroom_members m JOIN users u ON u.id=m.user_id WHERE m.classroom_id=$1 ORDER BY m.created_at`, [params.id]),
     ]);
     if (!classroom.rowCount) return reply.code(404).send({ error:'CLASSROOM_NOT_FOUND', message:'教室不存在' });
-    return { classroom:classroom.rows[0], teacher:membership.rows[0], students:students.rows, assignments:assignments.rows, submissions:submissions.rows, members:members.rows };
+    const member = membership.rows[0];
+    const isHomeroom = member.role === 'homeroom';
+    const allowedSubjects = new Set(Array.isArray(member.subjects_json) ? member.subjects_json.map(String) : []);
+    const visibleAssignments = isHomeroom ? assignments.rows : assignments.rows.filter(item => allowedSubjects.has(String(item.subject || '')));
+    const visibleAssignmentIds = new Set(visibleAssignments.map(item => String(item.id)));
+    return {
+      classroom:classroom.rows[0],
+      teacher:member,
+      students:students.rows,
+      assignments:visibleAssignments,
+      submissions:submissions.rows.filter(item => visibleAssignmentIds.has(String(item.assignment_id))),
+      members:isHomeroom ? members.rows : [],
+    };
   });
 
   app.get('/api/v1/classrooms/:id/changes', { preHandler:authenticate }, async (request:AuthenticatedRequest, reply) => {
     const params = z.object({ id:z.string().uuid() }).parse(request.params);
     const query = z.object({ since:z.coerce.number().int().min(0).default(0), limit:z.coerce.number().int().min(1).max(500).default(200) }).parse(request.query);
     if (request.cloudSubject?.subjectType !== 'user') return reply.code(403).send({ error:'PERMISSION_DENIED', message:'教师账号权限不足' });
-    const member = await database.query("SELECT 1 FROM classroom_members WHERE classroom_id=$1 AND user_id=$2 AND status='approved'", [params.id, request.cloudSubject.subjectId]);
+    const member = await database.query("SELECT role,subjects_json FROM classroom_members WHERE classroom_id=$1 AND user_id=$2 AND status='approved'", [params.id, request.cloudSubject.subjectId]);
     if (!member.rowCount) return reply.code(403).send({ error:'PERMISSION_DENIED', message:'尚未加入该教室' });
     const [classroom, events] = await Promise.all([
       database.query('SELECT revision FROM classrooms WHERE id=$1', [params.id]),
       database.query('SELECT revision,operation_id,event_type,payload_json,created_at FROM operation_events WHERE classroom_id=$1 AND revision>$2 ORDER BY revision LIMIT $3', [params.id, query.since, query.limit]),
     ]);
-    return { revision:Number(classroom.rows[0]?.revision || 0), events:events.rows };
+    if (member.rows[0].role === 'homeroom') return { revision:Number(classroom.rows[0]?.revision || 0), events:events.rows };
+    const allowedSubjects = new Set(Array.isArray(member.rows[0].subjects_json) ? member.rows[0].subjects_json.map(String) : []);
+    const assignmentIds = events.rows
+      .map(event => String(event.payload_json?.id || event.payload_json?.assignmentId || ''))
+      .filter(Boolean);
+    const assignmentSubjects = new Map<string,string>();
+    if (assignmentIds.length) {
+      const rows = await database.query('SELECT id,subject FROM assignments WHERE classroom_id=$1 AND id=ANY($2::text[])', [params.id, assignmentIds]);
+      rows.rows.forEach(row => assignmentSubjects.set(String(row.id), String(row.subject || '')));
+    }
+    const visibleEvents = events.rows.filter(event => {
+      if (!String(event.event_type || '').startsWith('assignment.') && event.event_type !== 'submission.update') return true;
+      const payload = event.payload_json || {};
+      const subjectName = String(payload.subject || assignmentSubjects.get(String(payload.id || payload.assignmentId || '')) || '');
+      return allowedSubjects.has(subjectName);
+    });
+    return { revision:Number(classroom.rows[0]?.revision || 0), events:visibleEvents };
   });
 
   app.delete('/api/v1/classrooms/:id/membership', { preHandler:authenticate }, async (request:AuthenticatedRequest, reply) => {
@@ -1008,6 +1078,8 @@ export async function buildServer(dependencies:ServerDependencies) {
       const subjects = Array.isArray(member.subjects_json) ? member.subjects_json.map(String) : [];
       const payload = input.payload;
       let eventPayload:Record<string, unknown> = {};
+
+      if (!isHomeroom) return { status:403, body:{ error:'PERMISSION_DENIED', message:'普通授课教师仅可查看本人授课科目的作业与出勤情况' } };
 
       if (input.type === 'classroom.update') {
         if (!isHomeroom) return { status:403, body:{ error:'PERMISSION_DENIED', message:'仅班主任可修改教室资料' } };
@@ -1132,7 +1204,12 @@ export async function buildServer(dependencies:ServerDependencies) {
         void database.query('UPDATE classrooms SET last_device_sync_at=now(),updated_at=now() WHERE id=$1', [classroomId]);
         return;
       }
-      if (message.type === 'sync' && classroomId) void mirrorClassroomSnapshot(classroomId, message).catch(error => app.log.error(error));
+      if (message.type === 'sync' && classroomId) {
+        void mirrorClassroomSnapshot(classroomId, message)
+          .then(() => broadcastCloudSnapshot(classroomId))
+          .catch(error => app.log.error(error));
+        return;
+      }
       if (classroomId) {
         const targetClientId = String(message._cloudClientId || '');
         delete message._cloudClientId;
@@ -1200,6 +1277,10 @@ export async function buildServer(dependencies:ServerDependencies) {
         const liveMembership = await database.query("SELECT m.role,m.subjects_json,u.name,u.legacy_connection_id,u.status AS user_status,m.status AS member_status FROM classroom_members m JOIN users u ON u.id=m.user_id WHERE m.classroom_id=$1 AND m.user_id=$2", [subscribedClassroom, subject.subjectId]);
         if (!liveMembership.rowCount || liveMembership.rows[0].user_status !== 'active' || liveMembership.rows[0].member_status !== 'approved') { socket.close(4403, 'membership revoked'); return; }
         cloudMembership = { userId:subject.subjectId, name:liveMembership.rows[0].name, connectionId:liveMembership.rows[0].legacy_connection_id || `cloud-${subject.subjectId}`, role:liveMembership.rows[0].role, subjects:liveMembership.rows[0].subjects_json || [] };
+        if (cloudMembership.role !== 'homeroom' && ['call','update-classroom','update-assignments','update-submission','label-face','manage-teacher'].includes(String(message.type || ''))) {
+          socket.send(JSON.stringify({ type:'auth-required', message:'普通授课教师仅可查看本人授课科目的作业与出勤情况' }));
+          return;
+        }
         if (message.type === 'call' && !(classroomSockets.get(subscribedClassroom)?.size)) {
           socket.send(JSON.stringify({ type:'delivery-unavailable', message:'教室端当前离线，呼叫未发送' }));
           return;
@@ -1242,8 +1323,20 @@ export async function buildServer(dependencies:ServerDependencies) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const config = loadConfig();
-  const database = createDatabase(config);
-  const app = await buildServer({ config, database });
-  await app.listen({ host:config.HOST, port:config.PORT });
+  try {
+    const config = loadConfig();
+    const database = createDatabase(config);
+    const app = await buildServer({ config, database });
+    await app.listen({ host:config.HOST, port:config.PORT });
+  } catch (error) {
+    const failure = error as NodeJS.ErrnoException & { hostname?:string };
+    if (failure.code === 'ENOTFOUND' && failure.hostname === 'postgres') {
+      console.error('[启动失败] DATABASE_URL 中的主机名 postgres 只能在 Docker Compose 网络内使用。请启动 Docker 后执行 docker compose up -d --build；若要直接运行 npm start，请把 DATABASE_URL 的主机改为本机 PostgreSQL 地址。');
+    } else if (failure.code === 'ECONNREFUSED') {
+      console.error('[启动失败] 无法连接 PostgreSQL，请确认数据库已经启动并检查 .env 中的 DATABASE_URL。');
+    } else {
+      console.error('[启动失败]', failure.message || failure);
+    }
+    process.exitCode = 1;
+  }
 }

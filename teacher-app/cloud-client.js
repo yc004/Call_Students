@@ -2,13 +2,18 @@
 
 const FACE_MESSAGE_PREFIXES = ['face-', 'pending-face', 'label-face'];
 
-function normalizeServerUrl(value) {
-  const raw = String(value || '').trim().replace(/\/+$/, '');
-  if (!/^https?:\/\//i.test(raw)) throw new Error('服务器地址必须以 http:// 或 https:// 开头');
+function normalizeServerUrl(value, useHttps) {
+  let raw = String(value || '').trim().replace(/\/+$/, '');
+  if (!raw) throw new Error('请填写服务器地址');
+  if (typeof useHttps === 'boolean') {
+    raw = raw.replace(/^https?:\/\//i, '');
+    raw = `${useHttps ? 'https' : 'http'}://${raw}`;
+  } else if (!/^https?:\/\//i.test(raw)) {
+    throw new Error('服务器地址必须以 http:// 或 https:// 开头');
+  }
   const url = new URL(raw);
   if (url.username || url.password || url.hash || url.search) throw new Error('服务器地址不能包含账号、查询参数或片段');
   if (url.pathname !== '' && url.pathname !== '/') throw new Error('服务器地址不能包含路径');
-  if (url.protocol !== 'https:' && !['localhost','127.0.0.1','::1','[::1]'].includes(url.hostname)) throw new Error('云服务必须使用 HTTPS 加密连接');
   return url.toString().replace(/\/$/, '');
 }
 

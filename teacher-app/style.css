@@ -676,7 +676,7 @@ body {
 .ms-btn:hover, .ms-btn.open { border-color: var(--primary); }
 .ms-drop {
   position: absolute; top: 100%; left: 0; margin-top: 4px;
-  background: #fff; border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text); background: var(--surface-solid, var(--card)); border: 1px solid var(--border); border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.12); z-index: 50;
   min-width: 160px; max-height: 240px; overflow-y: auto; padding: 6px 0;
 }
@@ -686,7 +686,7 @@ body {
   padding: 6px 14px; font-size: 13px; cursor: pointer;
   transition: background 0.1s;
 }
-.ms-drop label:hover { background: #F1F5F9; }
+.ms-drop label:hover { background: var(--surface-muted, #F1F5F9); }
 .ms-drop input[type="checkbox"] { accent-color: var(--primary); }
 .ms-actions {
   display: flex; gap: 4px; padding: 6px 10px;
@@ -695,9 +695,9 @@ body {
 .ms-actions button {
   flex: 1; padding: 4px 0; font-size: 12px; font-weight: 500;
   border: 1px solid var(--border); border-radius: 4px;
-  background: #fff; color: var(--text-2); cursor: pointer;
+  background: var(--surface-muted, var(--card)); color: var(--text-2); cursor: pointer;
 }
-.ms-actions button:hover { background: #F1F5F9; }
+.ms-actions button:hover { color: var(--text); background: var(--primary-soft, #F1F5F9); }
 
 /* ── 筛选下拉 ── */
 

@@ -35,6 +35,14 @@ Page({
     if (session.activeRoom) { this.setData({ roomName: session.activeRoom.name }); socket.connect(session.activeRoom, session.account); }
   },
   applySync(data) {
+    if (!data.teacher || data.teacher.role !== '班主任') {
+      if (!this.permissionDenied) {
+        this.permissionDenied = true;
+        wx.showToast({ title:'仅班主任可以呼叫学生',icon:'none' });
+        setTimeout(() => wx.navigateBack(), 500);
+      }
+      return;
+    }
     this.selectedIds=this.selectedIds||new Set();this.sentIds=this.sentIds||new Set();
     const validIds=new Set((data.students||[]).map(item=>item.id));for(const id of this.selectedIds)if(!validIds.has(id))this.selectedIds.delete(id);
     const students = (data.students || []).map(item => ({ ...item, initial: String(item.name || '生').slice(0, 1),selected:this.selectedIds.has(item.id),sent:this.sentIds.has(item.id) }));
@@ -74,7 +82,7 @@ Page({
   selectVisible(){this.selectedIds=this.selectedIds||new Set();(this.data.filteredStudents||[]).forEach(item=>this.selectedIds.add(item.id));this.refreshStudentViews();},
   clearSelection(){this.selectedIds=this.selectedIds||new Set();this.selectedIds.clear();this.refreshStudentViews();},
   callSelected(){const selected=this.selectedIds||new Set();const students=(this.allStudents||[]).filter(item=>selected.has(item.id));if(!students.length){wx.showToast({title:'请至少选择一名学生',icon:'none'});return;}this.sendStudents(students);},
-  callTarget(students){const names=students.map(item=>item.name);const base=names.length<=4?names.join('、'):`${names.slice(0,3).join('、')}等${names.length}位`;return{base,display:names.length>4?`${base}同学`:base};},
+  callTarget(students){const base=students.map(item=>item.name).join('、');return{base,display:base};},
   sendStudents(students){if(!students.length||this.data.status!=='online')return;const rawMessage=String(this.data.callText||'').trim();if(!rawMessage){wx.showToast({title:'请先填写呼叫内容',icon:'none'});return;}const callId=`${Date.now().toString(36)}${Math.random().toString(36).slice(2,8)}`;const target=this.callTarget(students);const studentNames=students.map(item=>item.name);const message=rawMessage.replace(/\{name\}同学/g,`${target.base}同学`).replace(/\{name\}/g,target.display);if(!socket.send({type:'call',callId,studentName:target.display,studentNames,className:this.data.className,message})){wx.showToast({title:'连接已断开',icon:'none'});return;}this.sentIds=this.sentIds||new Set();students.forEach(item=>this.sentIds.add(item.id));this.selectedIds=this.selectedIds||new Set();this.selectedIds.clear();this.setData({multiSelect:false,callingId:students.length===1?students[0].id:''});this.refreshStudentViews();wx.vibrateShort({type:'light'});wx.showToast({title:students.length===1?'呼叫已发送':`已呼叫 ${students.length} 人`,icon:'success'});setTimeout(()=>{students.forEach(item=>this.sentIds.delete(item.id));this.setData({callingId:''});this.refreshStudentViews();},2400);},
   callStudent(event) {
     const id = event.currentTarget.dataset.id;

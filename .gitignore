@@ -20,6 +20,8 @@ data/
 project.private.config.json
 # 微信小程序正式 AppID 只保存在开发者工具生成的私有配置中。
 mini-program/project.local.config.json
+# 微信小程序转换原生应用时生成的本机签名私钥、证书与密钥材料。
+mini-program/miniapp/
 *.log
 *.tmp
 .env

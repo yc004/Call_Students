@@ -4,8 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>教师端 — 教室呼叫系统</title>
-  <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="ui.css?v=9">
+  <link rel="stylesheet" href="style.css?v=2">
+  <link rel="stylesheet" href="ui.css?v=10">
+  <link rel="stylesheet" href="desktop.css?v=12">
 </head>
 <body>
 
@@ -13,25 +14,20 @@
 
   <aside class="sidebar">
     <div class="sidebar-header">
-      <h1>教室呼叫</h1>
-      <span class="brand-sub">教师端</span>
-    </div>
-
-    <div class="connect-box">
-      <input type="text" id="connectionCodeInput" placeholder="连接码 178-260-683" inputmode="numeric" maxlength="11" autocomplete="off" autofocus aria-label="教室连接码">
-      <button id="connectBtn" class="btn btn-primary">连接</button>
+      <span class="sidebar-brand-mark" aria-hidden="true">教</span>
+      <div class="sidebar-brand-copy"><h1>教室呼叫</h1><span class="brand-sub">教师端</span></div>
     </div>
 
     <div class="room-section">
-      <div class="section-label">教室列表</div>
+      <div class="section-label room-section-heading"><span>教室</span><button id="openConnectModalBtn" class="sidebar-add-button" type="button" aria-label="加入教室" title="加入教室">＋</button></div>
       <ul id="roomList" class="room-list"></ul>
-      <div id="noRooms" class="muted-note">还没有添加教室</div>
+      <div id="noRooms" class="sidebar-empty"><span aria-hidden="true">⌁</span><strong>还没有教室</strong><small>点击右上角添加</small></div>
     </div>
 
     <div class="sidebar-footer">
-      <button id="accountMenuBtn" class="account-session hidden" type="button" title="账户管理">
+      <button id="accountMenuBtn" class="account-session hidden" type="button" title="教师端设置">
         <span class="account-avatar" id="accountAvatar">教</span>
-        <span class="account-session-text"><strong id="teacherInfo"></strong><small>账户管理</small></span>
+        <span class="account-session-text"><strong id="teacherInfo"></strong><small>教师端设置</small></span>
         <span class="account-chevron">›</span>
       </button>
       <div class="status-row">
@@ -45,22 +41,96 @@
 
     <div id="roomHeader" class="room-header hidden">
       <div>
-        <span class="workspace-kicker">当前教室</span>
+        <span class="workspace-kicker">教室工作台</span>
         <h2 id="roomTitle"></h2>
       </div>
-      <div class="room-header-actions"><span id="studentCount" class="badge"></span></div>
+      <div class="room-header-actions"><span class="workspace-live"><i class="dot online"></i>实时连接</span><span id="studentCount" class="badge"></span></div>
     </div>
 
-    <!-- Tab 导航 -->
-    <div id="mainTabs" class="main-tabs hidden" role="tablist" aria-label="教师端功能">
-      <button class="main-tab active" role="tab" aria-selected="true" aria-controls="tab-call" data-tab="call">呼叫</button>
-      <button class="main-tab" role="tab" aria-selected="false" aria-controls="tab-homework" data-tab="homework">作业</button>
-      <button class="main-tab" role="tab" aria-selected="false" aria-controls="tab-attendance" data-tab="attendance">出勤</button>
-      <button id="classroomTabBtn" class="main-tab hidden" role="tab" aria-selected="false" aria-controls="tab-classroom" data-tab="classroom">班级管理</button>
+    <div id="mainTabs" class="main-tabs hidden" role="tablist" aria-label="当前教室工作台功能">
+      <button id="overviewTabBtn" class="main-tab active" role="tab" aria-selected="true" aria-controls="tab-overview" data-tab="overview"><span class="tab-symbol" aria-hidden="true">‹</span><span>返回工作台</span></button>
+      <button id="callTabBtn" class="main-tab" role="tab" aria-selected="false" aria-controls="tab-call" data-tab="call"><span class="tab-symbol" aria-hidden="true">⌁</span><span>呼叫</span></button>
+      <button class="main-tab" role="tab" aria-selected="false" aria-controls="tab-homework" data-tab="homework"><span class="tab-symbol" aria-hidden="true">□</span><span>作业与通知</span></button>
+      <button class="main-tab" role="tab" aria-selected="false" aria-controls="tab-attendance" data-tab="attendance"><span class="tab-symbol" aria-hidden="true">✓</span><span>出勤</span></button>
+      <button id="classroomTabBtn" class="main-tab hidden" role="tab" aria-selected="false" aria-controls="tab-classroom" data-tab="classroom"><span class="tab-symbol" aria-hidden="true">••</span><span>班级设置</span></button>
+    </div>
+
+    <div id="emptyState" class="empty-state">
+      <div class="empty-icon">⌁</div>
+      <p>连接你的第一间教室</p>
+      <p class="muted-note">输入教室大屏显示的 9 位连接码，即可使用学生呼叫、作业、通知和出勤功能。</p>
+      <button id="emptyAddRoomBtn" class="btn btn-primary empty-primary" type="button">加入教室</button>
+    </div>
+
+    <!-- ══════════ 教室概览 ══════════ -->
+    <div class="main-tab-content hidden" id="tab-overview" role="tabpanel">
+      <section class="workspace-dashboard" aria-labelledby="overviewGreeting">
+        <div class="dashboard-heading">
+          <div>
+            <span class="workspace-kicker">教学总览</span>
+            <h2 id="overviewGreeting">准备开始今天的课堂</h2>
+            <p id="overviewSummary">正在整理你的学科作业与班级出勤情况。</p>
+          </div>
+          <div class="dashboard-identity">
+            <span id="overviewRoleBadge">任课教师</span>
+            <small id="overviewSubjectText">暂未设置授课科目</small>
+          </div>
+        </div>
+
+        <div class="dashboard-metrics" aria-label="教学核心数据">
+          <button class="dashboard-metric metric-subject" type="button" data-open-tab="homework">
+            <span class="dashboard-metric-icon" aria-hidden="true">科</span>
+            <span><small>我的授课科目</small><strong id="overviewSubjectCount">0</strong><em id="overviewSubjectHint">等待科目授权</em></span>
+          </button>
+          <button class="dashboard-metric metric-homework" type="button" data-open-tab="homework">
+            <span class="dashboard-metric-icon" aria-hidden="true">作</span>
+            <span><small>待提交作业</small><strong id="overviewHomeworkCount">0</strong><em>仅统计我的科目</em></span>
+          </button>
+          <button class="dashboard-metric metric-rate" type="button" data-open-tab="homework">
+            <span class="dashboard-metric-icon" aria-hidden="true">率</span>
+            <span><small>近期平均完成率</small><strong id="overviewCompletionRate">--</strong><em id="overviewCompletionHint">暂无可统计作业</em></span>
+          </button>
+          <button class="dashboard-metric metric-attendance" type="button" data-open-tab="attendance">
+            <span class="dashboard-metric-icon" aria-hidden="true">到</span>
+            <span><small>当前出勤</small><strong><b id="overviewPresentCount">0</b><i>/</i><b id="overviewStudentCount">0</b></strong><em id="overviewAttendanceHint">等待教室同步</em></span>
+          </button>
+        </div>
+
+        <div class="dashboard-detail-grid">
+          <article class="dashboard-panel dashboard-subject-panel">
+            <div class="dashboard-panel-head"><div><span class="workspace-kicker">学科进度</span><h3>我的作业情况</h3></div><button class="overview-link" type="button" data-open-tab="homework">查看统计</button></div>
+            <div id="overviewSubjectProgress" class="subject-progress-list"></div>
+          </article>
+          <article class="dashboard-panel dashboard-today-panel">
+            <div class="dashboard-panel-head"><div><span class="workspace-kicker">近期安排</span><h3>待处理内容</h3></div><button class="overview-link" type="button" data-open-tab="homework">查看全部</button></div>
+            <div id="overviewTodayList" class="overview-list"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="workspace-launcher" aria-labelledby="workspaceLauncherTitle">
+        <div class="workspace-launcher-heading">
+          <div><span class="workspace-kicker">当前教室</span><h2 id="workspaceLauncherTitle">工作台</h2><p>选择一项功能进入操作界面</p></div>
+        </div>
+        <div class="workspace-tool-grid">
+          <button class="workspace-tool workspace-tool-call" type="button" data-open-tab="call" data-permission="homeroom">
+            <span class="workspace-tool-icon" aria-hidden="true">⌁</span><span><strong>学生呼叫</strong><small>单人或批量发送大屏呼叫</small></span><i>›</i>
+          </button>
+          <button class="workspace-tool workspace-tool-homework" type="button" data-open-tab="homework">
+            <span class="workspace-tool-icon" aria-hidden="true">作</span><span><strong>作业与通知</strong><small>查看本人学科的发布与提交情况</small></span><i>›</i>
+          </button>
+          <button class="workspace-tool workspace-tool-attendance" type="button" data-open-tab="attendance">
+            <span class="workspace-tool-icon" aria-hidden="true">到</span><span><strong>班级出勤</strong><small>查看实时到班与缺勤情况</small></span><i>›</i>
+          </button>
+          <button class="workspace-tool workspace-tool-classroom" type="button" data-open-tab="classroom" data-permission="homeroom">
+            <span class="workspace-tool-icon" aria-hidden="true">班</span><span><strong>教室设置</strong><small>管理学生名单、教师与人脸匹配</small></span><i>›</i>
+          </button>
+        </div>
+      </section>
     </div>
 
     <!-- ══════════ 呼叫 Tab ══════════ -->
-    <div class="main-tab-content" id="tab-call" role="tabpanel">
+    <div class="main-tab-content hidden" id="tab-call" role="tabpanel">
       <div id="callFlow" class="call-flow hidden">
         <div class="flow-heading"><span>1</span><div><strong>编辑呼叫内容</strong><small>学生姓名会在发送时自动替换</small></div></div>
       <div id="msgRow" class="msg-row hidden">
@@ -77,12 +147,6 @@
 
       <div id="studentGrid" class="student-grid"></div>
       <div id="callBatchBar" class="call-batch-bar hidden"><div><strong id="callBatchCount">已选 0 人</strong><small>将合并为一条大屏呼叫</small></div><button id="clearCallSelection" class="btn" type="button">清空</button><button id="sendBatchCall" class="btn btn-primary" type="button" disabled>呼叫已选学生</button></div>
-      </div>
-
-      <div id="emptyState" class="empty-state">
-        <div class="empty-icon">—</div>
-        <p>连接一间教室开始使用</p>
-        <p class="muted-note">在左侧输入教室端显示的 9 位连接码</p>
       </div>
 
       <details id="historySection" class="history-section">
@@ -205,6 +269,8 @@
             <input type="date" id="hwDateTo" class="hw-date-input" title="截止日期结束">
           </div>
           <div class="hw-toolbar-right">
+            <span id="homeworkReadOnlyNote" class="homework-readonly-note hidden">仅查看你的授课科目</span>
+            <button id="aiHomeworkBtn" class="btn btn-sm ai-homework-button" type="button"><span aria-hidden="true">✦</span> AI 学情分析</button>
             <button id="exportHomeworkBtn" class="btn btn-sm" type="button">导出表格</button>
             <button id="publishNoticeBtn" class="btn btn-sm" type="button">＋ 发布通知</button>
             <button id="addAssignmentBtn2" class="btn btn-primary btn-sm">＋ 布置作业</button>
@@ -244,6 +310,26 @@
   </main>
 </div>
 
+<!-- 加入教室 -->
+<div id="connectRoomModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="connectRoomTitle">
+  <div class="modal-card connect-room-card">
+    <button id="closeConnectModalBtn" class="modal-close-button" type="button" aria-label="关闭">×</button>
+    <span class="connect-room-icon" aria-hidden="true">⌁</span>
+    <h3 id="connectRoomTitle">加入教室</h3>
+    <p>输入教室大屏上显示的 9 位连接码。教师端会自动定位并连接局域网中的教室。</p>
+    <label class="field-label" for="connectionCodeInput">教室连接码</label>
+    <input type="text" id="connectionCodeInput" placeholder="178-260-683" inputmode="numeric" maxlength="11" autocomplete="off" aria-label="教室连接码">
+    <label class="field-label connect-subject-label" for="connectSubjectInput">授课科目</label>
+    <div id="connectSubjectPicker" class="ms-wrap subject-picker-control">
+      <button type="button" id="connectSubjectInput" class="ms-btn subject-picker-button" aria-haspopup="listbox" aria-expanded="false">请选择授课科目 ▾</button>
+      <div id="connectSubjectDrop" class="ms-drop subject-picker-drop hidden" role="listbox" aria-multiselectable="true"></div>
+    </div>
+    <div class="connect-room-hint"><span>i</span><small>请确保教师电脑与教室电脑连接同一个局域网。</small></div>
+    <p id="connectRoomStatus" class="connect-room-status" role="status" aria-live="polite"></p>
+    <button id="connectBtn" class="btn btn-primary connect-room-submit" type="button">连接教室</button>
+  </div>
+</div>
+
 <!-- 登录 / 首次注册 -->
 <div id="accountOverlay" class="account-overlay" role="dialog" aria-modal="true" aria-labelledby="accountTitle">
   <div class="account-card">
@@ -251,11 +337,41 @@
     <h2 id="accountTitle">教师登录</h2>
     <p id="accountDesc" class="account-desc">登录后才能连接教室和使用教学功能。</p>
 
-    <div id="miniScanLogin" class="account-form mini-scan-login">
+    <div class="mode-switch" role="tablist" aria-label="使用模式">
+      <button id="teacherModePersonal" class="mode-switch-btn active" type="button" data-mode="toc"><strong>个人模式</strong><small>免费、本地使用</small></button>
+      <button id="teacherModeOrganization" class="mode-switch-btn" type="button" data-mode="tob"><strong>组织模式</strong><small>云端协作管理</small></button>
+    </div>
+
+    <div id="personalLoginPanel" class="account-form mode-panel">
+      <label for="personalTeacherName">你的称呼</label>
+      <input id="personalTeacherName" type="text" maxlength="40" placeholder="例如：张老师" autocomplete="name">
+      <button id="personalStartBtn" class="btn btn-primary account-primary" type="button">直接开始使用</button>
+      <p class="account-field-hint">个人模式数据保存在本机，可随时连接教室使用呼叫、作业和出勤功能。</p>
+    </div>
+
+    <div id="organizationLoginPanel" class="account-form mode-panel hidden">
+      <label for="organizationServer">服务器地址</label>
+      <input id="organizationServer" type="text" placeholder="cloud.example.com:8080" autocomplete="url">
+      <label class="checkbox-row"><input id="organizationUseHttps" type="checkbox" checked><span>使用 HTTPS 安全连接</span></label>
+      <label for="organizationLoginName">组织账号</label>
+      <input id="organizationLoginName" type="text" maxlength="80" placeholder="管理员发放的账号" autocomplete="username">
+      <label for="organizationPassword">登录密码</label>
+      <input id="organizationPassword" type="password" maxlength="200" placeholder="组织发放的初始密码" autocomplete="current-password">
+      <div id="organizationProfileFields" class="profile-fields hidden">
+        <label for="organizationNickname">用户名</label><input id="organizationNickname" type="text" placeholder="用于组织内身份识别和页面展示" maxlength="40">
+        <label for="organizationNewPassword">新密码</label><input id="organizationNewPassword" type="password" placeholder="至少 10 位" maxlength="200">
+        <label for="organizationNewPasswordConfirm">确认新密码</label><input id="organizationNewPasswordConfirm" type="password" placeholder="再次输入新密码" maxlength="200">
+      </div>
+      <button id="organizationLoginBtn" class="btn btn-primary account-primary" type="button">登录组织</button>
+      <p id="organizationLoginStatus" class="account-field-hint"></p>
+    </div>
+
+    <div id="miniScanLogin" class="account-form mini-scan-login mode-panel">
+      <div class="login-divider"><span>也可以</span></div>
       <div class="mini-scan-qr-wrap"><img id="teacherLoginQrImage" alt="小程序登录教师端二维码"></div>
       <p id="teacherLoginQrStatus" class="account-field-hint">使用已登录的小程序扫描二维码，将教师账户同步到这台电脑。</p>
       <button id="refreshTeacherLoginQr" class="btn btn-primary account-primary" type="button">生成登录二维码</button>
-      <p class="account-switch">请确保手机与电脑连接同一局域网，并保持小程序运行。</p>
+      <p class="account-switch">扫码后会同步小程序当前模式、账号、教室和组织标识；个人与组织模式均支持。</p>
       <details class="wechat-direct-settings">
         <summary>允许直接使用微信扫码</summary>
         <p>先在微信公众平台配置普通链接二维码规则，再填写规则对应的 HTTPS 链接前缀。</p>
@@ -302,29 +418,58 @@
     <h3 id="teacherEditTitle">设置授课科目</h3>
     <p id="teacherEditName" class="field-hint"></p>
     <label class="field-label" for="teacherEditSubjects">授课科目</label>
-    <input id="teacherEditSubjects" type="text" maxlength="120" placeholder="例如：数学, 物理">
+    <div id="teacherEditSubjectPicker" class="ms-wrap subject-picker-control">
+      <button type="button" id="teacherEditSubjects" class="ms-btn subject-picker-button" aria-haspopup="listbox" aria-expanded="false">请选择授课科目 ▾</button>
+      <div id="teacherEditSubjectDrop" class="ms-drop subject-picker-drop hidden" role="listbox" aria-multiselectable="true"></div>
+    </div>
     <p class="field-hint">班主任在这里为教师授权可用学科；教师连接教室后，再确认本次授课科目。</p>
     <div class="modal-actions"><button id="teacherEditCancel" class="btn" type="button">取消</button><button id="teacherEditSave" class="btn btn-primary" type="button">保存授权</button></div>
   </div>
 </div>
 
-<!-- 账户管理 -->
+<!-- 教师端设置 -->
 <div id="accountModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="accountModalTitle">
   <div class="modal-card account-modal-card">
-    <h3 id="accountModalTitle">账户管理</h3>
+    <h3 id="accountModalTitle">教师端设置</h3>
     <div class="account-summary">
       <span class="account-avatar account-avatar-lg" id="accountModalAvatar">教</span>
       <div><strong id="accountModalName"></strong><small id="accountModalSubjects">连接教室后确认授课科目</small></div>
     </div>
     <div class="account-id-row"><span>连接 ID</span><code id="accountConnectionId"></code></div>
     <p class="account-field-hint">教室管理员可通过此身份批准你的设备。</p>
+    <section class="account-profile-settings" aria-labelledby="accountProfileTitle">
+      <div class="account-profile-heading"><div><strong id="accountProfileTitle">个人资料</strong><small id="accountProfileStorageHint">资料保存在当前电脑</small></div><button id="chooseAccountAvatar" class="profile-avatar-button" type="button"><span id="accountProfileAvatar">教</span><em>更换头像</em></button></div>
+      <label class="field-label" for="accountProfileName">用户名</label>
+      <input id="accountProfileName" class="manage-input" maxlength="40" autocomplete="name" placeholder="请输入用户名">
+      <div id="accountPasswordFields" class="account-password-fields hidden">
+        <div><label class="field-label" for="accountCurrentPassword">当前密码</label><input id="accountCurrentPassword" class="manage-input" type="password" maxlength="200" autocomplete="current-password" placeholder="仅修改密码时填写"></div>
+        <div><label class="field-label" for="accountNewPassword">新密码</label><input id="accountNewPassword" class="manage-input" type="password" maxlength="200" autocomplete="new-password" placeholder="至少 10 位"></div>
+        <div><label class="field-label" for="accountConfirmPassword">确认新密码</label><input id="accountConfirmPassword" class="manage-input" type="password" maxlength="200" autocomplete="new-password" placeholder="再次输入新密码"></div>
+      </div>
+      <div class="account-profile-actions"><small id="accountProfileStatus" role="status" aria-live="polite"></small><button id="saveAccountProfile" class="btn btn-primary btn-sm" type="button">保存个人资料</button></div>
+    </section>
     <details class="wechat-direct-settings cloud-account-settings">
-      <summary>云服务设置</summary>
-      <p>使用管理员分配给当前教师账号的 tk_ 身份密钥接入云服务。教室关系由教室端和云管理员统一同步。</p>
-      <input id="accountCloudServer" type="url" placeholder="https://cloud.example.com">
-      <input id="accountCloudKey" type="password" placeholder="分配给当前教师的 tk_ 身份密钥">
-      <div><button id="accountCloudConnectBtn" class="btn btn-sm" type="button">接入教师云账号</button><button id="accountCloudRefreshBtn" class="btn btn-sm" type="button">刷新教室</button></div>
-      <small id="accountCloudStatus">尚未连接云服务</small>
+      <summary>云服务状态</summary>
+      <p>组织模式使用服务器地址和组织账号登录；扫码登录时会自动同步同一组织会话和教室。</p>
+      <div><button id="accountCloudRefreshBtn" class="btn btn-sm" type="button">刷新教室</button></div>
+      <small id="accountCloudStatus">当前为个人本地模式</small>
+    </details>
+    <details id="accountAiSettings" class="wechat-direct-settings account-ai-settings">
+      <summary>AI 学情分析服务</summary>
+      <p>在这里配置一次，所有已连接和之后加入的教室都会共用。API 密钥只保存在这台电脑上。</p>
+      <div class="account-ai-form">
+        <label for="accountAiEndpoint">API 地址</label>
+        <input id="accountAiEndpoint" type="text" autocomplete="url" placeholder="https://api.example.com/v1">
+        <label for="accountAiModel">模型名称</label>
+        <input id="accountAiModel" type="text" autocomplete="off" placeholder="例如：your-model-name">
+        <label for="accountAiApiKey">API 密钥</label>
+        <input id="accountAiApiKey" type="password" autocomplete="new-password" placeholder="输入后使用系统安全存储加密保存">
+        <small class="account-ai-hint">本地模型可以不填写密钥。使用 HTTP 地址时，密钥可能以明文在网络中传输。</small>
+        <div class="account-ai-actions">
+          <small id="accountAiStatus" role="status" aria-live="polite">正在读取配置…</small>
+          <button id="saveAccountAiSettings" class="btn btn-primary btn-sm" type="button">保存 API 配置</button>
+        </div>
+      </div>
     </details>
     <section class="mini-login-section" aria-labelledby="miniLoginTitle">
       <div class="login-key-heading">
@@ -339,6 +484,47 @@
     <div class="modal-actions">
       <button id="accountModalClose" class="btn">关闭</button>
       <button id="logoutBtn" class="btn btn-danger-outline">退出登录</button>
+    </div>
+  </div>
+</div>
+
+<!-- AI 学情分析 -->
+<div id="aiHomeworkModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="aiHomeworkTitle">
+  <div class="modal-card ai-analysis-modal">
+    <header class="ai-analysis-header">
+      <div><span class="ai-analysis-mark" aria-hidden="true">✦</span><div><span class="workspace-kicker">智能作业统计</span><h3 id="aiHomeworkTitle">AI 学情分析</h3><p>依据作业提交数据生成证据、分层建议与后续行动。</p></div></div>
+      <button id="aiHomeworkClose" class="modal-close-button" type="button" aria-label="关闭">×</button>
+    </header>
+    <div class="ai-analysis-layout">
+      <aside class="ai-analysis-controls">
+        <section class="ai-control-section">
+          <div class="ai-section-title"><span>1</span><div><strong>选择分析范围</strong><small>只会使用当前账户有权查看的数据</small></div></div>
+          <label class="field-label" for="aiSubject">学科</label>
+          <select id="aiSubject" class="field-select"><option value="">全部授权学科</option></select>
+          <label class="field-label" for="aiStage">作业阶段</label>
+          <select id="aiStage" class="field-select"><option value="all">全部作业</option><option value="pending">待提交作业</option><option value="closed">已截止作业</option></select>
+          <label class="field-label">作业日期范围</label>
+          <div class="ai-date-row"><input id="aiDateFrom" type="date" title="作业日期起始"><span>至</span><input id="aiDateTo" type="date" title="作业日期结束"></div>
+          <label class="field-label" for="aiFocus">希望 AI 重点分析</label>
+          <textarea id="aiFocus" rows="3" maxlength="600" placeholder="例如：重点关注连续未提交学生，并设计下周的分层跟进方案"></textarea>
+          <label class="ai-privacy-option"><input id="aiAnonymize" type="checkbox" checked><span><strong>匿名化学生姓名</strong><small>发送前替换成编号，报告返回后仅在本机恢复</small></span></label>
+        </section>
+        <section class="ai-control-section ai-api-section">
+          <div class="ai-section-title"><span>2</span><div><strong>生成分析报告</strong><small>API 服务由教师端设置统一管理</small></div></div>
+          <div class="ai-provider-banner">
+            <span class="ai-provider-icon" aria-hidden="true">AI</span>
+            <div><strong id="aiProviderStatus">正在读取 API 配置…</strong><small>此配置适用于所有教室</small></div>
+            <button id="openAiSettingsBtn" class="btn btn-sm" type="button">打开设置</button>
+          </div>
+        </section>
+        <p id="aiAnalysisStatus" class="ai-analysis-status" role="status" aria-live="polite"></p>
+        <button id="aiAnalyzeBtn" class="btn btn-primary ai-analyze-submit" type="button"><span aria-hidden="true">✦</span> 开始分析</button>
+      </aside>
+      <main class="ai-report-panel">
+        <div id="aiReportEmpty" class="ai-report-empty"><span>✦</span><strong>从作业统计中发现教学线索</strong><p>选择学科与日期范围后，AI 会生成有数据依据的分析报告。作业提交情况不等同于知识掌握程度，报告会明确标注这一限制。</p></div>
+        <div id="aiReportLoading" class="ai-report-loading hidden"><span></span><strong>正在分析作业数据</strong><p>模型正在整理完成趋势、关注对象和教学建议，请稍候。</p></div>
+        <article id="aiReportContent" class="ai-report-content hidden"></article>
+      </main>
     </div>
   </div>
 </div>
@@ -370,6 +556,7 @@
   <script src="connection-code.js"></script>
   <script src="homework-view.js"></script>
   <script src="cloud-client.js"></script>
-  <script src="app.js?v=16"></script>
+  <script src="error-report.js"></script>
+  <script src="app.js?v=25"></script>
 </body>
 </html>

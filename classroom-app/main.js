@@ -1,9 +1,10 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, protocol, safeStorage } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, protocol, safeStorage, clipboard, dialog } = require('electron');
 const WebSocket = require('ws');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
+const { normalizeIncomingCall } = require('./call-message');
 const { getLanInterfaces: selectLanInterfaces } = require('./lan-addresses');
 const connectionCode = require('./connection-code');
 const { enrollClassroom, revokeClassroom } = require('./cloud-config');
@@ -16,6 +17,28 @@ const {
 } = require('./classroom-qr');
 let Database = null;
 let QRCode = null;
+
+ipcMain.handle('copy-text', (_event, value) => {
+  clipboard.writeText(String(value == null ? '' : value));
+  return { ok: true };
+});
+ipcMain.handle('show-client-error', async (event, payload) => {
+  const report = String(payload && payload.report || '未提供错误详情');
+  const owner = BrowserWindow.fromWebContents(event.sender);
+  const options = {
+    type: 'error',
+    title: String(payload && payload.title || '教室端错误'),
+    message: String(payload && payload.message || '教室端遇到问题，当前操作未能完成。'),
+    detail: '请点击“复制错误信息”，并将复制的完整内容提交给系统管理员，以便快速定位问题。',
+    buttons: ['关闭', '复制错误信息'],
+    defaultId: 1,
+    cancelId: 0,
+    noLink: true,
+  };
+  const result = owner ? await dialog.showMessageBox(owner, options) : await dialog.showMessageBox(options);
+  if (result.response === 1) clipboard.writeText(report);
+  return { ok:true, copied:result.response === 1 };
+});
 
 // 教室端是托盘常驻应用，必须保证同一用户会话只运行一个实例。
 // 第二次启动时直接退出，并由已运行的实例接管唤醒窗口。
@@ -617,7 +640,7 @@ function bindHomeroomTeacher(connectionId) {
   let teacherSubjects = [];
   try { teacherSubjects = JSON.parse(teacher.subjects || '[]'); } catch (_error) {}
   teacherSubjects = normalizeSubjects(teacherSubjects);
-  if (!teacherSubjects.length) return { success: false, message: '请让该教师重新连接并先填写授课科目，再绑定为班主任' };
+  if (!teacherSubjects.length) return { success: false, message: '请让该教师重新连接并先选择授课科目，再绑定为班主任' };
   const now = new Date().toISOString();
   d.transaction(() => {
     d.prepare("INSERT OR REPLACE INTO meta VALUES ('classroomConfigured', 'false')").run();
@@ -646,7 +669,7 @@ function approvePendingTeacher(connectionId) {
     d.prepare('DELETE FROM pending_requests WHERE connection_id=?').run(id);
     d.prepare('INSERT OR REPLACE INTO approved_teachers (connection_id, name, role, subjects, approved_at) VALUES (?,?,?,?,?)')
       .run(id, pending.name, '授课教师', JSON.stringify(requestedSubjects), new Date().toISOString());
-  });
+  })();
   refreshTeacherConnections(id, false);
   broadcastSync(loadData());
   notifyTeacherCandidatesChanged();
@@ -683,7 +706,7 @@ function transferHomeroomTeacher(connectionId) {
     d.prepare('DELETE FROM pending_requests WHERE connection_id=?').run(id);
     d.prepare('INSERT OR REPLACE INTO approved_teachers (connection_id, name, role, subjects, approved_at) VALUES (?,?,?,?,?)')
       .run(id, candidate.name, '班主任', JSON.stringify(subjects), new Date().toISOString());
-  });
+  })();
   if (existingHomeroom && existingHomeroom.connection_id !== id) refreshTeacherConnections(existingHomeroom.connection_id, false);
   refreshTeacherConnections(id, false);
   broadcastSync(loadData());
@@ -1349,7 +1372,7 @@ function broadcastLabelResult(faceId, studentId, name) {
   if (!wss) return;
   const msg = JSON.stringify({ type: 'face-labeled', faceId, studentId, name });
   wss.clients.forEach(ws => {
-    if (ws.readyState === WebSocket.OPEN && ws._teacher && ws._teacher.status === 'approved') {
+    if (ws.readyState === WebSocket.OPEN && ws._teacher && ws._teacher.status === 'approved' && ws._teacher.role === '班主任') {
       ws.send(msg);
     }
   });
@@ -1530,7 +1553,7 @@ function startWSServer() {
                 teacher.subjects = reportedSubjects;
               }
               if (!normalizeSubjects(teacher.subjects).length) {
-                ws.send(JSON.stringify({ type: 'subject-required', message: '当前教室还没有你的授课科目，请重新添加教室并先填写科目' }));
+                ws.send(JSON.stringify({ type: 'subject-required', message: '当前教室还没有你的授课科目，请重新添加教室并先选择科目' }));
                 break;
               }
               // 若教师端上报的姓名有变化，更新数据库
@@ -1540,7 +1563,7 @@ function startWSServer() {
               }
             } else if (t.found && !t.approved) {
               if (!reportedSubjects.length) {
-                ws.send(JSON.stringify({ type: 'subject-required', message: '加入教室前必须至少填写一个授课科目' }));
+                ws.send(JSON.stringify({ type: 'subject-required', message: '加入教室前必须至少选择一个授课科目' }));
                 break;
               }
               // 待审核：更新教师最新上报的身份信息
@@ -1551,7 +1574,7 @@ function startWSServer() {
               teacher = { connectionId, name: newName, role: t.role, subjects: newSubjects, status: 'pending' };
             } else {
               if (!reportedSubjects.length) {
-                ws.send(JSON.stringify({ type: 'subject-required', message: '加入教室前必须至少填写一个授课科目' }));
+                ws.send(JSON.stringify({ type: 'subject-required', message: '加入教室前必须至少选择一个授课科目' }));
                 break;
               }
               getDb().prepare('INSERT INTO pending_requests (connection_id, name, role, subjects, requested_at) VALUES (?,?,?,?,?)')
@@ -1642,15 +1665,15 @@ function startWSServer() {
         case 'call': {
           if (!checkTeacherPerm(ws, msg)) return;
           if (!msg.callId || !msg.studentName) return;
-          const studentNames = (Array.isArray(msg.studentNames) ? msg.studentNames : [msg.studentName])
-            .map(name => String(name || '').trim().slice(0, 20)).filter(Boolean).slice(0, 60);
-          if (!studentNames.length) return;
+          const normalizedCall = normalizeIncomingCall(msg);
+          if (!normalizedCall) return;
           enqueueCall({
             callId: msg.callId,
-            studentName: String(msg.studentName).trim().slice(0, 160),
-            studentNames,
+            // 始终由完整名单生成显示目标，避免旧客户端传来的“等 X 位”摘要继续出现。
+            studentName: normalizedCall.studentName,
+            studentNames: normalizedCall.studentNames,
             className: String(msg.className || '').slice(0, 40),
-            message: String(msg.message || '办公室').slice(0, 240),
+            message: normalizedCall.message,
           }, ws);
           break;
         }
@@ -1684,6 +1707,7 @@ function startWSServer() {
           const data = loadData();
           const teacher = ws._teacher || {};
           if (teacher.status !== 'approved') { ws.send(JSON.stringify({ type: 'auth-required', message: '未获批准，无法发布或修改班级内容' })); return; }
+          if (teacher.role !== '班主任') { ws.send(JSON.stringify({ type: 'auth-required', message: '普通授课教师仅可查看本人授课科目的作业与出勤情况' })); return; }
           const requested = msg.assignment || {};
           const existing = requested.id ? data.assignments.find(item => item.id === requested.id) : null;
           // 任课教师只能操作教室端已授权的学科；编辑时不得借由篡改 subject 转移作业归属。
@@ -1897,7 +1921,7 @@ function startWSServer() {
   }, 15000);
 }
 
-// 权限检查：授课教师只能操作自己学科的作业
+// 写操作权限：仅班主任可以呼叫或修改教室数据。
 function checkTeacherPerm(ws, msg) {
   if (!isSystemReady()) {
     ws.send(JSON.stringify({ type: 'approval-required', message: '教室端尚未完成初始化配置' }));
@@ -1909,19 +1933,8 @@ function checkTeacherPerm(ws, msg) {
     return false;
   }
   if (t.role !== '班主任') {
-    // 确定涉及的学科
-    let subject = null;
-    if (msg.assignment && msg.assignment.subject) {
-      subject = msg.assignment.subject;
-    } else if (msg.assignmentId) {
-      const data = loadData();
-      const a = data.assignments.find(x => x.id === msg.assignmentId);
-      if (a) subject = a.subject;
-    }
-    if (subject && !(t.subjects || []).includes(subject)) {
-      ws.send(JSON.stringify({ type: 'auth-required', message: '无权限修改该学科作业' }));
-      return false;
-    }
+    ws.send(JSON.stringify({ type: 'auth-required', message: '普通授课教师仅可查看本人授课科目的作业与出勤情况' }));
+    return false;
   }
   return true;
 }
@@ -1954,16 +1967,22 @@ function sendTeacherSync(ws, data) {
   if (!isClassroomConfigured() && ws._teacher.role !== '班主任') return;
   // 兼容修复前遗留的数据：同步前先过滤已经能被当前底库识别的待标注记录。
   prunePendingFacesRecognizedByGallery();
+  const homeroom = ws._teacher.role === '班主任';
+  const teacherSubjects = normalizeSubjects(ws._teacher.subjects);
+  const allowedSubjects = new Set(teacherSubjects);
+  const visibleAssignments = homeroom
+    ? data.assignments
+    : data.assignments.filter(item => allowedSubjects.has(String(item.subject || '')));
   ws.send(JSON.stringify({
     type: 'sync',
     className: data.className,
     students: data.students,
-    subjects: data.subjects,
-    assignments: data.assignments,
+    subjects: homeroom ? data.subjects : teacherSubjects,
+    assignments: visibleAssignments,
     attendance: getAttendanceData(),
-    pendingFaces: ws._teacher.role === '班主任' ? getPendingFaces() : [],
+    pendingFaces: homeroom ? getPendingFaces() : [],
     classroomConfigured: isClassroomConfigured(),
-    teachers: ws._teacher.role === '班主任' ? { approved: getApprovedTeachers(), pending: getPendingRequests() } : null,
+    teachers: homeroom ? { approved: getApprovedTeachers(), pending: getPendingRequests() } : null,
     teacher: {
       connectionId: ws._teacher.connectionId,
       name: ws._teacher.name,

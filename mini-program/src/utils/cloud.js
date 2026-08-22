@@ -1,8 +1,11 @@
 const CLOUD_SESSION_VERSION = 1;
 
-function normalizeServerUrl(value) {
-  const raw = String(value || '').trim().replace(/\/+$/, '');
-  if (!/^https?:\/\//i.test(raw)) throw new Error('服务器地址必须以 http:// 或 https:// 开头');
+function normalizeServerUrl(value, useHttps) {
+  let raw = String(value || '').trim().replace(/\/+$/, '');
+  if (!raw) throw new Error('请填写服务器地址');
+  const selectedScheme = typeof useHttps === 'boolean' ? (useHttps ? 'https' : 'http') : '';
+  if (selectedScheme) raw = raw.replace(/^https?:\/\//i, '');
+  if (!/^https?:\/\//i.test(raw)) raw = `${selectedScheme || 'https'}://${raw}`;
   const match = raw.match(/^(https?):\/\/([^/?#]+)(\/[^?#]*)?(\?[^#]*)?(#.*)?$/i);
   if (!match) throw new Error('服务器地址格式不正确');
   const scheme = match[1].toLowerCase();
@@ -14,8 +17,21 @@ function normalizeServerUrl(value) {
   if (search || hash) throw new Error('服务器地址不能包含查询参数或片段');
   if (pathname && pathname !== '/') throw new Error('服务器地址不能包含路径');
   const host = authority.replace(/^\[([^\]]+)\](?::\d+)?$/, '$1').replace(/:\d+$/, '').toLowerCase();
-  if (scheme !== 'https' && !['localhost','127.0.0.1','[::1]','::1'].includes(host)) throw new Error('云服务必须使用 HTTPS 加密连接');
   return `${scheme}://${authority}`;
+}
+
+function explainNetworkError(error) {
+  const raw = String(error && (error.errMsg || error.message) || error || '');
+  if (/ERR_SSL_PROTOCOL_ERROR|SSL_ERROR|wrong version number/i.test(raw)) {
+    return new Error('HTTPS 连接失败：服务器当前可能只提供 HTTP。请取消“使用 HTTPS 安全连接”，或为服务器配置有效的 HTTPS 证书。');
+  }
+  if (/ERR_CERT|certificate/i.test(raw)) {
+    return new Error('HTTPS 证书校验失败：请使用受信任的域名和证书，或在局域网测试时取消“使用 HTTPS 安全连接”。');
+  }
+  if (/ERR_CONNECTION_REFUSED|connection refused/i.test(raw)) {
+    return new Error('服务器拒绝连接：请检查服务器是否启动、端口是否开放，以及手机是否能访问该局域网地址。');
+  }
+  return new Error(raw || '无法连接云服务器');
 }
 
 function request(serverUrl, pathname, options = {}) {
@@ -32,7 +48,7 @@ function request(serverUrl, pathname, options = {}) {
         if (response.statusCode >= 200 && response.statusCode < 300) resolve(response.data || {});
         else reject(Object.assign(new Error(response.data && response.data.message || `云服务请求失败（${response.statusCode}）`), { code:response.data && response.data.error || 'CLOUD_REQUEST_FAILED' }));
       },
-      fail: error => reject(new Error(error && error.errMsg || '无法连接云服务器')),
+      fail: error => reject(explainNetworkError(error)),
     });
   });
 }
@@ -42,6 +58,7 @@ function normalizeMiniProgramAuth(data, serverUrl) {
   const name = String(user.name || user.nickname || '').trim().slice(0, 40);
   const nickname = String(user.nickname || user.name || '').trim().slice(0, 40);
   const avatarUrl = String(user.avatarUrl || '').trim().slice(0, 500);
+  const organization = (data && data.organization) || {};
   return {
     version:CLOUD_SESSION_VERSION,
     serverUrl:normalizeServerUrl(serverUrl),
@@ -53,80 +70,78 @@ function normalizeMiniProgramAuth(data, serverUrl) {
     expiresAt:String(data.expiresAt || ''),
     nickname,
     avatarUrl,
+    mustChangePassword:!!user.mustChangePassword,
+    organization:{
+      id:String(organization.id || ''),
+      name:String(organization.name || '组织空间').trim().slice(0, 120),
+      shortName:String(organization.shortName || organization.name || '组织').trim().slice(0, 40),
+      logoUrl:String(organization.logoUrl || '').trim().slice(0, 500),
+      primaryColor:/^#[0-9A-Fa-f]{6}$/.test(String(organization.primaryColor || '')) ? String(organization.primaryColor).toUpperCase() : '#2563EB',
+    },
   };
 }
 
-async function registerMiniProgramAccount({ serverUrl, key, loginName, password, nickname, avatarUrl, legacyConnectionId, deviceName, wechatCode }) {
-  const data = await request(serverUrl, '/api/v1/auth/mini-program/register', {
-    method:'POST',
-    data:{
-      key:String(key || '').trim(),
-      loginName:String(loginName || '').trim(),
-      password:String(password || ''),
-      nickname:String(nickname || '').trim(),
-      avatarUrl:avatarUrl ? String(avatarUrl) : undefined,
-      legacyConnectionId:legacyConnectionId ? String(legacyConnectionId) : undefined,
-      deviceName:deviceName || '微信小程序',
-      wechatCode:wechatCode ? String(wechatCode) : undefined,
-    },
-  });
-  return normalizeMiniProgramAuth(data, serverUrl);
-}
-
-async function loginMiniProgramAccount({ serverUrl, loginName, password, deviceName }) {
-  const data = await request(serverUrl, '/api/v1/auth/mini-program/login', {
+async function loginMiniProgramAccount({ serverUrl, useHttps = true, loginName, password, deviceName }) {
+  const normalizedServerUrl = normalizeServerUrl(serverUrl, useHttps);
+  const data = await request(normalizedServerUrl, '/api/v1/auth/mini-program/login', {
     method:'POST',
     data:{ loginName:String(loginName || '').trim(), password:String(password || ''), deviceName:deviceName || '微信小程序' },
   });
-  return normalizeMiniProgramAuth(data, serverUrl);
+  return normalizeMiniProgramAuth(data, normalizedServerUrl);
 }
 
-async function wechatLogin({ serverUrl, code, deviceName }) {
-  const data = await request(serverUrl, '/api/v1/auth/mini-program/wechat', {
-    method:'POST',
-    data:{ code:String(code || '').trim(), deviceName:deviceName || '微信小程序' },
+async function completeTeacherProfile(cloud, { name, nickname, newPassword }) {
+  const data = await request(cloud.serverUrl, '/api/v1/teacher/profile', {
+    method:'PATCH', token:cloud.accessToken,
+    data:{ name:String(name || '').trim(), nickname:String(nickname || '').trim(), newPassword:String(newPassword || '') },
   });
-  return normalizeMiniProgramAuth(data, serverUrl);
+  const normalized = normalizeMiniProgramAuth({ ...data, accessToken:cloud.accessToken, accessExpiresAt:cloud.accessExpiresAt, refreshToken:cloud.refreshToken, expiresAt:cloud.expiresAt }, cloud.serverUrl);
+  return { ...cloud, ...normalized };
+}
+
+async function updateTeacherProfile(cloud, { name, currentPassword, newPassword } = {}) {
+  const payload = {};
+  if (String(name || '').trim()) {
+    payload.name = String(name).trim();
+    payload.nickname = String(name).trim();
+  }
+  if (newPassword) {
+    payload.currentPassword = String(currentPassword || '');
+    payload.newPassword = String(newPassword);
+  }
+  const data = await request(cloud.serverUrl, '/api/v1/teacher/profile', { method:'PATCH', token:cloud.accessToken, data:payload });
+  const normalized = normalizeMiniProgramAuth({ ...data, accessToken:cloud.accessToken, accessExpiresAt:cloud.accessExpiresAt, refreshToken:cloud.refreshToken, expiresAt:cloud.expiresAt }, cloud.serverUrl);
+  return { ...cloud, ...normalized };
+}
+
+async function getTeacherProfile(cloud) {
+  const data = await request(cloud.serverUrl, '/api/v1/teacher/profile', { token:cloud.accessToken });
+  const normalized = normalizeMiniProgramAuth({ ...data, accessToken:cloud.accessToken, accessExpiresAt:cloud.accessExpiresAt, refreshToken:cloud.refreshToken, expiresAt:cloud.expiresAt }, cloud.serverUrl);
+  return { ...cloud, ...normalized };
 }
 
 function uploadAvatar(cloud, filePath) {
   return new Promise((resolve, reject) => {
     if (!cloud || !cloud.accessToken) { reject(new Error('云服务登录已失效')); return; }
     if (!filePath) { reject(new Error('请先选择头像')); return; }
-    wx.uploadFile({
-      url: `${normalizeServerUrl(cloud.serverUrl)}/api/v1/teacher/avatar`,
+    const lowerPath = String(filePath).toLowerCase();
+    const contentType = lowerPath.includes('.png') ? 'image/png' : (lowerPath.includes('.webp') ? 'image/webp' : 'image/jpeg');
+    wx.getFileSystemManager().readFile({
       filePath:String(filePath),
-      name:'file',
-      header: { 'x-banda-client':'mini-program', 'x-banda-protocol':'1', authorization:`Bearer ${cloud.accessToken}` },
-      success: response => {
-        let data = null;
-        if (response.data) {
-          try { data = JSON.parse(response.data); }
-          catch (_error) { reject(new Error('头像上传返回数据无法解析')); return; }
-        }
-        if (response.statusCode >= 200 && response.statusCode < 300) resolve(data || {});
-        else reject(Object.assign(new Error(data && data.message || `头像上传失败（${response.statusCode}）`), { code:data && data.error || 'CLOUD_REQUEST_FAILED' }));
-      },
-      fail: error => reject(new Error(error && error.errMsg || '头像上传失败')),
+      success:file => wx.request({
+        url:`${normalizeServerUrl(cloud.serverUrl)}/api/v1/teacher/avatar`, method:'POST', data:file.data,
+        header:{ 'content-type':contentType, 'x-banda-client':'mini-program', 'x-banda-protocol':'1', authorization:`Bearer ${cloud.accessToken}` },
+        timeout:15000,
+        success:response => {
+          const data = response.data || {};
+          if (response.statusCode >= 200 && response.statusCode < 300) resolve(data);
+          else reject(Object.assign(new Error(data.message || `头像上传失败（${response.statusCode}）`), { code:data.error || 'CLOUD_REQUEST_FAILED' }));
+        },
+        fail:error => reject(new Error(error && error.errMsg || '头像上传失败')),
+      }),
+      fail:error => reject(new Error(error && error.errMsg || '无法读取头像文件')),
     });
   });
-}
-
-async function enrollTeacher({ serverUrl, key, account }) {
-  const data = await request(serverUrl, '/api/v1/enrollment/teacher/redeem', {
-    method:'POST',
-    data:{ key:String(key || '').trim(), name:account.name, legacyConnectionId:account.connectionId, deviceName:'微信小程序', deviceType:'mini-program' },
-  });
-  return {
-    version:CLOUD_SESSION_VERSION,
-    serverUrl:normalizeServerUrl(serverUrl),
-    userId:data.user.id,
-    userName:data.user.name,
-    accessToken:data.accessToken,
-    accessExpiresAt:data.accessExpiresAt,
-    refreshToken:data.refreshToken,
-    expiresAt:data.expiresAt,
-  };
 }
 
 async function listClassrooms(cloud) {
@@ -163,4 +178,4 @@ function isFaceMessage(message) {
   return type.startsWith('face-') || type.startsWith('pending-face') || type.startsWith('label-face');
 }
 
-module.exports = { normalizeServerUrl, request, registerMiniProgramAccount, loginMiniProgramAccount, wechatLogin, uploadAvatar, enrollTeacher, listClassrooms, refreshSession, leaveClassroom, logout, isFaceMessage };
+module.exports = { normalizeServerUrl, request, loginMiniProgramAccount, completeTeacherProfile, updateTeacherProfile, getTeacherProfile, uploadAvatar, listClassrooms, refreshSession, leaveClassroom, logout, isFaceMessage, explainNetworkError };

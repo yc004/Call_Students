@@ -16,7 +16,7 @@
     <view class="identity-row"><text>连接身份</text><text>{{loggedIn ? accountName : '尚未登录'}}</text></view>
     <view class="identity-row"><text>网络要求</text><text>与教室电脑处于同一局域网</text></view>
     <view class="identity-row"><text>加入权限</text><text>{{alreadySaved ? '重新连接' : '首次连接后等待班主任批准'}}</text></view>
-    <view class="subject-field"><text>授课科目 <text class="required">必填</text></text><input value="{{subjectText}}" maxlength="120" bindinput="onSubjectInput" placeholder="例如：数学；多个科目用逗号分隔"/></view>
+    <view class="subject-field"><text>授课科目 <text class="required">必选</text></text><button class="subject-select-button" bindtap="chooseSubjects"><text class="subject-value {{selectedSubjects.length ? '' : 'placeholder'}}">{{selectedSubjects.length ? subjectText : '请选择授课科目'}}</text><text class="chevron">›</text></button></view>
   </view>
 
   <view class="connection-panel {{connectionState}}" wx:if="{{valid && connectionState !== 'ready'}}"><view class="connection-indicator"><view></view></view><view class="connection-copy"><text>{{connectionTitle}}</text><text>{{connectionDetail}}</text></view></view>

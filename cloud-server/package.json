@@ -6,10 +6,10 @@
   "description": "班达云服务端与管理面板",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev": "node --env-file-if-exists=.env --import tsx --watch src/server.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/server.js",
-    "db:migrate": "tsx src/cli/migrate.ts",
+    "start": "node --env-file-if-exists=.env dist/server.js",
+    "db:migrate": "node --env-file-if-exists=.env --import tsx src/cli/migrate.ts",
     "test": "node --import tsx --test test/**/*.test.ts",
     "verify": "npm run build && npm test"
   },

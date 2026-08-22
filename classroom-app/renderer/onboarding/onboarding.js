@@ -21,6 +21,10 @@
   let refreshing = false;
   let bound = false;
 
+  function reportError(title, error, context, suggestions) {
+    if (window.clientErrors) window.clientErrors.show({ title, error, context, suggestions:suggestions || ['稍后重试刚才的操作', '如果仍然失败，请复制错误信息提交管理员'] });
+  }
+
   function esc(value) {
     return String(value || '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
   }
@@ -146,7 +150,10 @@
       if (!result || !result.success) throw new Error(result && result.message || '网卡设置失败');
       renderNetworks(result);
       await refresh();
-    } catch (error) { setError(error.message || '网卡设置失败'); }
+    } catch (error) {
+      setError(error.message || '网卡设置失败');
+      reportError('网卡设置失败', error, '首次设置－选择网卡', ['确认所选网卡当前可用并已连接局域网', '尝试恢复自动选择后重试']);
+    }
     finally { networkInterface.disabled = false; }
   });
   bindBtn.addEventListener('click', async () => {
@@ -156,8 +163,7 @@
     try {
       const result = bound ? await api.approvePendingTeacher(selectedId) : await api.bindHomeroomTeacher(selectedId);
       if (!result || !result.success) {
-        setError(result && result.message ? result.message : (bound ? '批准失败，请重试' : '绑定失败，请重试'));
-        return;
+        throw new Error(result && result.message ? result.message : (bound ? '批准失败，请重试' : '绑定失败，请重试'));
       }
       if (bound) {
         setError('');
@@ -166,8 +172,9 @@
         successDesc.textContent = `已绑定班主任 ${result.teacher.name}。`;
         successOverlay.classList.remove('hidden');
       }
-    } catch (_) {
+    } catch (error) {
       setError(bound ? '批准服务暂时不可用，请重试' : '绑定服务暂时不可用，请重试');
+      reportError(bound ? '批准教师失败' : '绑定班主任失败', error, '首次设置－教师身份确认');
     } finally {
       bindBtn.textContent = bound ? '批准加入' : '确认绑定班主任';
       bindBtn.disabled = !selectedId;
@@ -179,11 +186,12 @@
     rejectBtn.disabled = true;
     try {
       const result = await api.rejectPendingTeacher(selectedId);
-      if (!result || !result.success) { setError(result && result.message ? result.message : '拒绝失败，请重试'); return; }
+      if (!result || !result.success) throw new Error(result && result.message ? result.message : '拒绝失败，请重试');
       setError('');
       await refresh();
-    } catch (_) {
+    } catch (error) {
       setError('拒绝服务暂时不可用，请重试');
+      reportError('拒绝教师请求失败', error, '首次设置－教师身份确认');
     } finally {
       rejectBtn.disabled = false;
     }
@@ -195,11 +203,12 @@
     transferBtn.textContent = '正在转让…';
     try {
       const result = await api.transferHomeroomTeacher(selectedId);
-      if (!result || !result.success) { setError(result && result.message ? result.message : '转让失败，请重试'); return; }
+      if (!result || !result.success) throw new Error(result && result.message ? result.message : '转让失败，请重试');
       setError('');
       await refresh();
-    } catch (_) {
+    } catch (error) {
       setError('转让服务暂时不可用，请重试');
+      reportError('班主任转让失败', error, '首次设置－班主任转让');
     } finally {
       transferBtn.textContent = '设为班主任';
       transferBtn.disabled = !selectedId;

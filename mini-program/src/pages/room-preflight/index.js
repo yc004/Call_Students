@@ -1,5 +1,6 @@
 const sharedRoom = require('../../utils/shared-room');
 const { probeClassroom } = require('../../utils/classroom-probe');
+const networkDiagnostics = require('../../utils/network-diagnostics');
 
 Page({
   data: {
@@ -9,6 +10,9 @@ Page({
     detail:'请保持手机与教室电脑处于同一局域网',
     networkText:'正在读取网络状态',
     elapsedText:'',
+    failureKind:'',
+    failureSuggestions:[],
+    hotspotLikely:false,
   },
 
   onLoad(options) {
@@ -29,7 +33,10 @@ Page({
 
   readNetwork() {
     wx.getNetworkType({
-      success:result => this.setData({ networkText:result.networkType === 'none' ? '当前设备没有网络连接' : `当前网络：${String(result.networkType || '未知').toUpperCase()}` }),
+      success:result => {
+        this.networkType = String(result.networkType || 'unknown').toLowerCase();
+        this.setData({ networkText:this.networkType === 'none' ? '当前设备没有网络连接' : `当前网络：${this.networkType.toUpperCase()}` });
+      },
       fail:() => this.setData({ networkText:'请确认手机网络连接正常' }),
     });
   },
@@ -37,7 +44,7 @@ Page({
   async startConnection() {
     if (!this.room || this.connecting) return;
     this.connecting = true;
-    this.setData({ state:'connecting', title:'正在连接教室', detail:'正在确认教室端是否在线，请稍候…', elapsedText:'' });
+    this.setData({ state:'connecting', title:'正在连接教室', detail:'正在确认教室端是否在线，请稍候…', elapsedText:'', failureKind:'', failureSuggestions:[], hotspotLikely:false });
     try {
       const result = await probeClassroom(this.room, 8000);
       if (this.destroyed) return;
@@ -59,13 +66,14 @@ Page({
     } catch (error) {
       if (this.destroyed) return;
       this.connecting = false;
-      const detail = String(error && error.message || '没有收到教室端响应');
+      const diagnosis = await networkDiagnostics.diagnose(error, { room:this.room, networkType:this.networkType });
       this.setData({
         state:'failed',
-        title:/domain|合法域名/i.test(detail) ? '微信阻止了局域网连接' : '暂时无法连接教室',
-        detail:/domain|合法域名/i.test(detail)
-          ? 'Android 请确认手机与教室电脑在同一 Wi-Fi，且路由器未关闭局域网设备发现；iPhone 正式版目前不支持微信的 mDNS 局域网发现。'
-          : detail,
+        title:diagnosis.title,
+        detail:diagnosis.message,
+        failureKind:diagnosis.kind,
+        failureSuggestions:diagnosis.suggestions,
+        hotspotLikely:diagnosis.hotspotLikely,
       });
     }
   },

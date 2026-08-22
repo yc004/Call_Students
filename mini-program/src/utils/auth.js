@@ -164,7 +164,13 @@ async function pairWithTeacher(value, localSession) {
   for (const host of pairing.hosts) {
     try {
       const result = await requestHost(host, pairing, localSession);
-      return normalizeSession(result);
+      const normalized = normalizeSession(result);
+      // A wxfile:// or temporary avatar belongs to the current phone and is not
+      // usable by the desktop client. Keep it locally when pairing instead of
+      // letting a desktop response without an avatar erase the user's profile.
+      const localAvatar = String(localSession.account.avatarUrl || '').trim();
+      if (localAvatar) normalized.account.avatarUrl = localAvatar;
+      return normalized;
     } catch (error) {
       lastError = error;
       if (error && (error.code === 'PAIR_UNSUPPORTED' || error.code === 'PAIR_QR_EXPIRED')) throw error;

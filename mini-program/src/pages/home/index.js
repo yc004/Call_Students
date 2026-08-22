@@ -3,6 +3,8 @@ const scanAction = require('../../utils/scan-action');
 const { sessionStore } = require('../../utils/session');
 const roomContext = require('../../utils/room-context');
 const sharedRoom = require('../../utils/shared-room');
+const errorReport = require('../../utils/error-report');
+const subjectOptions = require('../../utils/subject-options');
 
 const GREETINGS = [
   '今天也一起把课堂安排得井井有条。',
@@ -35,15 +37,23 @@ function errorText(error) { const text=String(error&&error.message||'');if(/doma
 function failedRoom(room,error){const statusKey=error&&error.roomStatus||'offline';const meta={offline:{label:'未连接',icon:'—',text:errorText(error)},pending:{label:'等待审核',icon:'…',text:'加入申请已发送，等待班主任批准'},'identity-error':{label:'身份异常',icon:'!',text:String(error&&error.message||'教师身份已失效，请重新加入教室')},uninitialized:{label:'待初始化',icon:'初',text:'班主任需要先完成教室基础配置'}}[statusKey]||{label:'未连接',icon:'—',text:errorText(error)};return{id:room.id,name:room.name,connectionCode:room.connectionCode,roomKey:roomContext.keyOf(room),online:false,statusKey,statusClass:`status-${statusKey}`,statusLabel:meta.label,statusIcon:meta.icon,statusText:meta.text,errorText:meta.text,canUseFeatures:false,homeworkCount:0,pending:0,closed:0,submitted:0,expected:0};}
 
 Page({
-  data:{hasRooms:false,accountName:'教师',greeting:'',roomStats:[],loadingStats:false,totalRooms:0,onlineRooms:0,totalHomework:0,totalPending:0,totalClosed:0,totalSubmitted:0,totalExpected:0},
-  onLoad(){if(getApp().globalData.applyNavigationTheme)getApp().globalData.applyNavigationTheme();const session=sessionStore.load();if(!session){wx.reLaunch({url:'/pages/login/index'});return;}this.session=session;this.applySession(session);},
-  onShow(){if(getApp().globalData.applyNavigationTheme)getApp().globalData.applyNavigationTheme();const session=sessionStore.load();if(!session){wx.reLaunch({url:'/pages/login/index'});return;}this.session=session;this.applySession(session);if(this.getTabBar)this.getTabBar().refresh('home');if(session.rooms.length)this.loadAllRoomStats();},
+  data:{hasRooms:false,accountName:'教师',greeting:'',usageMode:'toc',organizationName:'',organizationShortName:'',organizationMark:'组',organizationLogo:'',organizationColor:'#2563EB',roomStats:[],loadingStats:false,totalRooms:0,onlineRooms:0,totalHomework:0,totalPending:0,totalClosed:0,totalSubmitted:0,totalExpected:0},
+  onLoad(){if(getApp().globalData.applyNavigationTheme)getApp().globalData.applyNavigationTheme();const session=sessionStore.load();if(!session||session.cloud&&session.cloud.mustChangePassword){wx.reLaunch({url:session?'/pages/login/index?from=cloud':'/pages/login/index'});return;}this.session=session;this.applySession(session);},
+  onShow(){if(getApp().globalData.applyNavigationTheme)getApp().globalData.applyNavigationTheme();const session=sessionStore.load();if(!session||session.cloud&&session.cloud.mustChangePassword){wx.reLaunch({url:session?'/pages/login/index?from=cloud':'/pages/login/index'});return;}this.session=session;this.applySession(session);if(this.getTabBar)this.getTabBar().refresh('home');if(session.rooms.length)this.loadAllRoomStats();},
   onRoomChanged(){this.onShow();},
-  applySession(session){this.setData({hasRooms:!!session.rooms.length,accountName:session.account.name,greeting:dailyGreeting(session.account),totalRooms:session.rooms.length});},
+  applySession(session){
+    const usageMode=session.cloud?'tob':'toc';
+    const organization=session.cloud&&session.cloud.organization||{};
+    const organizationName=organization.name||'组织空间';
+    const organizationShortName=organization.shortName||organizationName;
+    const organizationColor=organization.primaryColor||'#2563EB';
+    this.setData({hasRooms:!!session.rooms.length,accountName:session.account.name,greeting:dailyGreeting(session.account),totalRooms:session.rooms.length,usageMode,organizationName,organizationShortName,organizationMark:String(organizationShortName).slice(0,1),organizationLogo:organization.logoUrl||'',organizationColor});
+    if(getApp().globalData.applyNavigationTheme)getApp().globalData.applyNavigationTheme(null,usageMode,organizationColor);
+  },
   startScan(){scanAction.start({onComplete:()=>this.onRoomChanged()});},
   loadAllRoomStats(){if(this.statsPromise)return this.statsPromise;this.statsPromise=this.performLoadAllRoomStats().finally(()=>{this.statsPromise=null;});return this.statsPromise;},
   async performLoadAllRoomStats(){const session=sessionStore.load();const rooms=session&&session.rooms||[];if(!rooms.length){this.setData({hasRooms:false,roomStats:[],loadingStats:false});return;}const requestId=Date.now();this.requestId=requestId;this.setData({loadingStats:true,totalRooms:rooms.length});const results=[];let cursor=0;const worker=async()=>{while(cursor<rooms.length){const index=cursor++;const room=rooms[index];try{results[index]=summarize(room,await socket.fetchRoomSnapshot(room,session.account,5000));}catch(error){results[index]=failedRoom(room,error);}}};await Promise.all(Array.from({length:Math.min(3,rooms.length)},worker));if(this.requestId!==requestId)return;const online=results.filter(item=>item.statusKey==='online');this.setData({loadingStats:false,roomStats:results,onlineRooms:online.length,totalHomework:online.reduce((n,item)=>n+item.homeworkCount,0),totalPending:online.reduce((n,item)=>n+item.pending,0),totalClosed:online.reduce((n,item)=>n+item.closed,0),totalSubmitted:online.reduce((n,item)=>n+item.submitted,0),totalExpected:online.reduce((n,item)=>n+item.expected,0)});const setupRoom=results.find(item=>item.needsSetup);if(setupRoom&&!this.openingSetupGuide){this.openingSetupGuide=true;setTimeout(()=>wx.navigateTo({url:`/pages/classroom-settings/index?code=${encodeURIComponent(setupRoom.roomKey)}&guide=1`,complete:()=>{this.openingSetupGuide=false;}}),120);}},
-  async openFeature(event){const {feature,code}=event.currentTarget.dataset;let session=sessionStore.load();let room=(session&&session.rooms||[]).find(item=>roomContext.keyOf(item)===String(code));if(!room)return;if(!(room.subjects||[]).length){const choice=await new Promise(resolve=>wx.showModal({title:'先设置授课科目',content:'每位教师（包括班主任）加入教室时都必须填写科目。多个科目用逗号分隔。',editable:true,placeholderText:'例如：数学、物理',success:resolve,fail:()=>resolve({confirm:false})}));if(!choice.confirm)return;const subjects=String(choice.content||'').split(/[,，、\s]+/).map(value=>value.trim()).filter(Boolean);if(!subjects.length){wx.showToast({title:'请至少填写一个科目',icon:'none'});return;}const rooms=session.rooms.map(item=>roomContext.keyOf(item)===String(code)?{...item,subjects}:item);room=rooms.find(item=>roomContext.keyOf(item)===String(code));session=sessionStore.save({...session,rooms,activeRoom:room});getApp().globalData.session=session;}const result=roomContext.activateByCode(code);if(!result)return;socket.connect(result.room,result.session.account,{force:true});const url=roomContext.featureUrl(feature,result.room);if(url)wx.navigateTo({url});},
+  async openFeature(event){const {feature,code}=event.currentTarget.dataset;let session=sessionStore.load();let room=(session&&session.rooms||[]).find(item=>roomContext.keyOf(item)===String(code));if(!room)return;if(!(room.subjects||[]).length){const subjects=await subjectOptions.choose([], '设置授课科目');if(!subjects)return;const rooms=session.rooms.map(item=>roomContext.keyOf(item)===String(code)?{...item,subjects}:item);room=rooms.find(item=>roomContext.keyOf(item)===String(code));session=sessionStore.save({...session,rooms,activeRoom:room});getApp().globalData.session=session;}const result=roomContext.activateByCode(code);if(!result)return;socket.connect(result.room,result.session.account,{force:true});const url=roomContext.featureUrl(feature,result.room);if(url)wx.navigateTo({url});},
   openSettings(event){const code=event.currentTarget.dataset.code;const result=roomContext.activateByCode(code);if(!result){wx.showToast({title:'教室不存在',icon:'none'});return;}socket.connect(result.room,result.session.account,{force:true});wx.navigateTo({url:`/pages/classroom-settings/index?code=${encodeURIComponent(roomContext.keyOf(result.room))}`});},
   onShareAppMessage(options){const code=options&&options.target&&options.target.dataset&&options.target.dataset.code;const session=sessionStore.load();const room=(session&&session.rooms||[]).find(item=>roomContext.keyOf(item)===String(code));if(!room||room.cloudClassroomId)return{title:'班达 · 连接教室',path:'/pages/home/index'};return{title:`${room.name}邀请你加入教室`,path:sharedRoom.createPath(room)};},
   leaveRoom(event){
@@ -79,11 +89,7 @@ Page({
           wx.showToast({title:'已退出教室',icon:'success'});
         }catch(error){
           wx.hideLoading();
-          wx.showModal({
-            title:'暂时无法退出教室',
-            content:`${error&&error.message||'无法通知教室端'}\n\n请确认教室端已启动，手机与教室电脑连接同一 Wi‑Fi 后重试。为避免两端记录不一致，本次没有删除本地教室。`,
-            showCancel:false,
-          });
+          errorReport.show({title:'暂时无法退出教室',error,context:'首页－退出教室',message:'无法通知教室端；为避免两端记录不一致，本次没有删除本地教室。',suggestions:['确认教室端已启动', '确认手机与教室电脑连接同一 Wi-Fi']});
         }
       },
     });

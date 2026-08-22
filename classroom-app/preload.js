@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld('api', {
   winMinimize:  () => ipcRenderer.send('win-minimize'),
   winMaximize:  () => ipcRenderer.send('win-maximize'),
   winClose:     () => ipcRenderer.send('win-close'),
+  copyText:     (value) => ipcRenderer.invoke('copy-text', value),
+  showClientError: (payload) => ipcRenderer.invoke('show-client-error', payload),
 
   // ── 数据读写（管理页用） ──
   getData:    ()      => ipcRenderer.invoke('get-data'),

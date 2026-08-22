@@ -4,6 +4,7 @@ const { sessionStore } = require('./session');
 const cloudApi = require('./cloud');
 const roomContext = require('./room-context');
 const { resolveClassroomHost } = require('./local-service');
+const networkDiagnostics = require('./network-diagnostics');
 let socketTask = null;
 let heartbeatTimer = null;
 let reconnectTimer = null;
@@ -16,6 +17,8 @@ let currentRoom = null;
 let currentAccount = null;
 let socketPhase = 'closed';
 let localResolveSequence = 0;
+let lastFailureError = null;
+let lastFailureTarget = '';
 let state = { status: 'offline', message: '未连接', detail: '', target: '', data: null, attendance: [], presence: [], pendingFaces: [] };
 
 function nonEmptySubjects(array) {
@@ -64,41 +67,27 @@ function resetConnectionFailures() {
   consecutiveFailures = 0;
   reconnectPaused = false;
   failurePromptShown = false;
+  lastFailureError = null;
+  lastFailureTarget = '';
 }
 
 function showConnectionFailureGuide() {
   if (failurePromptShown || !currentRoom || !currentAccount) return;
   failurePromptShown = true;
-  const roomName = currentRoom.name || '当前教室';
-  wx.showModal({
-    title: '无法连接教室',
-    content: [
-      `已连续尝试 ${MAX_CONNECT_ATTEMPTS} 次，仍无法连接“${roomName}”，自动重连已暂停。`,
-      '',
-      '请检查以下情况：',
-      '1. 教室端软件已经启动并完成班主任绑定；',
-      '2. 手机和教室电脑连接同一个 Wi‑Fi，且不是访客网络；',
-      '3. 教室连接码与教室端当前显示的一致；',
-      '4. 电脑防火墙允许教室端访问专用网络和 TCP 3456 端口；',
-      '5. 暂时关闭手机 VPN、代理或网络加速。',
-      '',
-      '调整完成后可以重新连接。',
-    ].join('\n'),
-    cancelText: '稍后再试',
-    confirmText: '重新连接',
-    success: result => {
-      failurePromptShown = false;
-      if (!result.confirm || !currentRoom || !currentAccount) return;
-      const room = currentRoom;
-      const account = currentAccount;
-      resetConnectionFailures();
-      connect(room, account, { force: true });
-    },
+  networkDiagnostics.showFailure({
+    error:lastFailureError || new Error(state.detail || state.message),
+    room:currentRoom,
+    target:lastFailureTarget,
+    attempts:MAX_CONNECT_ATTEMPTS,
+    context:`教室 WebSocket 连接－${currentRoom.name || '当前教室'}`,
   });
+  setTimeout(() => { failurePromptShown = false; }, 300);
 }
 
 function recordConnectionFailure(error, target) {
   consecutiveFailures += 1;
+  lastFailureError = error;
+  lastFailureTarget = String(target || '');
   const detail = formatSocketError(error, target);
   if (consecutiveFailures >= MAX_CONNECT_ATTEMPTS) {
     reconnectPaused = true;
@@ -290,10 +279,11 @@ function connect(room, account, options = {}) {
 function formatSocketError(error, target) {
   const raw = String(error && (error.errMsg || error.message) || '').trim();
   const code = currentRoom ? connectionCode.format(currentRoom.connectionCode) : '';
-  if (/domain|合法域名/i.test(raw)) return `连接码 ${code} · 微信阻止了局域网连接`;
-  if (/timeout|timed out/i.test(raw)) return `连接码 ${code} · 连接超时`;
-  if (/refused|10061/i.test(raw)) return `连接码 ${code} · 教室端未启动或被防火墙拦截`;
-  return `连接码 ${code}${raw ? ` · ${raw.replace(/^connectSocket:fail\s*/i, '')}` : ''}`;
+  const targetText = target ? ` · 目标 ${target}:3456` : '';
+  if (/domain|合法域名/i.test(raw)) return `连接码 ${code} · 微信阻止了局域网连接${targetText}`;
+  if (/timeout|timed out/i.test(raw)) return `连接码 ${code} · 连接超时${targetText}`;
+  if (/refused|10061/i.test(raw)) return `连接码 ${code} · 教室端未启动或被防火墙拦截${targetText}`;
+  return `连接码 ${code}${targetText}${raw ? ` · ${raw.replace(/^connectSocket:fail\s*/i, '')}` : ''}`;
 }
 
 function send(data) {

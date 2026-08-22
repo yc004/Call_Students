@@ -1,8 +1,17 @@
-<view class="profile-page">
+<view class="profile-page mode-{{usageMode}}" style="--mode-color:{{organizationColor}}">
   <view class="profile-account">
-    <image wx:if="{{cloudAvatar}}" class="avatar-image" src="{{cloudAvatar}}" mode="aspectFill"></image>
+    <image wx:if="{{profileAvatar}}" class="avatar-image" src="{{profileAvatar}}" mode="aspectFill"></image>
     <view wx:else class="avatar">{{initial}}</view>
     <view class="account-main"><text class="account-name">{{cloudNickname || account.name}}</text><text class="account-role">{{roleText}}</text><view class="subject-tags"><text wx:for="{{subjectTags}}" wx:key="*this">{{item}}</text></view></view>
+  </view>
+
+  <view class="profile-section"><text class="profile-section-title">个人资料</text><text class="profile-section-note">{{usageMode === 'tob' ? '资料会同步保存到组织云端。' : '资料只保存在当前微信设备。'}}</text></view>
+  <view class="profile-editor">
+    <button class="profile-avatar-picker" open-type="chooseAvatar" bindchooseavatar="onChooseAvatar"><image wx:if="{{profileAvatar}}" src="{{profileAvatar}}" mode="aspectFill"></image><text wx:else class="profile-avatar-fallback">{{initial}}</text><text class="avatar-action">更换头像</text></button>
+    <text class="label compact-label">用户名</text>
+    <input class="field" type="text" maxlength="40" value="{{editName}}" bindinput="onNameInput" placeholder="请输入用户名"/>
+    <text class="profile-privacy-note" style="display:block;margin-top:14rpx;color:#8a919d;font-size:21rpx;line-height:1.55">{{usageMode === 'tob' ? '头像仅在你主动点击后选择并同步到组织云端；不会读取手机号。' : '头像仅在你主动点击后选择并保存在本机；不会读取手机号或微信资料。'}}</text>
+    <button class="primary profile-save" loading="{{profileBusy}}" disabled="{{profileBusy}}" bindtap="saveProfile">保存个人资料</button>
   </view>
 
   <view class="profile-section"><text class="profile-section-title">账户与安全</text></view>
@@ -11,20 +20,26 @@
     <view class="weui-cell"><view class="weui-cell__hd"><view class="setting-icon identity-icon">教</view></view><view class="weui-cell__bd setting-copy"><text>登录身份</text><text>{{account.name}} · {{roleText}}</text></view></view>
   </view>
 
-  <view class="profile-section"><text class="profile-section-title">云服务</text><text class="profile-section-note">联网使用呼叫、作业与班级数据；人脸功能仍需与教室处于同一局域网。</text></view>
+  <block wx:if="{{usageMode === 'tob'}}">
+    <view class="profile-section"><text class="profile-section-title">修改密码</text><text class="profile-section-note">修改后请使用新密码登录其他客户端。</text></view>
+    <view class="password-editor">
+      <text class="label compact-label">当前密码</text><input class="field" password maxlength="200" value="{{currentPassword}}" bindinput="onCurrentPasswordInput" placeholder="请输入当前密码"/>
+      <text class="label">新密码</text><input class="field" password maxlength="200" value="{{newPassword}}" bindinput="onNewPasswordInput" placeholder="至少 10 位"/>
+      <text class="label">确认新密码</text><input class="field" password maxlength="200" value="{{confirmPassword}}" bindinput="onConfirmPasswordInput" placeholder="再次输入新密码"/>
+      <button class="primary password-save" loading="{{profileBusy}}" disabled="{{profileBusy}}" bindtap="changePassword">修改密码</button>
+    </view>
+  </block>
+
+  <view class="profile-section"><text class="profile-section-title">{{usageMode === 'tob' ? '组织空间' : '使用模式'}}</text><text class="profile-section-note">{{usageMode === 'tob' ? '组织数据由云服务统一保存；人脸功能仍需与教室处于同一局域网。' : '个人模式免费使用，数据仅保存在当前设备。'}}</text></view>
   <view class="cloud-card">
-    <block wx:if="{{!cloudConnected}}">
-      <text class="cloud-label">尚未连接云服务</text>
-      <text class="cloud-hint">支持账号密码注册/登录、tk 身份密钥注册和微信一键登录。</text>
-      <button class="primary cloud-action" bindtap="openCloudAuth">登录 / 注册云服务</button>
-    </block>
-    <block wx:else>
+    <block wx:if="{{cloudConnected}}">
+      <view class="organization-profile"><view>{{organizationShortName}}</view><text>{{organizationName}}</text></view>
       <view class="cloud-connected"><view class="cloud-dot"></view><view><text>云服务已连接</text><text>{{cloudServerUrl}}</text></view></view>
       <view class="cloud-id-row"><text>云端用户 ID</text><text>{{cloudUserId}}</text></view>
-      <text class="cloud-hint">教室成员关系由教室端和云管理员统一同步，不使用连接密钥建立。</text>
+      <text class="cloud-hint">账号、教室成员和组织标识均由组织管理员统一配置。</text>
       <button class="primary cloud-action" loading="{{cloudBusy}}" disabled="{{cloudBusy}}" bindtap="refreshCloud">同步账号与教室</button>
-      <button class="secondary cloud-action" bindtap="disconnectCloud">断开云服务</button>
     </block>
+    <block wx:else><text class="cloud-label">个人免费模式</text><text class="cloud-hint">无需账号密码和服务器，可直接连接同一局域网内的教室。若要加入组织，请退出后选择“组织团队使用”。</text></block>
   </view>
   <button class="weui-btn weui-btn_warn logout" bindtap="logout">退出登录</button>
 </view>

@@ -19,6 +19,7 @@
   };
   const $ = selector => document.querySelector(selector);
   const views = ['setupView', 'loginView', 'dashboardView'];
+  const SUBJECT_OPTIONS = Object.freeze(['语文','数学','英语','物理','化学','生物','道德与法治','历史','地理','科学','信息科技','通用技术','体育与健康','音乐','美术','劳动','综合实践活动','心理健康','班会','日语','俄语']);
   const show = id => views.forEach(view => $(('#' + view)).classList.toggle('hidden', view !== id));
   const message = text => { const el = $('#message'); el.textContent = text; el.classList.remove('hidden'); setTimeout(() => el.classList.add('hidden'), 3500); };
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -26,6 +27,55 @@
   const statusText = value => value === 'active' ? '正常使用' : value === 'disabled' ? '已停用' : String(value || '未知');
   const summaryItem = (label, value, wide = false) => '<div class="summary-item' + (wide ? ' wide' : '') + '"><span>' + escapeHtml(label) + '</span><strong>' + escapeHtml(value) + '</strong></div>';
   const formData = form => Object.fromEntries(new FormData(form).entries());
+
+  function normalizeSubjects(values = []) {
+    return Array.from(new Set((values || []).map(value => String(value || '').trim()).filter(Boolean)));
+  }
+
+  function renderSubjectOptions(container, selected = []) {
+    const selectedSet = new Set(normalizeSubjects(selected));
+    const options = Array.from(new Set([...SUBJECT_OPTIONS, ...selectedSet]));
+    container.innerHTML = options.map(subject => '<label><input type="checkbox" value="' + escapeHtml(subject) + '"' + (selectedSet.has(subject) ? ' checked' : '') + '><span>' + escapeHtml(subject) + '</span></label>').join('');
+  }
+
+  function selectedSubjects(container) {
+    return normalizeSubjects([...container.querySelectorAll('input[type="checkbox"]:checked')].map(input => input.value));
+  }
+
+  function updateMemberSubjectSummary() {
+    const selected = selectedSubjects($('#memberSubjectOptions'));
+    $('#memberSubjectSummary').textContent = selected.length ? selected.join('、') : '选择授课科目';
+  }
+
+  function openMemberSubjectEditor(target) {
+    const selected = String(target.dataset.subjects || '').split(',').filter(Boolean);
+    state.editingMember = { id: target.dataset.memberEdit };
+    $('#memberSubjectRole').value = target.dataset.role === 'homeroom' ? 'homeroom' : 'teacher';
+    renderSubjectOptions($('#memberEditSubjectOptions'), selected);
+    $('#memberSubjectDialog').showModal();
+  }
+
+  function applyOrganizationBranding(organization = {}) {
+    const color = /^#[0-9A-Fa-f]{6}$/.test(String(organization.primaryColor || '')) ? String(organization.primaryColor).toUpperCase() : '#07C160';
+    const root = document.documentElement;
+    root.style.setProperty('--green', color);
+    root.style.setProperty('--green-dark', color);
+    root.style.setProperty('--green-soft', color + '1A');
+    root.style.setProperty('--brand-color', color);
+    const name = String(organization.name || '班达云服务');
+    const shortName = String(organization.shortName || name);
+    $('#brandName').textContent = shortName;
+    $('#brandSubtitle').textContent = name === shortName ? '统一管理中心' : name;
+    const mark = $('#brandMark');
+    const logo = $('#brandLogo');
+    mark.textContent = shortName.slice(0, 1) || '班';
+    mark.style.background = `linear-gradient(145deg, ${color}, ${color})`;
+    logo.classList.add('hidden');
+    logo.onload = () => { mark.classList.add('hidden'); logo.classList.remove('hidden'); };
+    logo.onerror = () => { mark.classList.remove('hidden'); logo.classList.add('hidden'); };
+    if (organization.logoUrl) logo.src = organization.logoUrl;
+    else { logo.removeAttribute('src'); mark.classList.remove('hidden'); }
+  }
 
   async function copyText(text) {
     try {
@@ -109,13 +159,20 @@
   }
 
   async function loadDashboard() {
-    const [summary, classrooms, users] = await Promise.all([
+    const [summary, classrooms, users, organizationResult] = await Promise.all([
       api('/api/v1/admin/summary'),
       api('/api/v1/admin/classrooms'),
       api('/api/v1/admin/users'),
+      api('/api/v1/admin/organization'),
     ]);
     state.classrooms = classrooms.classrooms || [];
     state.users = users.users || [];
+    const organization = organizationResult.organization || {};
+    applyOrganizationBranding(organization);
+    $('#organizationName').value = organization.name || '';
+    $('#organizationShortName').value = organization.shortName || '';
+    $('#organizationLogoUrl').value = organization.logoUrl || '';
+    $('#organizationPrimaryColor').value = organization.primaryColor || '#2563EB';
     $('#statClassrooms').textContent = summary.classrooms;
     $('#statUsers').textContent = summary.users;
     $('#statOnline').textContent = summary.onlineDevices;
@@ -123,7 +180,7 @@
     $('#classroomTabCount').textContent = summary.classrooms;
     $('#teacherTabCount').textContent = summary.users;
     $('#overviewOnlineText').textContent = summary.onlineDevices ? '教室端正在同步数据' : '当前没有在线教室端';
-    $('#overviewPendingText').textContent = summary.pendingTargets ? '等待客户端使用密钥连接' : '所有对象均已完成接入';
+    $('#overviewPendingText').textContent = summary.pendingTargets ? '存在尚未接入的教室或教师账号' : '所有对象均已完成接入';
 
     $('#classroomList').innerHTML = '<table class="admin-table"><thead><tr><th><input type="checkbox" data-check-all="classroom"></th><th>教室</th><th>状态</th><th>设备</th><th>学生/成员/作业</th><th>操作</th></tr></thead><tbody>' + state.classrooms.map(room => '<tr><td><input type="checkbox" data-check-id="' + room.id + '" data-check-type="classroom" ' + (state.selectedClassroomIds.has(room.id) ? 'checked' : '') + '></td><td><strong>' + escapeHtml(room.name) + '</strong><small>' + escapeHtml(room.lan_connection_code || room.id.slice(0, 8)) + '</small></td><td><span class="status ' + (room.status === 'active' ? '' : 'offline') + '">' + escapeHtml(statusText(room.status)) + '</span></td><td><span class="status ' + (room.device_status === 'online' ? '' : 'offline') + '">' + (room.device_status === 'online' ? '在线' : '离线') + '</span></td><td>' + room.student_count + ' / ' + room.member_count + ' / ' + room.assignment_count + '</td><td><button class="mini-action" data-open-classroom="' + room.id + '" data-name="' + escapeHtml(room.name) + '">配置</button><button class="mini-action danger" data-delete-classroom="' + room.id + '" data-name="' + escapeHtml(room.name) + '">删除</button></td></tr>').join('') + '</tbody></table>';
 
@@ -150,6 +207,9 @@
     $('#entityName').value = entity.name;
     $('#entityName').maxLength = type === 'classroom' ? 120 : 40;
     $('#entityStatus').value = entity.status;
+    $('#teacherCredentialFields').classList.toggle('hidden', type !== 'teacher');
+    $('#entityLoginName').value = type === 'teacher' ? (entity.login_name || '') : '';
+    $('#entityDefaultPassword').value = '';
     $('#entityEyebrow').textContent = type === 'classroom' ? '教室资料' : '教师资料';
     $('#entityDialogTitle').textContent = entity.name;
     if (type === 'classroom') {
@@ -157,7 +217,7 @@
     } else {
       const memberships = result.memberships || [];
       const classes = memberships.map(item => item.classroom_name + '（' + (item.role === 'homeroom' ? '班主任' : '任课教师') + ' · ' + ((item.subjects_json || []).join('、') || '未设科目') + '）').join('；') || '尚未加入教室';
-      $('#entityDetailSummary').innerHTML = [summaryItem('账号状态', statusText(entity.status)), summaryItem('登录设备', (entity.device_count || 0) + ' 台'), summaryItem('加入教室', memberships.length + ' 个'), summaryItem('最近在线', formatTime(entity.last_seen_at)), summaryItem('创建时间', formatTime(entity.created_at)), summaryItem('更新时间', formatTime(entity.updated_at)), summaryItem('教室与身份', classes, true)].join('');
+      $('#entityDetailSummary').innerHTML = [summaryItem('账号状态', statusText(entity.status)), summaryItem('首次改密', entity.must_change_password ? '等待教师完成' : '已完成'), summaryItem('登录设备', (entity.device_count || 0) + ' 台'), summaryItem('加入教室', memberships.length + ' 个'), summaryItem('最近在线', formatTime(entity.last_seen_at)), summaryItem('创建时间', formatTime(entity.created_at)), summaryItem('更新时间', formatTime(entity.updated_at)), summaryItem('教室与身份', classes, true)].join('');
     }
     $('#teacherKeyPanel').classList.toggle('hidden', type !== 'teacher');
     if (type === 'teacher') loadTeacherKeys(id).catch(error => message(error.message));
@@ -331,8 +391,13 @@
   $('#setupForm').addEventListener('submit', async event => { event.preventDefault(); try { await api('/api/v1/setup', { method: 'POST', body: JSON.stringify(formData(event.currentTarget)) }); message('初始化完成，请登录'); show('loginView'); } catch (error) { message(error.message); } });
   $('#loginForm').addEventListener('submit', async event => { event.preventDefault(); try { const result = await api('/api/v1/auth/admin/login', { method: 'POST', body: JSON.stringify({ ...formData(event.currentTarget), deviceName: navigator.platform || 'Web 管理面板' }) }); state.accessToken = result.accessToken; state.refreshToken = result.refreshToken; sessionStorage.setItem('banda_admin_access', state.accessToken); localStorage.setItem('banda_admin_refresh', state.refreshToken); await loadDashboard(); show('dashboardView'); activateTab(state.activeTab); $('#logoutBtn').classList.remove('hidden'); } catch (error) { message(error.message); } });
   $('#classroomForm').addEventListener('submit', async event => { event.preventDefault(); const form=event.currentTarget;try{const created=await api('/api/v1/admin/classrooms',{method:'POST',body:JSON.stringify(formData(form))});form.reset(); await loadDashboard(); activateTab('classrooms'); message('待接入教室已创建，可进入教室配置生成身份密钥'); } catch (error) { message(error.message); } });
-  $('#teacherForm').addEventListener('submit', async event => { event.preventDefault(); const form = event.currentTarget; try { const created = await api('/api/v1/admin/users', { method: 'POST', body: JSON.stringify(formData(form)) }); form.reset(); await loadDashboard(); activateTab('teachers'); message('待接入教师已创建，可在教师详情中生成身份密钥'); } catch (error) { message(error.message); } });
-  $('#memberAddForm').addEventListener('submit', async event => { event.preventDefault(); const form = event.currentTarget; const data = formData(form); const subjects = String(data.subjects || '').split(/[,，、\s]+/).map(value => value.trim()).filter(Boolean); try { await api('/api/v1/admin/classrooms/' + state.memberClassroomId + '/members', { method: 'POST', body: JSON.stringify({ userId: data.userId, role: data.role, subjects }) }); form.reset(); await loadMembers(); message('教师成员已添加'); } catch (error) { message(error.message); } });
+  $('#teacherForm').addEventListener('submit', async event => { event.preventDefault(); const form = event.currentTarget; try { await api('/api/v1/admin/users', { method: 'POST', body: JSON.stringify(formData(form)) }); form.reset(); await loadDashboard(); activateTab('teachers'); message('教师账号已创建，请安全地将账号和默认密码交给教师'); } catch (error) { message(error.message); } });
+  $('#organizationForm').addEventListener('submit', async event => { event.preventDefault(); try { await api('/api/v1/admin/organization', { method:'PATCH', body:JSON.stringify(formData(event.currentTarget)) }); await loadDashboard(); activateTab('organization'); message('组织设置已保存，小程序下次同步时生效'); } catch (error) { message(error.message); } });
+  $('#memberAddForm').addEventListener('submit', async event => { event.preventDefault(); const form = event.currentTarget; const data = formData(form); const subjects = selectedSubjects($('#memberSubjectOptions')); if (!subjects.length) { message('请至少选择一个授课科目'); return; } try { await api('/api/v1/admin/classrooms/' + state.memberClassroomId + '/members', { method: 'POST', body: JSON.stringify({ userId: data.userId, role: data.role, subjects }) }); form.reset(); renderSubjectOptions($('#memberSubjectOptions')); updateMemberSubjectSummary(); $('#memberSubjectPicker').open = false; await loadMembers(); message('教师成员已添加'); } catch (error) { message(error.message); } });
+  $('#memberSubjectOptions').addEventListener('change', updateMemberSubjectSummary);
+  $('#memberSubjectForm').addEventListener('submit', async event => { event.preventDefault(); const subjects = selectedSubjects($('#memberEditSubjectOptions')); if (!subjects.length) { message('请至少选择一个授课科目'); return; } try { await api('/api/v1/admin/classrooms/' + state.memberClassroomId + '/members/' + state.editingMember.id, { method:'PATCH', body:JSON.stringify({ role:$('#memberSubjectRole').value, subjects }) }); $('#memberSubjectDialog').close(); await loadMembers(); message('教师成员已更新'); } catch (error) { message(error.message); } });
+  $('#closeMemberSubjectDialog').addEventListener('click', () => $('#memberSubjectDialog').close());
+  $('#cancelMemberSubjectDialog').addEventListener('click', () => $('#memberSubjectDialog').close());
   $('#classroomBasicForm').addEventListener('submit', async event => { event.preventDefault(); const data = formData(event.currentTarget); try { await api('/api/v1/admin/classrooms/' + state.currentClassroom, { method: 'PATCH', body: JSON.stringify({ name: data.name, status: data.status }) }); message('教室资料已更新'); await loadClassroomBasic(); await loadDashboard(); } catch (error) { message(error.message); } });
   $('#classroomStudentsForm').addEventListener('submit', async event => { event.preventDefault(); try { await saveClassroomStudents(); } catch (error) { message(error.message); } });
   $('#generateClassroomKey').addEventListener('click', () => { generateClassroomKey().catch(error => message(error.message)); });
@@ -353,7 +418,7 @@
   bindCopyTarget('#newKey');
   bindCopyTarget('#teacherNewKey');
   bindCopyTarget('#classroomNewKey');
-  $('#entityEditForm').addEventListener('submit', async event => { event.preventDefault(); const data = formData(event.currentTarget); const type = data.entityType; try { await api(type === 'classroom' ? '/api/v1/admin/classrooms/' + data.entityId : '/api/v1/admin/users/' + data.entityId, { method: 'PATCH', body: JSON.stringify({ name: data.name, status: data.status }) }); $('#entityDialog').close(); await loadDashboard(); message(type === 'classroom' ? '教室资料已更新' : '教师资料已更新'); } catch (error) { message(error.message); } });
+  $('#entityEditForm').addEventListener('submit', async event => { event.preventDefault(); const data = formData(event.currentTarget); const type = data.entityType; const body={ name:data.name, status:data.status }; if(type==='teacher'){body.loginName=data.loginName;if(data.defaultPassword)body.defaultPassword=data.defaultPassword;} try { await api(type === 'classroom' ? '/api/v1/admin/classrooms/' + data.entityId : '/api/v1/admin/users/' + data.entityId, { method: 'PATCH', body: JSON.stringify(body) }); $('#entityDialog').close(); await loadDashboard(); message(type === 'classroom' ? '教室资料已更新' : '教师账号已更新'); } catch (error) { message(error.message); } });
   $('#deleteEntityBtn').addEventListener('click', async () => { const editing = state.editingEntity; if (!editing) return; const label = editing.type === 'classroom' ? '教室' : '教师账号'; if (!confirm('确定删除' + label + '“' + editing.name + '”吗？此操作无法恢复。')) return; try { await api(editing.type === 'classroom' ? '/api/v1/admin/classrooms/' + editing.id : '/api/v1/admin/users/' + editing.id, { method:'DELETE' }); $('#entityDialog').close(); await loadDashboard(); message(label + '已删除'); } catch (error) { message(error.message); } });
   $('#closeEntityDialog').addEventListener('click', () => $('#entityDialog').close());
   $('#cancelEntityEdit').addEventListener('click', () => $('#entityDialog').close());
@@ -393,7 +458,7 @@
       if (target.dataset.entityEdit) { await openEntityEditor(target.dataset.entityType, target.dataset.entityEdit); return; }
       if (target.dataset.userEdit) { await openEntityEditor('teacher', target.dataset.userEdit); return; }
       if (target.dataset.memberApprove) await api('/api/v1/admin/classrooms/' + state.memberClassroomId + '/members/' + target.dataset.memberApprove, { method: 'PATCH', body: JSON.stringify({ status: 'approved' }) });
-      else if (target.dataset.memberEdit) { const subjects = prompt('授课科目（逗号分隔）', target.dataset.subjects || ''); if (subjects === null) return; const homeroom = confirm('是否设为班主任？选择“取消”将设为任课教师。'); await api('/api/v1/admin/classrooms/' + state.memberClassroomId + '/members/' + target.dataset.memberEdit, { method: 'PATCH', body: JSON.stringify({ role: homeroom ? 'homeroom' : 'teacher', subjects: subjects.split(/[,，、\s]+/).filter(Boolean) }) }); }
+      else if (target.dataset.memberEdit) { openMemberSubjectEditor(target); return; }
       else if (target.dataset.memberRemove) await api('/api/v1/admin/classrooms/' + state.memberClassroomId + '/members/' + target.dataset.memberRemove, { method: 'DELETE' });
       else if (target.dataset.deviceRevoke) await api('/api/v1/admin/classroom-devices/' + target.dataset.deviceRevoke, { method: 'DELETE' });
       if (target.dataset.memberApprove || target.dataset.memberEdit || target.dataset.memberRemove) await loadMembers();
@@ -410,5 +475,6 @@
 
   $('.tabbar').addEventListener('keydown', event => { if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); const tabs = [...document.querySelectorAll('[data-tab]')]; let index = tabs.indexOf(document.activeElement); if (event.key === 'Home') index = 0; else if (event.key === 'End') index = tabs.length - 1; else index = (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length; activateTab(tabs[index].dataset.tab, true); });
 
+  renderSubjectOptions($('#memberSubjectOptions'));
   initialize().catch(error => message(error.message));
 })();

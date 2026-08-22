@@ -14,6 +14,14 @@
     <text class="room-name">{{roomName}}</text>
     <text class="state-title">{{title}}</text>
     <text class="state-detail">{{detail}}</text>
+    <view class="failure-guide hotspot-guide" wx:if="{{state === 'failed' && hotspotLikely}}">
+      <text class="failure-guide-title">不要使用当前手机给教室电脑开热点</text>
+      <text class="failure-guide-copy">请改用普通 Wi‑Fi，或让另一台设备提供热点，使本手机与教室电脑都作为热点客户端接入。</text>
+    </view>
+    <view class="failure-guide" wx:if="{{state === 'failed' && failureSuggestions.length}}">
+      <text class="failure-guide-title">建议这样处理</text>
+      <view class="failure-step" wx:for="{{failureSuggestions}}" wx:key="index"><text>{{index + 1}}</text><text>{{item}}</text></view>
+    </view>
     <text class="elapsed" wx:if="{{elapsedText}}">{{elapsedText}}</text>
   </view>
 

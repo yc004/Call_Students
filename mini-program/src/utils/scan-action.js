@@ -2,15 +2,10 @@ const socket = require('./socket');
 const { sessionStore } = require('./session');
 const { pairWithTeacher, savePendingPairing, clearPendingPairing } = require('./auth');
 const { PREFIX: ROOM_PREFIX, parseClassroomQr } = require('./classroom-qr');
+const errorReport = require('./error-report');
 
 function connectionGuide(title, detail, retry) {
-  wx.showModal({
-    title,
-    content: `请确认：\n1. 手机和电脑在同一局域网\n2. 微信已获本地网络权限\n3. 电脑端二维码仍在有效期内${detail ? `\n\n错误信息：${detail}` : ''}`,
-    confirmText: '重新扫码',
-    cancelText: '稍后再试',
-    success: result => { if (result.confirm) retry(); },
-  });
+  errorReport.show({ title, error:new Error(detail || title), context:'扫码连接', message:'扫码信息已读取，但无法完成客户端连接。', suggestions:['确认手机和电脑在同一局域网', '确认微信已获得本地网络权限', '确认电脑端二维码仍在有效期内', '调整后重新扫码；如仍失败，请复制信息提交管理员'] });
 }
 
 async function saveClassroom(room, subjects) {
@@ -18,7 +13,7 @@ async function saveClassroom(room, subjects) {
   if (!current) throw new Error('请先登录教师账户');
   const existing = (current.rooms || []).find(item => item.connectionCode === room.connectionCode);
   const requestedSubjects = Array.from(new Set((subjects || []).map(value => String(value).trim()).filter(Boolean)));
-  if (!requestedSubjects.length) throw new Error('请先填写至少一个授课科目');
+  if (!requestedSubjects.length) throw new Error('请先选择至少一个授课科目');
   const storedRoom = existing ? { ...existing, name: room.name, subjects: requestedSubjects } : { id: `room_${Date.now().toString(36)}`, ...room, subjects: requestedSubjects };
   const rooms = (current.rooms || []).filter(item => item.connectionCode !== room.connectionCode).concat(storedRoom);
   const updated = sessionStore.save({ ...current, rooms, activeRoom: storedRoom });
@@ -39,7 +34,7 @@ async function saveClassroom(room, subjects) {
 function openClassroomConnection(room) {
   wx.navigateTo({
     url:`/pages/room-preflight/index?name=${encodeURIComponent(room.name)}&code=${encodeURIComponent(room.connectionCode)}`,
-    fail:error=>wx.showModal({title:'无法打开连接页面',content:error&&error.errMsg||'请返回首页后重试',showCancel:false}),
+    fail:error=>errorReport.show({title:'无法打开连接页面',error,context:'扫码连接－页面跳转',suggestions:['返回首页后重新扫码', '如果仍失败，请复制信息提交管理员']}),
   });
 }
 
@@ -80,7 +75,7 @@ function start(options = {}) {
       }
       if (value.startsWith(`${ROOM_PREFIX}.`)) {
         try { openClassroomConnection(parseClassroomQr(value)); }
-        catch (error) { wx.showModal({ title: '无法添加教室', content: error.message, showCancel: false }); }
+        catch (error) { errorReport.show({ title:'无法添加教室', error, context:'解析教室二维码', suggestions:['确认扫描的是教室端当前显示的二维码', '让教室端重新生成二维码后再试'] }); }
         return;
       }
       handleTeacherLogin(value, options.onComplete, () => start(options));

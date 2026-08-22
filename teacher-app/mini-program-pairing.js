@@ -88,7 +88,23 @@ function safeCloud(cloud) {
   const accessToken = String(cloud.accessToken || '');
   const refreshToken = String(cloud.refreshToken || '');
   if (!accessToken || !refreshToken) return null;
-  return { version:1, serverUrl:String(cloud.serverUrl).replace(/\/+$/, '').slice(0, 500), userId:String(cloud.userId || '').slice(0, 80), accessToken:accessToken.slice(0, 4096), accessExpiresAt:String(cloud.accessExpiresAt || '').slice(0, 80), refreshToken:refreshToken.slice(0, 512), expiresAt:String(cloud.expiresAt || '').slice(0, 80) };
+  const organization = cloud.organization && typeof cloud.organization === 'object' ? cloud.organization : {};
+  const primaryColor = /^#[0-9A-Fa-f]{6}$/.test(String(organization.primaryColor || '')) ? String(organization.primaryColor).toUpperCase() : '#2563EB';
+  return {
+    version:1,
+    serverUrl:String(cloud.serverUrl).replace(/\/+$/, '').slice(0, 500),
+    userId:String(cloud.userId || '').slice(0, 80),
+    loginName:String(cloud.loginName || '').slice(0, 80),
+    userName:String(cloud.userName || '').slice(0, 40),
+    nickname:String(cloud.nickname || '').slice(0, 40),
+    avatarUrl:String(cloud.avatarUrl || '').slice(0, 500),
+    mustChangePassword:!!cloud.mustChangePassword,
+    organization:{ id:String(organization.id || '').slice(0, 80), name:String(organization.name || '组织空间').slice(0, 120), shortName:String(organization.shortName || organization.name || '组织').slice(0, 40), logoUrl:String(organization.logoUrl || '').slice(0, 500), primaryColor },
+    accessToken:accessToken.slice(0, 4096),
+    accessExpiresAt:String(cloud.accessExpiresAt || '').slice(0, 80),
+    refreshToken:refreshToken.slice(0, 512),
+    expiresAt:String(cloud.expiresAt || '').slice(0, 80),
+  };
 }
 
 function sendJson(socket, body) {

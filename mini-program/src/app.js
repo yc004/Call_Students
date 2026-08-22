@@ -5,20 +5,30 @@ const { parseDirectPairingLink } = require('./utils/auth');
 const scanAction = require('./utils/scan-action');
 const cloudApi = require('./utils/cloud');
 const { clearLocalServiceCache } = require('./utils/local-service');
+const errorReport = require('./utils/error-report');
 
 App({
   globalData: {
     session: null,
     lastDirectRoomKey: '',
-    applyNavigationTheme(theme) {
+    applyNavigationTheme(theme, usageMode, organizationColor) {
       if (!wx.setNavigationBarColor) return;
+      if (!usageMode) {
+        const session = sessionStore.load();
+        const organization = session && session.cloud && session.cloud.organization || {};
+        usageMode = session && session.cloud ? 'tob' : 'toc';
+        organizationColor = organizationColor || organization.primaryColor;
+      }
       let currentTheme = theme;
       if (!currentTheme) {
         try { currentTheme = wx.getSystemInfoSync().theme || 'light'; } catch (_error) { currentTheme = 'light'; }
       }
+      const modeColor=/^#[0-9A-Fa-f]{6}$/.test(String(organizationColor||''))?organizationColor:'#2563EB';
+      const rgb=modeColor.match(/[0-9A-Fa-f]{2}/g)||[];
+      const brightness=rgb.length===3?(Number.parseInt(rgb[0],16)*299+Number.parseInt(rgb[1],16)*587+Number.parseInt(rgb[2],16)*114)/1000:0;
       wx.setNavigationBarColor({
-        frontColor: currentTheme === 'dark' ? '#ffffff' : '#000000',
-        backgroundColor: currentTheme === 'dark' ? '#111111' : '#f5f5f5',
+        frontColor: currentTheme === 'dark' ? '#ffffff' : usageMode === 'tob' && brightness < 165 ? '#ffffff' : '#000000',
+        backgroundColor: currentTheme === 'dark' ? '#111111' : usageMode === 'tob' ? modeColor : '#f5f5f5',
       });
     },
   },
@@ -61,6 +71,13 @@ App({
       let cloud = session.cloud;
       const expiresAt = new Date(cloud.accessExpiresAt || 0).getTime();
       if (!Number.isFinite(expiresAt) || expiresAt <= Date.now() + 60000) cloud = await cloudApi.refreshSession(cloud);
+      cloud = await cloudApi.getTeacherProfile(cloud);
+      if (cloud.mustChangePassword) {
+        const updated = sessionStore.updateCloud(cloud) || sessionStore.load();
+        this.globalData.session = updated;
+        wx.reLaunch({ url:'/pages/login/index?from=cloud' });
+        return updated;
+      }
       const rooms = await cloudApi.listClassrooms(cloud);
       const updated = sessionStore.updateCloud(cloud, rooms) || sessionStore.load();
       this.globalData.session = updated;
@@ -92,5 +109,11 @@ App({
   },
   onHide() {
     socket.pauseHeartbeat();
+  },
+  onError(error) {
+    errorReport.show({ title:'小程序发生运行错误', message:'页面遇到未预期的问题，部分功能可能暂时不可用。', context:'小程序运行', error, suggestions:['返回首页后重试刚才的操作', '如果问题重复出现，请复制错误信息并提交给管理员'] });
+  },
+  onUnhandledRejection(event) {
+    errorReport.show({ title:'小程序请求处理失败', message:'请求没有正常完成，请检查网络连接后重试。', context:'异步请求', error:event && event.reason || event, suggestions:['检查手机网络以及教室端或云服务状态', '稍后重试；若仍失败，请复制错误信息提交管理员'] });
   },
 });

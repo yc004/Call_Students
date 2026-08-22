@@ -26,7 +26,7 @@
     <view class="face-grid" wx:if="{{pendingFaces.length}}"><view class="face-card surface" wx:for="{{pendingFaces}}" wx:key="faceId"><image src="{{item.image}}" mode="aspectFill" data-image="{{item.image}}" bindtap="previewFace"></image><text>待匹配人脸 {{index+1}}</text><picker mode="selector" range="{{studentNames}}" data-index="{{index}}" bindchange="matchFace"><button>选择学生并匹配</button></picker></view></view>
     <view class="surface empty" wx:else><view class="empty-mark">✓</view><text class="empty-title">暂无待匹配人脸</text><text class="empty-desc">教室端检测到新的陌生人脸后，会自动显示在这里。</text></view>
   </block>
-  <view class="surface teacher-limited-card" wx:if="{{permissionsReady && !isHomeroom}}"><view class="limited-mark">✓</view><text>已作为任课教师加入</text><small>呼叫、作业和出勤功能请从首页教室卡片进入。班级资料和教师成员由班主任统一管理。</small></view>
+  <view class="surface teacher-limited-card" wx:if="{{permissionsReady && !isHomeroom}}"><view class="limited-mark">✓</view><text>已作为任课教师加入</text><small>你可以从首页查看出勤和本人授课科目的作业。班级资料、人脸匹配和教师成员由班主任统一管理。</small></view>
 </view>
 
 <view class="modal-mask" wx:if="{{batchVisible}}" catchtouchmove="noop"><view class="batch-sheet"><view class="sheet-handle"></view><view class="batch-title"><view><text>批量添加学生</text><small>每行一名，也支持逗号、顿号分隔</small></view><button bindtap="closeBatch">×</button></view><textarea maxlength="10000" value="{{batchText}}" bindinput="onBatchInput" placeholder="在这里粘贴学生姓名，每行一名"></textarea><view class="batch-meta"><text>已识别 {{batchCount}} 名学生</text><text>重复姓名会自动忽略</text></view><button class="primary" bindtap="applyBatch">添加到现有名单</button></view></view>

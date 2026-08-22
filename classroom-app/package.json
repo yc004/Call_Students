@@ -33,6 +33,7 @@
     },
     "files": [
       "main.js",
+      "call-message.js",
       "connection-code.js",
       "lan-addresses.js",
       "classroom-qr.js",

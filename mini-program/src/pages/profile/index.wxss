@@ -33,6 +33,7 @@
 .weui-btn::after { border: 0; }
 .weui-btn_warn { background: #fa5151; color: #fff; }
 .logout { margin-top: 28rpx; }
+.profile-editor,.password-editor{padding:26rpx;border-radius:20rpx;background:#fff}.profile-avatar-picker{display:flex;width:100%;height:auto;min-height:112rpx;align-items:center;margin:0 0 20rpx;padding:10rpx;border:0;background:transparent;color:#191919;text-align:left}.profile-avatar-picker::after{border:0}.profile-avatar-picker image,.profile-avatar-fallback{display:flex;width:88rpx;height:88rpx;flex:0 0 88rpx;align-items:center;justify-content:center;border-radius:22rpx;background:#e9f8ef;color:#07a34f;font-size:32rpx;font-weight:650}.profile-avatar-picker .avatar-action{margin-left:22rpx;color:#576b95;font-size:25rpx}.compact-label{margin-top:0}.profile-save,.password-save{margin-top:24rpx}.mode-tob .profile-save,.mode-tob .password-save{background:var(--mode-color,#2563eb)}
 .cloud-card { padding:24rpx; border-radius:20rpx; background:#fff; }
 .cloud-label { display:block; margin:0 0 12rpx; color:#576b95; font-size:24rpx; }
 .cloud-label:not(:first-child) { margin-top:22rpx; }
@@ -76,6 +77,7 @@
   .room-icon, .add-icon, .security-icon { background:#173a29; color:#35d67c; }
   .weui-cells { background:#1e1e1e; }
   .cloud-card { background:#1e1e1e; }
+  .profile-editor,.password-editor{background:#1e1e1e}.profile-avatar-picker{color:rgba(255,255,255,.92)}.profile-avatar-picker image,.profile-avatar-fallback{background:#173a29;color:#35d67c}.profile-avatar-picker .avatar-action{color:#aebff2}
   .cloud-connected text { color:rgba(255,255,255,.92); }
   .cloud-connected text:last-child { color:rgba(255,255,255,.55); }
   .weui-cell + .weui-cell::before { background:rgba(255,255,255,.1); }
@@ -92,3 +94,4 @@
   .field { border-color:rgba(255,255,255,.14); background:#242424; color:rgba(255,255,255,.92); }
 }
 @media(prefers-reduced-motion:reduce){.profile-account,.avatar,.weui-cells{animation:none}}
+.organization-profile{display:flex;align-items:center;gap:14rpx;margin-bottom:22rpx;padding:18rpx;border-radius:18rpx;background:#eef3ff;color:var(--mode-color,#2563eb)}.organization-profile>view{display:flex;max-width:180rpx;min-width:54rpx;height:54rpx;padding:0 12rpx;align-items:center;justify-content:center;overflow:hidden;border-radius:14rpx;background:var(--mode-color,#2563eb);color:#fff;font-size:20rpx;font-weight:700}.organization-profile>text{font-size:26rpx;font-weight:650}.mode-tob .profile-account{border-bottom:4rpx solid var(--mode-color,#2563eb)}.mode-tob .cloud-action{background:var(--mode-color,#2563eb)}
