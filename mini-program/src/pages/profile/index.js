@@ -3,10 +3,6 @@ const { sessionStore } = require('../../utils/session');
 const cloudApi = require('../../utils/cloud');
 const errorReport = require('../../utils/error-report');
 
-function isRemoteAvatar(value) {
-  return /^https?:\/\//i.test(String(value || '')) && !/^https?:\/\/tmp\//i.test(String(value || ''));
-}
-
 Page({
   data: {
     account: { name:'教师', subjects:[] },
@@ -18,7 +14,6 @@ Page({
     cloudUserId:'',
     cloudNickname:'',
     profileAvatar:'',
-    editName:'',
     profileBusy:false,
     currentPassword:'',
     newPassword:'',
@@ -64,7 +59,6 @@ Page({
       cloudUserId: cloud && cloud.userId || '',
       cloudNickname: cloud && (cloud.nickname || cloud.userName) || '',
       profileAvatar: (cloud && cloud.avatarUrl) || session.account.avatarUrl || '',
-      editName: (cloud && (cloud.nickname || cloud.userName)) || session.account.name || '',
       usageMode:cloud?'tob':'toc',
       organizationName:organization.name||'',
       organizationShortName:organization.shortName||organization.name||'',
@@ -72,48 +66,10 @@ Page({
     });
     this.applyNavigationTheme();
   },
-  onNameInput(event) { this.setData({ editName:String(event.detail.value || '').trimStart().slice(0, 40) }); },
+  openProfileEditor() { wx.navigateTo({ url:'/pages/profile-edit/index' }); },
   onCurrentPasswordInput(event) { this.setData({ currentPassword:String(event.detail.value || '') }); },
   onNewPasswordInput(event) { this.setData({ newPassword:String(event.detail.value || '') }); },
   onConfirmPasswordInput(event) { this.setData({ confirmPassword:String(event.detail.value || '') }); },
-  onChooseAvatar(event) {
-    const profileAvatar = event.detail && event.detail.avatarUrl || '';
-    if (profileAvatar) this.setData({ profileAvatar });
-  },
-  persistLocalAvatar(filePath) {
-    if (!filePath || isRemoteAvatar(filePath) || (wx.env && filePath.startsWith(wx.env.USER_DATA_PATH))) return Promise.resolve(filePath || '');
-    return new Promise((resolve, reject) => wx.getFileSystemManager().saveFile({ tempFilePath:filePath, success:result=>resolve(result.savedFilePath), fail:reject }));
-  },
-  async saveProfile() {
-    if (this.data.profileBusy) return;
-    const session = sessionStore.load();
-    const name = this.data.editName.trim();
-    if (!session || !name) { wx.showToast({ title:'请输入用户名', icon:'none' }); return; }
-    this.setData({ profileBusy:true }); wx.showLoading({ title:'正在保存资料', mask:true });
-    try {
-      let avatarUrl = this.data.profileAvatar || '';
-      let cloud = session.cloud;
-      if (cloud) {
-        if (avatarUrl && !isRemoteAvatar(avatarUrl)) {
-          const uploaded = await cloudApi.uploadAvatar(cloud, avatarUrl);
-          avatarUrl = uploaded.url || cloud.avatarUrl || '';
-          cloud = { ...cloud, avatarUrl };
-        }
-        if (name !== (cloud.nickname || cloud.userName)) cloud = await cloudApi.updateTeacherProfile(cloud, { name });
-        cloud = { ...cloud, avatarUrl };
-      } else {
-        avatarUrl = await this.persistLocalAvatar(avatarUrl);
-      }
-      const account = { ...session.account, name, avatarUrl };
-      const updated = sessionStore.save({ ...session, account, cloud:cloud || null });
-      getApp().globalData.session = updated;
-      wx.hideLoading(); this.setData({ profileBusy:false }); this.loadSession();
-      wx.showToast({ title:'个人资料已保存', icon:'success' });
-    } catch (error) {
-      wx.hideLoading(); this.setData({ profileBusy:false });
-      errorReport.show({ title:'个人资料保存失败', error, context:'我的－个人资料', suggestions:['检查头像文件是否有效', '组织模式下请检查网络和服务器状态'] });
-    }
-  },
   async changePassword() {
     if (this.data.profileBusy || !this.data.cloudConnected) return;
     const session = sessionStore.load();

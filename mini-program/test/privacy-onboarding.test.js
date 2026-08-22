@@ -17,9 +17,19 @@ test('登录与首次设置不会索取微信手机号、头像或昵称授权',
 });
 
 test('头像只在进入个人资料页后由用户主动选择', () => {
-  const profileView = fs.readFileSync(path.join(sourceRoot, 'pages/profile/index.wxml'), 'utf8');
+  const profileView = fs.readFileSync(path.join(sourceRoot, 'pages/profile-edit/index.wxml'), 'utf8');
 
   assert.match(profileView, /open-type=["']chooseAvatar["']/i);
   assert.doesNotMatch(profileView, /getPhoneNumber/i);
-  assert.match(profileView, /头像仅在你主动点击后选择/);
+  assert.match(profileView, /仅在你主动点击后调用微信头像选择组件/);
+});
+
+test('我的页面通过顶部账户区域进入独立个人信息页', () => {
+  const profileView = fs.readFileSync(path.join(sourceRoot, 'pages/profile/index.wxml'), 'utf8');
+  const profileLogic = fs.readFileSync(path.join(sourceRoot, 'pages/profile/index.js'), 'utf8');
+
+  assert.match(profileView, /class="profile-account"[^>]*bindtap="openProfileEditor"/);
+  assert.doesNotMatch(profileView, /<button class="profile-account"/);
+  assert.doesNotMatch(profileView, /bindtap="saveProfile"|open-type="chooseAvatar"/);
+  assert.match(profileLogic, /pages\/profile-edit\/index/);
 });

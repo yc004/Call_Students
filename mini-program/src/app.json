@@ -10,6 +10,7 @@
     "pages/scan/index",
     "pages/attendance/index",
     "pages/classroom-settings/index",
+    "pages/profile-edit/index",
     "pages/profile/index"
   ],
   "window": {

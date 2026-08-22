@@ -1,17 +1,8 @@
 <view class="profile-page mode-{{usageMode}}" style="--mode-color:{{organizationColor}}">
-  <view class="profile-account">
-    <image wx:if="{{profileAvatar}}" class="avatar-image" src="{{profileAvatar}}" mode="aspectFill"></image>
-    <view wx:else class="avatar">{{initial}}</view>
+  <view class="profile-account" bindtap="openProfileEditor" hover-class="profile-account-pressed" role="button" aria-label="编辑个人信息">
+    <view class="avatar-wrap"><image wx:if="{{profileAvatar}}" class="avatar-image" src="{{profileAvatar}}" mode="aspectFill"></image><view wx:else class="avatar">{{initial}}</view><view class="avatar-edit">✎</view></view>
     <view class="account-main"><text class="account-name">{{cloudNickname || account.name}}</text><text class="account-role">{{roleText}}</text><view class="subject-tags"><text wx:for="{{subjectTags}}" wx:key="*this">{{item}}</text></view></view>
-  </view>
-
-  <view class="profile-section"><text class="profile-section-title">个人资料</text><text class="profile-section-note">{{usageMode === 'tob' ? '资料会同步保存到组织云端。' : '资料只保存在当前微信设备。'}}</text></view>
-  <view class="profile-editor">
-    <button class="profile-avatar-picker" open-type="chooseAvatar" bindchooseavatar="onChooseAvatar"><image wx:if="{{profileAvatar}}" src="{{profileAvatar}}" mode="aspectFill"></image><text wx:else class="profile-avatar-fallback">{{initial}}</text><text class="avatar-action">更换头像</text></button>
-    <text class="label compact-label">用户名</text>
-    <input class="field" type="text" maxlength="40" value="{{editName}}" bindinput="onNameInput" placeholder="请输入用户名"/>
-    <text class="profile-privacy-note" style="display:block;margin-top:14rpx;color:#8a919d;font-size:21rpx;line-height:1.55">{{usageMode === 'tob' ? '头像仅在你主动点击后选择并同步到组织云端；不会读取手机号。' : '头像仅在你主动点击后选择并保存在本机；不会读取手机号或微信资料。'}}</text>
-    <button class="primary profile-save" loading="{{profileBusy}}" disabled="{{profileBusy}}" bindtap="saveProfile">保存个人资料</button>
+    <view class="account-entry"><text>›</text></view>
   </view>
 
   <view class="profile-section"><text class="profile-section-title">账户与安全</text></view>
