@@ -1,10 +1,11 @@
 <view class="edit-page mode-{{usageMode}}" style="--mode-color:{{organizationColor}}">
   <view class="avatar-section">
-    <button class="avatar-button" open-type="chooseAvatar" bindchooseavatar="onChooseAvatar" aria-label="更换头像">
-      <image wx:if="{{profileAvatar}}" src="{{profileAvatar}}" mode="aspectFill"></image>
-      <text wx:else>{{initial}}</text>
+    <view class="avatar-frame">
+      <image wx:if="{{profileAvatar}}" class="avatar-preview" src="{{profileAvatar}}" mode="aspectFit"></image>
+      <text wx:else class="avatar-fallback">{{initial}}</text>
+      <button class="avatar-trigger" open-type="chooseAvatar" bindchooseavatar="onChooseAvatar" aria-label="更换头像"></button>
       <view class="camera-mark">✎</view>
-    </button>
+    </view>
     <text class="avatar-title">更换头像</text>
     <text class="avatar-note">可选，仅在你主动点击后调用微信头像选择组件</text>
   </view>

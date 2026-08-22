@@ -20,6 +20,8 @@ test('头像只在进入个人资料页后由用户主动选择', () => {
   const profileView = fs.readFileSync(path.join(sourceRoot, 'pages/profile-edit/index.wxml'), 'utf8');
 
   assert.match(profileView, /open-type=["']chooseAvatar["']/i);
+  assert.match(profileView, /class=["']avatar-frame["']/i);
+  assert.match(profileView, /mode=["']aspectFit["']/i);
   assert.doesNotMatch(profileView, /getPhoneNumber/i);
   assert.match(profileView, /仅在你主动点击后调用微信头像选择组件/);
 });

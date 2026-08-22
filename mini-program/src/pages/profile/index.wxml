@@ -1,6 +1,6 @@
 <view class="profile-page mode-{{usageMode}}" style="--mode-color:{{organizationColor}}">
   <view class="profile-account" bindtap="openProfileEditor" hover-class="profile-account-pressed" role="button" aria-label="编辑个人信息">
-    <view class="avatar-wrap"><image wx:if="{{profileAvatar}}" class="avatar-image" src="{{profileAvatar}}" mode="aspectFill"></image><view wx:else class="avatar">{{initial}}</view><view class="avatar-edit">✎</view></view>
+    <view class="avatar-wrap"><image wx:if="{{profileAvatar}}" class="avatar-image" src="{{profileAvatar}}" mode="aspectFit"></image><view wx:else class="avatar">{{initial}}</view><view class="avatar-edit">✎</view></view>
     <view class="account-main"><text class="account-name">{{cloudNickname || account.name}}</text><text class="account-role">{{roleText}}</text><view class="subject-tags"><text wx:for="{{subjectTags}}" wx:key="*this">{{item}}</text></view></view>
     <view class="account-entry"><text>›</text></view>
   </view>
