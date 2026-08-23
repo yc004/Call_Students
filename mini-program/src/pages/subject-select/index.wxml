@@ -1,0 +1,21 @@
+<view class="subject-page">
+  <view class="intro">
+    <text class="kicker">教师身份</text>
+    <text class="title">{{title}}</text>
+  </view>
+
+  <checkbox-group class="subject-list" bindchange="onChange">
+    <label class="subject-row" wx:for="{{options}}" wx:key="name">
+      <text>{{item.name}}</text>
+      <checkbox value="{{item.name}}" checked="{{item.checked}}" color="#07C160" />
+    </label>
+  </checkbox-group>
+
+  <view class="bottom-bar">
+    <view class="selection-count">已选择 <text>{{selectedCount}}</text> 个科目</view>
+    <view class="actions">
+      <button class="cancel" bindtap="cancel">取消</button>
+      <button class="confirm" bindtap="confirm">确认选择</button>
+    </view>
+  </view>
+</view>

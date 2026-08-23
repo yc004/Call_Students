@@ -1,6 +1,6 @@
 /* ══════════════════════════════════════════
    教师端 — 登录与连接流程
-   本地账户登录 → 输入教室连接码 → 管理员审核 → 同步教室数据
+   个人本地 / 组织云端登录 → 小程序扫码同步 → 连接教室 → 使用教学功能
    ══════════════════════════════════════════ */
 
 (function () {
@@ -9,16 +9,26 @@
   const api = window.api || {};
   const connectionCode = window.ConnectionCode;
   const homeworkView = window.HomeworkView;
+  const SUBJECT_OPTIONS = Object.freeze(['语文','数学','英语','物理','化学','生物','道德与法治','历史','地理','科学','信息科技','通用技术','体育与健康','音乐','美术','劳动','综合实践活动','心理健康','班会','日语','俄语']);
+
+  function reportClientError(title, error, options = {}) {
+    const reporter = window.clientErrors;
+    if (reporter && typeof reporter.show === 'function') {
+      return reporter.show({ title, error, message:options.message, context:options.context, suggestions:options.suggestions || [] });
+    }
+    alert(`${title}\n\n${error && error.message || error || '未知错误'}\n\n请将以上信息提交给管理员。`);
+    return '';
+  }
 
   // ── DOM ──
   let connectionCodeInput, connectBtn, roomList, noRooms, connDot, connLabel;
   let roomHeader, roomTitle, studentCount, msgRow, callMessageInp, callFlow;
-  let studentGrid, emptyState, historyTbody, noHistory;
+  let studentGrid, emptyState, historyTbody, noHistory, multiCallToggle, callBatchBar, callBatchCount, clearCallSelection, sendBatchCall, callSelectionHint;
   let searchInput, searchRow, searchResult;
   let msgEditor;
   let mainTabs, mainTabBtns, mainTabContents;
   let hwSection;
-  let hwStatusFilter, hwDateFrom, hwDateTo, addAssignmentBtn2, exportHomeworkBtn;
+  let hwStatusFilter, hwDateFrom, hwDateTo, addAssignmentBtn2, exportHomeworkBtn, aiHomeworkBtn;
   let hwStagePending, hwStageClosed, hwPendingCount, hwClosedCount, hwPendingLabel, hwClosedLabel, hwPendingHint, hwClosedHint;
   let hwContentHomework, hwContentNotice, publishNoticeBtn;
   // 多选
@@ -29,6 +39,10 @@
   let publishType = 'homework';
   let hwContent;
   let hwModal, hwModalTitleLabel, hwModalSubject, hwModalTitle, hwModalDate, hwModalDeadline, hwModalCancel, hwModalConfirm;
+  let aiHomeworkModal, aiHomeworkClose, aiSubject, aiStage, aiDateFrom, aiDateTo, aiFocus, aiAnonymize;
+  let aiProviderStatus, openAiSettingsBtn, aiAnalysisStatus, aiAnalyzeBtn, aiReportEmpty, aiReportLoading, aiReportContent;
+  let accountAiSettings, accountAiEndpoint, accountAiModel, accountAiApiKey, accountAiStatus, saveAccountAiSettings;
+  let lastAiAnalysis = null;
   let publishTypeHomework, publishTypeNotice, publishContentLabel, publishDeadlineLabel, publishHint;
   // 人脸识别 DOM
   let faceSection, faceRoomName, faceSummary;
@@ -44,8 +58,13 @@
   let classroomSetupOverlay, setupClassName, setupStudents, setupError, completeSetupBtn;
   let pendingTeacherList, approvedTeacherList, pendingTeacherCount, approvedTeacherCount, refreshTeachersBtn;
   let teacherEditModal, teacherEditName, teacherEditSubjects, teacherEditCancel, teacherEditSave;
+  let pendingAccountAvatarPath = '';
+  let connectSubjectDrop, teacherEditSubjectDrop;
+  let connectSubjectSelection = [];
+  let teacherEditSubjectSelection = [];
   let editingTeacherId = '';
   let miniLoginPollTimer = null;
+  let teacherLoginMode = 'toc';
 
   // ── 状态 ──
   const state = {
@@ -70,16 +89,23 @@
     pendingFaces: [],   // 教室端持久化的待标注人脸库，仅班主任可匹配姓名
     pendingLabelFace: null, // 待标注的人脸 { faceId, descriptor }
     account: null,      // 登录后才存在：{ name, subjects, connectionId }
+    cloud: null,        // 小程序扫码同步的云服务会话
+    faceLanWs: null,
+    faceSystemEnabled: false,
+    facePreviewOpen: false,
     teacherStatus: null,
     classroomConfigured: false,
     teachers: { approved: [], pending: [] },
     pendingRoomCode: '',
     connectingRoomCode: '',
+    pendingConnectSubjects: [],
     leavingRoomCode: '',
     pendingLeave: null,
   };
   const MAX_HISTORY = 500;
   const MAX_CONNECT_ATTEMPTS = 5;
+  let multiCallMode = false;
+  const selectedCallStudentIds = new Set();
 
   // ═══════════════════════════════════
   //  持久化
@@ -89,8 +115,11 @@
     if (!api.getData) return { rooms: [], callHistory: [], account: null };
     try {
       const d = await api.getData();
-      return { rooms: d.rooms || [], callHistory: d.callHistory || [], account: d.account || null };
-    } catch (e) { return { rooms: [], callHistory: [], account: null }; }
+      return { rooms: d.rooms || [], callHistory: d.callHistory || [], account: d.account || null, cloud:d.cloud || null };
+    } catch (e) {
+      reportClientError('无法读取教师端本地数据', e, { context:'教师端启动', message:'本地账户或教室数据读取失败，本次将以空数据继续启动。', suggestions:['检查当前用户是否有数据目录读写权限', '不要卸载或清理数据，先复制错误信息提交管理员'] });
+      return { rooms: [], callHistory: [], account: null };
+    }
   }
 
   // ═══════════════════════════════════
@@ -105,9 +134,68 @@
     const appRoot = document.querySelector('.app');
     if (appRoot) appRoot.setAttribute('inert', '');
     document.getElementById('miniScanLogin')?.classList.remove('hidden');
-    if (accountTitle) accountTitle.textContent = '使用小程序登录';
-    if (accountDesc) accountDesc.textContent = '在小程序中登录或创建教师账户，然后扫描下方二维码。';
+    if (accountTitle) accountTitle.textContent = '开始使用教师端';
+    if (accountDesc) accountDesc.textContent = '选择个人或组织模式，也可以直接使用小程序扫码登录。';
+    loadTeacherDirectSettings();
     setTimeout(() => handleTeacherLoginQr(), 0);
+  }
+
+  function setTeacherLoginMode(mode) {
+    teacherLoginMode = mode === 'tob' ? 'tob' : 'toc';
+    document.querySelectorAll('.mode-switch-btn').forEach(button => button.classList.toggle('active', button.dataset.mode === teacherLoginMode));
+    document.getElementById('personalLoginPanel')?.classList.toggle('hidden', teacherLoginMode !== 'toc');
+    document.getElementById('organizationLoginPanel')?.classList.toggle('hidden', teacherLoginMode !== 'tob');
+    if (accountTitle) accountTitle.textContent = teacherLoginMode === 'tob' ? '登录组织空间' : '开始个人使用';
+    if (accountDesc) accountDesc.textContent = teacherLoginMode === 'tob' ? '连接组织服务器后，教室、作业和通知会在团队内同步。' : '数据保存在本机，适合个人或家庭使用。';
+  }
+
+  async function startPersonalSession() {
+    const button = document.getElementById('personalStartBtn');
+    const name = document.getElementById('personalTeacherName')?.value || '';
+    if (button) { button.disabled = true; button.textContent = '正在准备…'; }
+    try {
+      const result = await api.createLocalSession?.({ name });
+      if (!result || !result.ok) throw new Error(result?.message || '无法创建个人会话');
+      disconnect(); resetRoomWorkspace(false); state.rooms = result.rooms || []; state.cloud = null; state.callHistory = [];
+      renderRooms(); renderHistory(); setSignedInAccount(result.account);
+    } catch (error) { reportClientError('无法创建个人会话', error, { context:'个人模式登录', suggestions:['检查教师姓名是否填写完整', '重新启动教师端后重试'] }); }
+    finally { if (button) { button.disabled = false; button.textContent = '直接开始使用'; } }
+  }
+
+  async function loginOrganization() {
+    const button = document.getElementById('organizationLoginBtn');
+    const status = document.getElementById('organizationLoginStatus');
+    const profileFields = document.getElementById('organizationProfileFields');
+    const serverUrl = document.getElementById('organizationServer')?.value || '';
+    const useHttps = !!document.getElementById('organizationUseHttps')?.checked;
+    const loginName = document.getElementById('organizationLoginName')?.value || '';
+    const password = document.getElementById('organizationPassword')?.value || '';
+    if (button) { button.disabled = true; button.textContent = '登录中…'; }
+    if (status) status.textContent = '正在连接组织服务器…';
+    try {
+      const result = await api.loginTeacherCloud?.({ serverUrl, useHttps, loginName, password });
+      if (!result || !result.ok) throw Object.assign(new Error(result?.message || '组织登录失败'), { code:result?.code });
+      if (result.cloud?.mustChangePassword) {
+        profileFields?.classList.remove('hidden');
+        if (status) status.textContent = '首次登录需要完善资料并修改默认密码，然后再次点击登录。';
+        const confirm = document.getElementById('organizationNewPasswordConfirm')?.value || '';
+        const newPassword = document.getElementById('organizationNewPassword')?.value || '';
+        if (!newPassword || newPassword !== confirm) { if (button) { button.disabled = false; button.textContent = '保存资料并登录'; } return; }
+        const username = document.getElementById('organizationNickname')?.value || '';
+        const completed = await api.completeTeacherProfile?.({ name:username, nickname:username, newPassword });
+        if (!completed?.ok) throw new Error(completed?.message || '资料更新失败');
+        result.account = completed.account || result.account; result.cloud = completed.cloud || result.cloud;
+        const refreshed = await api.refreshCloudClassrooms?.();
+        if (refreshed?.ok) result.rooms = refreshed.rooms || [];
+        profileFields.classList.add('hidden');
+      }
+      disconnect(); resetRoomWorkspace(false); state.rooms = result.rooms || []; state.cloud = result.cloud || null; state.callHistory = [];
+      renderRooms(); renderHistory(); setSignedInAccount(result.account);
+    } catch (error) {
+      if (status) status.textContent = error.message || '组织登录失败';
+      reportClientError('无法登录组织', error, { context:'组织模式登录', suggestions:['检查服务器地址、HTTP/HTTPS 选项和账号密码', '确认组织服务器已经启动且当前网络可以访问'] });
+    }
+    finally { if (button) { button.disabled = false; button.textContent = '登录组织'; } }
   }
 
   function hideAccountOverlay() {
@@ -133,13 +221,27 @@
     if (status) status.textContent = '正在建立局域网临时登录服务…';
     try {
       const result = await api.generateMiniProgramQr();
-      if (!result || !result.ok) { if (status) status.textContent = result && result.message || '二维码生成失败'; return; }
+      if (!result || !result.ok) throw new Error(result && result.message || '二维码生成失败');
       if (image) image.src = result.qrDataUrl;
-      if (status) status.textContent = '打开小程序“我的—登录电脑教师端”扫码。二维码 2 分钟内有效。';
+      if (status) status.textContent = result.qrMode === 'wechat-direct'
+        ? '打开微信直接扫描即可登录教师端。二维码 2 分钟内有效。'
+        : '打开小程序“我的—登录电脑教师端”扫码。二维码 2 分钟内有效。';
       if (button) button.textContent = '刷新二维码';
       miniLoginPollTimer = setInterval(checkMiniProgramLoginStatus, 700);
-    } catch (_error) { if (status) status.textContent = '二维码生成失败，请检查局域网后重试。'; }
+    } catch (error) {
+      if (status) status.textContent = '二维码生成失败，请检查局域网后重试。';
+      reportClientError('教师端登录二维码生成失败', error, { context:'小程序扫码登录', suggestions:['确认教师电脑已连接局域网', '检查防火墙是否允许教师端建立临时登录服务'] });
+    }
     finally { if (button) button.disabled = false; }
+  }
+
+  async function loadTeacherDirectSettings() {
+    if (!api.getWechatDirectLinkSettings) return;
+    const input = document.getElementById('teacherDirectBaseUrl');
+    const status = document.getElementById('teacherDirectStatus');
+    const settings = await api.getWechatDirectLinkSettings();
+    if (input) input.value = settings && settings.baseUrl || '';
+    if (status) status.textContent = settings && settings.enabled ? '已启用微信直接扫码。' : '未配置时继续使用小程序内扫码。';
   }
 
   async function checkMiniProgramLoginStatus() {
@@ -150,6 +252,7 @@
     disconnect();
     resetRoomWorkspace(false);
     state.rooms = result.rooms || [];
+    state.cloud = result.cloud || null;
     state.callHistory = result.callHistory || [];
     state.currentRoom = null;
     state.connectingRoomCode = '';
@@ -162,11 +265,16 @@
   function setSignedInAccount(account) {
     state.account = account;
     if (teacherInfo) teacherInfo.textContent = account.name;
-    const avatarText = (account.name || '教').trim().slice(0, 1);
     const sidebarAvatar = document.getElementById('accountAvatar');
     const modalAvatar = document.getElementById('accountModalAvatar');
-    if (sidebarAvatar) sidebarAvatar.textContent = avatarText;
-    if (modalAvatar) modalAvatar.textContent = avatarText;
+    const cloudAvatar = state.cloud?.avatarUrl || '';
+    renderAccountAvatar(sidebarAvatar, account, cloudAvatar);
+    renderAccountAvatar(modalAvatar, account, cloudAvatar);
+    const organization = state.cloud?.organization;
+    document.body.dataset.usageMode = state.cloud ? 'tob' : 'toc';
+    const modeLabel = document.querySelector('.brand-sub');
+    if (modeLabel) modeLabel.textContent = organization?.shortName ? `${organization.shortName} · 组织模式` : (state.cloud ? '组织模式' : '个人模式');
+    if (organization?.primaryColor && /^#[0-9A-Fa-f]{6}$/.test(organization.primaryColor)) document.documentElement.style.setProperty('--primary', organization.primaryColor);
     accountMenuBtn && accountMenuBtn.classList.remove('hidden');
     hideAccountOverlay();
     if (state.pendingRoomCode && connectionCode.isValid(state.pendingRoomCode)) {
@@ -174,6 +282,14 @@
       state.pendingRoomCode = '';
       setTimeout(() => connect(code), 0);
     }
+  }
+
+  function renderAccountAvatar(element, account, overrideUrl = '') {
+    if (!element) return;
+    const avatarUrl = overrideUrl || account && account.avatarUrl || '';
+    element.style.backgroundImage = avatarUrl ? `url("${String(avatarUrl).replace(/["\\]/g, '\\$&')}")` : '';
+    element.classList.toggle('has-image', !!avatarUrl);
+    element.textContent = avatarUrl ? '' : String(account && account.name || '教').trim().slice(0, 1);
   }
 
   async function handleGenerateMiniProgramQr() {
@@ -209,8 +325,152 @@
     if (name) name.textContent = state.account.name;
     if (subjects) subjects.textContent = '连接教室后确认授课科目';
     if (connectionId) connectionId.textContent = state.account.connectionId;
+    const profileName = document.getElementById('accountProfileName');
+    const profileHint = document.getElementById('accountProfileStorageHint');
+    const passwordFields = document.getElementById('accountPasswordFields');
+    if (profileName) profileName.value = state.cloud?.nickname || state.cloud?.userName || state.account.name || '';
+    if (profileHint) profileHint.textContent = state.cloud ? '用户名与头像保存到组织云端' : '用户名与头像保存在当前电脑';
+    passwordFields?.classList.toggle('hidden', !state.cloud);
+    ['accountCurrentPassword','accountNewPassword','accountConfirmPassword'].forEach(id => { const input=document.getElementById(id); if(input) input.value=''; });
+    pendingAccountAvatarPath = '';
+    renderAccountAvatar(document.getElementById('accountProfileAvatar'), state.account, state.cloud?.avatarUrl || '');
+    const profileStatus = document.getElementById('accountProfileStatus');
+    if (profileStatus) profileStatus.textContent = state.cloud ? '组织模式可以同时修改登录密码' : '个人模式资料不会上传到云端';
     document.getElementById('miniProgramQrResult')?.classList.add('hidden');
     accountModal.classList.remove('hidden');
+    renderCloudAccountSettings();
+    loadHomeworkAiSettings();
+  }
+
+  async function chooseAccountAvatar() {
+    if (!api.chooseTeacherAvatar) return;
+    const result = await api.chooseTeacherAvatar();
+    if (!result || result.canceled) return;
+    if (!result.ok) { reportClientError('无法选择头像', new Error(result.message || '头像文件无效'), { context:'教师端设置－个人资料' }); return; }
+    pendingAccountAvatarPath = result.filePath || '';
+    renderAccountAvatar(document.getElementById('accountProfileAvatar'), state.account, result.previewUrl || '');
+  }
+
+  async function saveAccountProfile() {
+    if (!api.updateTeacherProfile) return;
+    const button = document.getElementById('saveAccountProfile');
+    const status = document.getElementById('accountProfileStatus');
+    const name = document.getElementById('accountProfileName')?.value.trim() || '';
+    const currentPassword = document.getElementById('accountCurrentPassword')?.value || '';
+    const newPassword = document.getElementById('accountNewPassword')?.value || '';
+    const confirmPassword = document.getElementById('accountConfirmPassword')?.value || '';
+    if (!name) { if(status)status.textContent='请输入用户名'; return; }
+    if (newPassword && newPassword.length < 10) { if(status)status.textContent='新密码至少需要 10 位'; return; }
+    if (newPassword && newPassword !== confirmPassword) { if(status)status.textContent='两次输入的新密码不一致'; return; }
+    if (newPassword && !currentPassword) { if(status)status.textContent='修改密码前请输入当前密码'; return; }
+    if (button) button.disabled = true;
+    if (status) status.textContent = '正在保存…';
+    try {
+      const result = await api.updateTeacherProfile({ name, avatarPath:pendingAccountAvatarPath, currentPassword, newPassword });
+      if (!result || !result.ok) throw Object.assign(new Error(result?.message || '个人资料保存失败'), { code:result?.code });
+      state.cloud = result.cloud || null;
+      setSignedInAccount(result.account);
+      pendingAccountAvatarPath = '';
+      renderAccountAvatar(document.getElementById('accountProfileAvatar'), result.account, result.cloud?.avatarUrl || '');
+      ['accountCurrentPassword','accountNewPassword','accountConfirmPassword'].forEach(id => { const input=document.getElementById(id); if(input) input.value=''; });
+      if (status) status.textContent = newPassword ? '个人资料和密码已更新' : '个人资料已保存';
+    } catch (error) {
+      if (status) status.textContent = error.message || '保存失败';
+      reportClientError('个人资料保存失败', error, { context:'教师端设置－个人资料', suggestions:['组织模式请确认当前密码和网络连接', '头像仅支持 PNG、JPEG 或 WebP，且不能超过 5MB'] });
+    } finally { if (button) button.disabled = false; }
+  }
+
+  function renderHomeworkAiSettings(settings = {}) {
+    if (accountAiEndpoint) accountAiEndpoint.value = settings.endpoint || '';
+    if (accountAiModel) accountAiModel.value = settings.model || '';
+    if (accountAiApiKey) {
+      accountAiApiKey.value = '';
+      accountAiApiKey.placeholder = settings.hasApiKey ? '密钥已安全保存；留空保持不变' : '输入后使用系统安全存储加密保存';
+    }
+    const configured = !!(settings.endpoint && settings.model);
+    if (accountAiStatus) {
+      accountAiStatus.textContent = configured ? `已配置 ${settings.model}，所有教室共用` : '尚未配置 AI 服务';
+      accountAiStatus.classList.toggle('is-success', configured);
+    }
+    if (aiProviderStatus) aiProviderStatus.textContent = configured ? `${settings.model} · 已就绪` : '尚未配置 AI 服务';
+    return configured;
+  }
+
+  async function loadHomeworkAiSettings() {
+    if (!api.getHomeworkAiSettings) {
+      if (accountAiStatus) accountAiStatus.textContent = '当前版本不支持 AI API 配置';
+      return null;
+    }
+    try {
+      const settings = await api.getHomeworkAiSettings();
+      renderHomeworkAiSettings(settings);
+      return settings;
+    } catch (error) {
+      if (accountAiStatus) accountAiStatus.textContent = '无法读取 API 配置';
+      if (aiProviderStatus) aiProviderStatus.textContent = '无法读取 API 配置';
+      reportClientError('无法读取 AI API 设置', error, { context:'教师端设置', suggestions:['检查当前用户的数据目录权限', '重新启动教师端后重试'] });
+      return null;
+    }
+  }
+
+  async function saveHomeworkAiSettings() {
+    if (!api.setHomeworkAiSettings || !saveAccountAiSettings) return;
+    saveAccountAiSettings.disabled = true;
+    if (accountAiStatus) {
+      accountAiStatus.textContent = '正在保存…';
+      accountAiStatus.classList.remove('is-success');
+    }
+    try {
+      const result = await api.setHomeworkAiSettings({
+        endpoint:accountAiEndpoint?.value || '',
+        model:accountAiModel?.value || '',
+        apiKey:accountAiApiKey?.value || '',
+      });
+      if (!result || !result.ok) throw new Error((result && result.message) || '保存 AI API 配置失败');
+      renderHomeworkAiSettings(result.settings || {});
+      if (accountAiStatus) accountAiStatus.textContent = '已保存，所有教室将共用此配置';
+    } catch (error) {
+      if (accountAiStatus) accountAiStatus.textContent = error.message || '保存失败';
+      reportClientError('AI API 配置保存失败', error, { context:'教师端设置', suggestions:['检查 API 地址和模型名称是否正确', '如果填写了本地地址，请确认服务已启动'] });
+    } finally {
+      saveAccountAiSettings.disabled = false;
+    }
+  }
+
+  function openGlobalAiSettings() {
+    closeAiHomeworkAnalysis();
+    openAccountModal();
+    if (accountAiSettings) accountAiSettings.open = true;
+    window.setTimeout(() => accountAiEndpoint?.focus(), 80);
+  }
+
+  function renderCloudAccountSettings() {
+    const status = document.getElementById('accountCloudStatus');
+    const server = document.getElementById('accountCloudServer');
+    if (server && state.cloud && state.cloud.serverUrl) server.value = state.cloud.serverUrl;
+    if (status) status.textContent = state.cloud ? `已连接 ${state.cloud.organization?.name ? `${state.cloud.organization.name} · ` : ''}${state.cloud.serverUrl}` : '当前为个人本地模式';
+  }
+
+  async function enrollTeacherCloud() {
+    if (!api.enrollTeacherCloud) return;
+    const button = document.getElementById('accountCloudConnectBtn');
+    const status = document.getElementById('accountCloudStatus');
+    button.disabled = true; status.textContent = '正在连接云服务…';
+    const result = await api.enrollTeacherCloud({ serverUrl:document.getElementById('accountCloudServer').value, key:document.getElementById('accountCloudKey').value });
+    button.disabled = false;
+    if (!result.ok) { status.textContent = result.message || '连接失败'; return; }
+    state.cloud = result.cloud; state.rooms = [...state.rooms.filter(room => room.transport !== 'cloud'), ...(result.rooms || [])];
+    document.getElementById('accountCloudKey').value = ''; renderRooms(); renderCloudAccountSettings();
+    status.textContent = `教师云账号已接入 ${result.cloud.serverUrl}`;
+  }
+
+  async function refreshCloudRooms(options={}) {
+    if (!api.refreshCloudClassrooms) return;
+    const status = document.getElementById('accountCloudStatus');
+    if (status && !options.silent) status.textContent = '正在同步云端教室…';
+    const result = await api.refreshCloudClassrooms();
+    if (!result.ok) { if(status&&!options.silent)status.textContent=result.message||'同步失败'; return; }
+    state.cloud = result.cloud; state.rooms = [...state.rooms.filter(room => room.transport !== 'cloud'), ...(result.rooms || [])]; if (result.account) setSignedInAccount(result.account); renderRooms(); renderCloudAccountSettings();
   }
 
   function handleLogout() {
@@ -219,6 +479,12 @@
     accountModal && accountModal.classList.add('hidden');
     state.account = null;
     state.teacherStatus = null;
+    state.cloud = null;
+    state.rooms = [];
+    state.callHistory = [];
+    api.clearTeacherSession && api.clearTeacherSession();
+    renderRooms();
+    renderHistory();
     accountMenuBtn && accountMenuBtn.classList.add('hidden');
     showAccountOverlay();
   }
@@ -252,33 +518,132 @@
   //  连接
   // ═══════════════════════════════════
 
-  function connect(codeValue, options = {}) {
-    const formattedCode = connectionCode.format(codeValue);
+  function setFaceLanUnavailable(unavailable) {
+    document.getElementById('faceLanWarning')?.classList.toggle('hidden', !unavailable);
+    if (unavailable) closeFacePreview(false);
+  }
+
+  function updateFaceSystemUI() {
+    const toggle = document.getElementById('faceSystemToggle');
+    const camera = document.getElementById('faceCameraToggle');
+    const hint = document.getElementById('faceSystemHint');
+    if (toggle) {
+      toggle.textContent = state.faceSystemEnabled ? '关闭人脸系统' : '开启人脸系统';
+      toggle.classList.toggle('is-danger', state.faceSystemEnabled);
+    }
+    if (camera) {
+      camera.disabled = !state.faceSystemEnabled;
+      camera.textContent = state.facePreviewOpen ? '关闭完整画面' : '查看完整画面';
+    }
+    if (hint) hint.textContent = state.faceSystemEnabled ? '当前已开启，正在后台识别' : '当前已关闭，不会采集摄像头画面';
+  }
+
+  function getFaceLanTransport() {
+    if (state.currentRoom?.transport === 'cloud') return state.faceLanWs?.readyState === WebSocket.OPEN ? state.faceLanWs : null;
+    return state.ws?.readyState === WebSocket.OPEN ? state.ws : null;
+  }
+
+  function closeFacePreview(notify = true) {
+    const transport = getFaceLanTransport();
+    if (notify && transport) transport.send(JSON.stringify({ type:'face-preview-subscribe', enabled:false }));
+    state.facePreviewOpen = false;
+    document.getElementById('faceCameraPanel')?.classList.add('hidden');
+    const image = document.getElementById('faceCameraImage');
+    if (image) { image.removeAttribute('src'); image.classList.remove('has-frame'); }
+    updateFaceSystemUI();
+  }
+
+  function handleFaceControlMessage(msg) {
+    if (msg.type === 'face-system-state') {
+      state.faceSystemEnabled = msg.enabled === true;
+      if (!state.faceSystemEnabled) closeFacePreview(false);
+      updateFaceSystemUI();
+      return true;
+    }
+    if (msg.type === 'face-preview-state') {
+      state.facePreviewOpen = msg.enabled === true;
+      document.getElementById('faceCameraPanel')?.classList.toggle('hidden', !state.facePreviewOpen);
+      updateFaceSystemUI();
+      return true;
+    }
+    if (msg.type === 'face-camera-frame') {
+      if (!state.facePreviewOpen || typeof msg.image !== 'string') return true;
+      const image = document.getElementById('faceCameraImage');
+      if (image) { image.src = msg.image; image.classList.add('has-frame'); }
+      document.getElementById('faceCameraEmpty')?.classList.add('hidden');
+      const status = document.getElementById('faceCameraStatus');
+      if (status) status.textContent = '实时画面';
+      return true;
+    }
+    return false;
+  }
+
+  function closeFaceLan() {
+    if (!state.faceLanWs) return;
+    closeFacePreview(false);
+    state.faceLanWs.onclose = null;
+    state.faceLanWs.onerror = null;
+    try { state.faceLanWs.close(); } catch (_error) {}
+    state.faceLanWs = null;
+  }
+
+  function startFaceLan(room) {
+    closeFaceLan();
+    if (!room || !connectionCode.isValid(room.connectionCode)) { setFaceLanUnavailable(true); return; }
     let ip;
-    try { ip = connectionCode.decode(formattedCode); }
-    catch (error) {
-      setStatus('offline', '连接码有误');
-      if (connectionCodeInput) { connectionCodeInput.focus(); connectionCodeInput.select(); }
-      alert(error.message || '连接码有误，请检查后重新输入');
-      return;
+    try { ip = connectionCode.decode(room.connectionCode); } catch (_error) { setFaceLanUnavailable(true); return; }
+    const faceWs = new WebSocket(`ws://${ip}:3456`);
+    state.faceLanWs = faceWs;
+    let verified = false;
+    const timer = setTimeout(() => { if (!verified) { setFaceLanUnavailable(true); try { faceWs.close(); } catch (_error) {} } }, 8000);
+    faceWs.onopen = () => faceWs.send(JSON.stringify({ type:'connect', connectionId:state.account.connectionId, name:state.account.name, subjects:room.subjects || [] }));
+    faceWs.onmessage = event => {
+      let msg;
+      try { msg = JSON.parse(event.data); } catch (_error) { return; }
+      if (handleFaceControlMessage(msg)) return;
+      if (msg.type === 'sync') {
+        verified = true; clearTimeout(timer); setFaceLanUnavailable(false);
+        state.studentStatus = msg.attendance || []; state.pendingFaces = msg.pendingFaces || []; state.faceSystemEnabled = msg.faceSystemEnabled === true; updateFaceSystemUI(); renderFaceDetections();
+      } else if (msg.type === 'face-detections') { state.faceDetections = msg.detections || []; renderFaceDetections(); }
+      else if (msg.type === 'pending-face-library') { state.pendingFaces = msg.faces || []; renderFaceDetections(); }
+      else if (msg.type === 'face-status') { state.studentStatus = msg.attendance || []; renderFaceDetections(); }
+      else if (msg.type === 'face-labeled') { state.pendingFaces = (state.pendingFaces || []).filter(face => face.faceId !== msg.faceId); renderFaceDetections(); }
+      else if (['approval-required','login-required','auth-required','subject-required'].includes(msg.type)) setFaceLanUnavailable(true);
+    };
+    faceWs.onerror = () => { clearTimeout(timer); setFaceLanUnavailable(true); };
+    faceWs.onclose = () => { clearTimeout(timer); if (state.faceLanWs === faceWs) { state.faceLanWs = null; setFaceLanUnavailable(true); } };
+  }
+
+  function connect(codeValue, options = {}) {
+    const explicitRoom = codeValue && typeof codeValue === 'object' ? codeValue : null;
+    const cloudRoom = explicitRoom && explicitRoom.transport === 'cloud' ? explicitRoom : null;
+    const formattedCode = cloudRoom ? String(cloudRoom.cloudClassroomId) : connectionCode.format(explicitRoom ? explicitRoom.connectionCode : codeValue);
+    let ip = '';
+    if (!cloudRoom) {
+      try { ip = connectionCode.decode(formattedCode); }
+      catch (error) {
+        setStatus('offline', '连接码有误');
+        openConnectRoomModal();
+        setConnectRoomState(error.message || '连接码有误，请检查后重新输入', true, false);
+        if (connectionCodeInput) { connectionCodeInput.focus(); connectionCodeInput.select(); }
+        return;
+      }
     }
     if (!state.account) {
       state.pendingRoomCode = formattedCode;
       showAccountOverlay();
       return;
     }
-    const savedRoom = state.rooms.find(room => room.connectionCode === formattedCode);
+    const savedRoom = explicitRoom || state.rooms.find(room => room.connectionCode === formattedCode);
     let requestedSubjects = (savedRoom && savedRoom.subjects || []).map(value => String(value).trim()).filter(Boolean);
+    if (!requestedSubjects.length && options.isRetry) requestedSubjects = [...(state.pendingConnectSubjects || [])];
     if (!requestedSubjects.length) {
-      if (options.isRetry) {
-        setStatus('offline', '需要设置授课科目');
-        return;
-      }
-      const answer = prompt('加入教室前请填写你在该教室的授课科目（可多选，用逗号分隔）：', '');
-      if (answer === null) return;
-      requestedSubjects = Array.from(new Set(answer.split(/[,，、\s]+/).map(value => value.trim()).filter(Boolean))).slice(0, 20);
+      const subjectInput = document.getElementById('connectSubjectInput');
+      requestedSubjects = [...connectSubjectSelection];
       if (!requestedSubjects.length) {
-        alert('加入教室前必须至少填写一个授课科目');
+        openConnectRoomModal();
+        setConnectRoomState('请先选择至少一个授课科目', true, false);
+        if (subjectInput) subjectInput.focus();
         return;
       }
       if (savedRoom) {
@@ -286,7 +651,8 @@
         saveToDisk();
       }
     }
-    if (connectionCodeInput) connectionCodeInput.value = formattedCode;
+    state.pendingConnectSubjects = [...requestedSubjects];
+    if (connectionCodeInput && !cloudRoom) connectionCodeInput.value = formattedCode;
 
     // 断开旧连接；自动重连时保留本轮失败次数，手动连接时重新计数。
     if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
@@ -302,13 +668,19 @@
 
     // 连接尚未完成时也立即记录用户选择的教室，避免失败后仍沿用旧教室界面。
     state.connectingRoomCode = formattedCode;
-    state.currentRoom = state.rooms.find(room => room.connectionCode === formattedCode) || null;
+    state.currentRoom = cloudRoom || state.rooms.find(room => room.connectionCode === formattedCode) || null;
     renderRooms();
 
     setStatus('connecting', '连接中…');
+    setConnectRoomState('正在查找教室…', false, true);
+    const useCloud = savedRoom && savedRoom.transport === 'cloud' && state.cloud && state.cloud.accessToken;
     const url = `ws://${ip}:3456`;
     let ws;
-    try { ws = new WebSocket(url); }
+    try {
+      ws = useCloud
+        ? new CloudClassroomSocket({ serverUrl:state.cloud.serverUrl, accessToken:state.cloud.accessToken, accessExpiresAt:state.cloud.accessExpiresAt, refreshToken:state.cloud.refreshToken, classroomId:savedRoom.cloudClassroomId, onSession:session => { state.cloud={ ...state.cloud, ...session }; api.setCloudSettings && api.setCloudSettings(state.cloud); } })
+        : new WebSocket(url);
+    }
     catch (error) { state.ws = null; recordConnectionFailure(error, formattedCode); return; }
 
     state.ws = ws;
@@ -327,11 +699,13 @@
       try { ws.close(); } catch (_error) {}
       resetRoomWorkspace(true);
       renderRooms();
+      setConnectRoomState(error.message || '无法建立教室连接', true, false);
       recordConnectionFailure(error, formattedCode);
     }
 
     ws.onopen = () => {
       setStatus('connecting', '正在同步…');
+      setConnectRoomState('已找到教室，正在验证教师身份…', false, true);
       ws.send(JSON.stringify({
         type: 'connect',
         connectionId: state.account.connectionId,
@@ -343,6 +717,7 @@
     ws.onmessage = (event) => {
       let msg;
       try { msg = JSON.parse(event.data); } catch { return; }
+      if (handleFaceControlMessage(msg)) return;
       if (verificationTimer) clearTimeout(verificationTimer);
       verificationTimer = null;
       resetConnectionFailures();
@@ -359,13 +734,14 @@
         }
         alert(msg.message || '当前教师已退出教室，教室端记录已删除');
       } else if (msg.type === 'sync') {
-        const name = msg.className || `教室 ${formattedCode}`;
+        const name = msg.className || (cloudRoom ? cloudRoom.name : `教室 ${formattedCode}`);
         state.className = name;
         state.students  = msg.students || [];
         state.subjects  = msg.subjects || [];
         state.assignments = msg.assignments || [];
         state.studentStatus = msg.attendance || [];
         state.pendingFaces = msg.pendingFaces || [];
+        state.faceSystemEnabled = msg.faceSystemEnabled === true;
         state.classroomConfigured = msg.classroomConfigured !== false;
         state.teachers = msg.teachers || { approved: [], pending: [] };
         selectedSubjects = [];
@@ -373,13 +749,25 @@
         homeworkStage = 'pending';
         homeworkContentType = 'homework';
         state.teacherStatus = msg.teacher || null;
+        if (!isHomeroomTeacher()) {
+          const allowedSubjects = new Set((state.teacherStatus && state.teacherStatus.subjects || []).map(String));
+          state.assignments = state.assignments.filter(assignment => allowedSubjects.has(String(assignment.subject || '')));
+          state.subjects = Array.from(allowedSubjects);
+          state.teachers = { approved: [], pending: [] };
+          state.pendingFaces = [];
+        }
         state.pendingRoomCode = '';
+        state.pendingConnectSubjects = [];
         state.connectingRoomCode = formattedCode;
         hideApprovalOverlay();
 
         // 自动添加到教室列表
-        addOrUpdateRoom(formattedCode, name, requestedSubjects);
-        state.currentRoom = state.rooms.find(r => r.connectionCode === formattedCode) || null;
+        if (cloudRoom) {
+          cloudRoom.name = name;
+          if (requestedSubjects.length) cloudRoom.subjects = [...requestedSubjects];
+          saveToDisk();
+        } else addOrUpdateRoom(formattedCode, name, requestedSubjects);
+        state.currentRoom = cloudRoom || state.rooms.find(r => r.connectionCode === formattedCode) || null;
         renderRooms();
         applyTeacherPermissions();
 
@@ -389,14 +777,18 @@
         renderHomework();
         renderFaceDetections();
         renderClassroomManagement();
+        if (useCloud) startFaceLan(savedRoom);
+        else setFaceLanUnavailable(false);
         if (isHomeroomTeacher() && !state.classroomConfigured) showClassroomSetup();
         else hideClassroomSetup();
       } else if (msg.type === 'approval-required') {
-        const name = msg.className || `教室 ${formattedCode}`;
+        const name = msg.className || (cloudRoom ? cloudRoom.name : `教室 ${formattedCode}`);
         state.teacherStatus = msg.teacher || { status: 'pending' };
         state.pendingRoomCode = formattedCode;
-        awaitRoomSave(formattedCode, name, requestedSubjects);
+        if (!cloudRoom) awaitRoomSave(formattedCode, name, requestedSubjects);
         setStatus('connecting', '等待管理员审核');
+        closeConnectRoomModal();
+        setConnectRoomState('', false, false);
         showApprovalOverlay(name, msg.message);
       } else if (msg.type === 'approval-rejected') {
         setStatus('offline', '审核未通过');
@@ -415,12 +807,15 @@
         } else {
           alert(msg.message || '当前账户没有执行此操作的权限');
         }
+      } else if (msg.type === 'delivery-unavailable') {
+        alert(msg.message || '教室端当前离线，本次操作未送达');
       } else if (msg.type === 'subject-required') {
-        const room = state.rooms.find(item => item.connectionCode === formattedCode);
+        const room = cloudRoom || state.rooms.find(item => item.connectionCode === formattedCode);
         if (room) { room.subjects = []; saveToDisk(); }
         setStatus('offline', '需要设置授课科目');
-        alert(msg.message || '请重新连接教室并先填写授课科目');
         disconnect();
+        openConnectRoomModal();
+        setConnectRoomState(msg.message || '请重新选择授课科目后连接', true, false);
       } else if (msg.type === 'face-detections') {
         // 诊断：记录接收次数和最近一次收到的脸数
         state._faceRecvCount = (state._faceRecvCount || 0) + 1;
@@ -469,6 +864,7 @@
   function disconnect() {
     if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
     resetConnectionFailures();
+    closeFaceLan();
     if (state.ws) {
       state.ws.onclose = null;
       state.ws.close();
@@ -488,6 +884,8 @@
     state.studentStatus = [];
     state.faceDetections = [];
     state.pendingFaces = [];
+    state.faceSystemEnabled = false;
+    state.facePreviewOpen = false;
     state.pendingLabelFace = null;
     state.teacherStatus = null;
     state._faceRecvCount = 0;
@@ -516,6 +914,8 @@
     renderStudents();
     renderHomework();
     renderFaceDetections();
+    document.getElementById('faceCameraPanel')?.classList.add('hidden');
+    updateFaceSystemUI();
     applyTeacherPermissions();
   }
 
@@ -538,27 +938,18 @@
     state.failurePromptShown = true;
     const room = state.rooms.find(item => item.connectionCode === code);
     const roomName = room && room.name || '当前教室';
-    const retry = confirm([
-      `已连续尝试 ${MAX_CONNECT_ATTEMPTS} 次，仍无法连接“${roomName}”，自动重连已暂停。`,
-      '',
-      '请检查以下情况：',
-      '1. 教室端软件已经启动并完成班主任绑定；',
-      '2. 教师电脑和教室电脑连接同一局域网；',
-      '3. 当前连接码与教室端显示的一致；',
-      '4. 教室电脑防火墙允许教室端访问专用网络和 TCP 3456 端口；',
-      '5. 校园网络没有启用终端隔离或 VLAN 隔离。',
-      '',
-      '调整完成后点击“确定”重新连接；点击“取消”稍后再试。',
-    ].join('\n'));
+    reportClientError('连续多次无法连接教室', new Error(`教室：${roomName}\n连接码：${code}\n${connectionFailureDetail(null, code)}\n已尝试：${MAX_CONNECT_ATTEMPTS} 次`), {
+      context:'局域网教室连接',
+      message:`已连续尝试 ${MAX_CONNECT_ATTEMPTS} 次，仍无法连接“${roomName}”，自动重连已暂停。`,
+      suggestions:['确认教室端已经启动并完成班主任绑定', '确认教师电脑和教室电脑位于同一局域网', '确认连接码一致，并允许 TCP 3456 端口通过防火墙', '检查校园网络是否启用了终端隔离或 VLAN 隔离'],
+    });
     state.failurePromptShown = false;
-    if (!retry) return;
-    resetConnectionFailures();
-    connect(code, { isRetry: true });
   }
 
   function recordConnectionFailure(error, code) {
     state.consecutiveFailures += 1;
     const detail = connectionFailureDetail(error, code);
+    setConnectRoomState(detail, true, false);
     if (state.consecutiveFailures >= MAX_CONNECT_ATTEMPTS) {
       state.reconnectPaused = true;
       if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
@@ -577,6 +968,7 @@
     const delay = Math.min(1000 * Math.pow(2, state.reconnectAttempts), 30000);
     state.reconnectAttempts++;
     setStatus('connecting', `准备重连 (${state.consecutiveFailures}/${MAX_CONNECT_ATTEMPTS})…`);
+    setConnectRoomState(`连接失败，稍后自动重试（${state.consecutiveFailures}/${MAX_CONNECT_ATTEMPTS}）…`, true, true);
     state.reconnectTimer = setTimeout(() => {
       state.reconnectTimer = null;
       connect(code, { isRetry: true });
@@ -608,32 +1000,36 @@
     roomList.innerHTML = '';
 
     if (state.rooms.length === 0) {
-      noRooms.style.display = 'block';
+      noRooms.style.display = 'flex';
       return;
     }
     noRooms.style.display = 'none';
 
     state.rooms.forEach(room => {
       const li = document.createElement('li');
-      const isActive = state.currentRoom && state.currentRoom.connectionCode === room.connectionCode;
+      const isActive = state.currentRoom && state.currentRoom.id === room.id;
       li.className = 'room-item' + (isActive ? ' active' : '');
-      const cls = isActive ? (state.ws ? 'online' : 'connecting') : 'offline';
+      const pendingApproval = isActive && state.teacherStatus && state.teacherStatus.status === 'pending';
+      const connected = isActive && !pendingApproval && state.ws && state.ws.readyState === WebSocket.OPEN;
+      const cls = connected ? 'online' : (isActive && !state.reconnectPaused ? 'connecting' : 'offline');
+      const statusText = pendingApproval ? '待审核' : (connected ? '已连接' : (isActive && !state.reconnectPaused ? '连接中' : (room.transport === 'cloud' && room.cloudStatus === 'online' ? '云端在线' : '未连接')));
+      const avatar = String(room.name || '教').trim().slice(0, 1) || '教';
 
       li.innerHTML =
-        `<span class="dot ${cls}"></span>` +
-        `<span class="room-name">${esc(room.name)}</span>` +
-        `<span class="room-ip">连接码 ${esc(room.connectionCode)}</span>` +
-        `<span class="room-del" data-code="${esc(room.connectionCode)}" title="退出教室">×</span>`;
+        `<span class="room-avatar" aria-hidden="true">${esc(avatar)}</span>` +
+        `<span class="room-copy"><strong class="room-name">${esc(room.name)}</strong><small class="room-ip">${room.transport === 'cloud' ? '组织教室' : `连接码 ${esc(room.connectionCode)}`}</small></span>` +
+        `<span class="room-presence"><i class="dot ${cls}"></i><small>${statusText}</small></span>` +
+        `<button class="room-del" data-code="${esc(room.connectionCode)}" type="button" aria-label="退出${esc(room.name)}" title="退出教室">×</button>`;
 
       li.addEventListener('click', (e) => {
         if (e.target.classList.contains('room-del')) return;
-        connect(room.connectionCode);
+        connect(room);
       });
 
       const del = li.querySelector('.room-del');
       if (del) del.addEventListener('click', async (e) => {
         e.stopPropagation();
-        await removeRoom(room.connectionCode);
+        await removeRoom(room);
       });
 
       roomList.appendChild(li);
@@ -657,16 +1053,19 @@
   }
 
   function requestClassroomLeave(room) {
-    const code = room.connectionCode;
-    const activeRoom = state.currentRoom && state.currentRoom.connectionCode === code;
+    const code = room.transport === 'cloud' ? room.cloudClassroomId : room.connectionCode;
+    const activeRoom = state.currentRoom && state.currentRoom.id === room.id;
     if (activeRoom && state.ws && state.ws.readyState === WebSocket.OPEN) {
       return sendLeaveRequest(state.ws, code);
     }
     return new Promise((resolve, reject) => {
-      let ip;
-      try { ip = connectionCode.decode(code); }
-      catch (error) { reject(error); return; }
-      const ws = new WebSocket(`ws://${ip}:3456`);
+      let ws;
+      try {
+        if (room.transport === 'cloud') {
+          if (!state.cloud) throw new Error('云服务登录已失效');
+          ws = new CloudClassroomSocket({ serverUrl:state.cloud.serverUrl, accessToken:state.cloud.accessToken, accessExpiresAt:state.cloud.accessExpiresAt, refreshToken:state.cloud.refreshToken, classroomId:room.cloudClassroomId, onSession:session => { state.cloud={ ...state.cloud, ...session }; api.setCloudSettings && api.setCloudSettings(state.cloud); } });
+        } else ws = new WebSocket(`ws://${connectionCode.decode(code)}:3456`);
+      } catch (error) { reject(error); return; }
       let finished = false;
       let authenticated = false;
       const timer = setTimeout(() => finish(new Error('无法连接教室端，退出操作尚未完成')), 8000);
@@ -698,11 +1097,12 @@
     });
   }
 
-  async function removeRoom(code) {
+  async function removeRoom(roomInput) {
     if (state.leavingRoomCode) return;
-    const room = state.rooms.find(item => item.connectionCode === code);
+    const room = roomInput && typeof roomInput === 'object' ? roomInput : state.rooms.find(item => item.connectionCode === roomInput);
     if (!room || !state.account) return;
-    const homeroomWarning = state.currentRoom && state.currentRoom.connectionCode === code && isHomeroomTeacher()
+    const code = room.transport === 'cloud' ? room.cloudClassroomId : room.connectionCode;
+    const homeroomWarning = state.currentRoom && state.currentRoom.id === room.id && isHomeroomTeacher()
       ? '\n\n你是该教室的班主任。退出后教室端会重新进入班主任绑定引导，但班级资料不会被删除。'
       : '';
     if (!confirm(`确定退出“${room.name}”吗？\n\n教室端会同时删除你的教师记录；以后需要重新扫码或输入连接码加入。${homeroomWarning}`)) return;
@@ -710,13 +1110,13 @@
     try {
       await requestClassroomLeave(room);
     } catch (error) {
-      alert(`${error.message || '无法通知教室端'}\n\n请确认教室端已启动且两台电脑位于同一局域网，然后重试。为避免两端记录不一致，本次没有从教师端删除该教室。`);
+      reportClientError('无法退出教室', error, { context:'退出教室', message:'无法通知教室端，本次没有删除本地教室，以避免两端记录不一致。', suggestions:[room.transport === 'cloud' ? '检查云服务连接后重试' : '确认教室端已启动，且两台电脑位于同一局域网'] });
       return;
     } finally {
       state.leavingRoomCode = '';
     }
-    if (state.currentRoom && state.currentRoom.connectionCode === code) disconnect();
-    state.rooms = state.rooms.filter(r => r.connectionCode !== code);
+    if (state.currentRoom && state.currentRoom.id === room.id) disconnect();
+    state.rooms = state.rooms.filter(r => r.id !== room.id);
     renderRooms();
     await saveToDisk();
   }
@@ -733,15 +1133,163 @@
     if (callFlow)   callFlow.classList.remove('hidden');
     if (emptyState) emptyState.style.display = 'none';
     if (roomTitle)  roomTitle.textContent = name;
+    setConnectRoomState('', false, false);
+    closeConnectRoomModal();
+    switchMainTab('overview');
+    renderOverview();
+  }
+
+  function openConnectRoomModal() {
+    const modal = document.getElementById('connectRoomModal');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    setTimeout(() => connectionCodeInput && connectionCodeInput.focus(), 0);
+  }
+
+  function closeConnectRoomModal() {
+    document.getElementById('connectRoomModal')?.classList.add('hidden');
+  }
+
+  function setConnectRoomState(message, isError, busy) {
+    const status = document.getElementById('connectRoomStatus');
+    if (status) {
+      status.textContent = message || '';
+      status.classList.toggle('is-error', !!isError);
+      status.classList.toggle('is-success', !isError && !!message && !busy);
+    }
+    if (connectBtn) {
+      connectBtn.disabled = !!busy;
+      connectBtn.textContent = busy ? '正在连接…' : '连接教室';
+    }
+  }
+
+  function setAnimatedText(element, value) {
+    if (!element) return;
+    const next = String(value);
+    if (element.textContent === next) return;
+    element.textContent = next;
+    element.classList.remove('value-updated');
+    requestAnimationFrame(() => element.classList.add('value-updated'));
+  }
+
+  function renderOverview() {
+    const studentCountEl = document.getElementById('overviewStudentCount');
+    const homeworkCountEl = document.getElementById('overviewHomeworkCount');
+    const presentCountEl = document.getElementById('overviewPresentCount');
+    const subjectCountEl = document.getElementById('overviewSubjectCount');
+    const subjectHintEl = document.getElementById('overviewSubjectHint');
+    const completionRateEl = document.getElementById('overviewCompletionRate');
+    const completionHintEl = document.getElementById('overviewCompletionHint');
+    const attendanceHintEl = document.getElementById('overviewAttendanceHint');
+    const roleBadgeEl = document.getElementById('overviewRoleBadge');
+    const subjectTextEl = document.getElementById('overviewSubjectText');
+    const subjectProgressEl = document.getElementById('overviewSubjectProgress');
+    const greetingEl = document.getElementById('overviewGreeting');
+    const summaryEl = document.getElementById('overviewSummary');
+    const todayListEl = document.getElementById('overviewTodayList');
+    if (!studentCountEl || !homeworkCountEl || !presentCountEl || !subjectProgressEl || !todayListEl) return;
+
+    const students = state.students || [];
+    const assignments = state.assignments || [];
+    const teacherSubjects = Array.from(new Set(((state.teacherStatus && state.teacherStatus.subjects) || [])
+      .map(subject => String(subject || '').trim()).filter(Boolean)));
+    const subjectSet = new Set(teacherSubjects);
+    const scopedItems = assignments.filter(item => subjectSet.has(String(item.subject || '').trim()));
+    const activeItems = scopedItems
+      .filter(item => homeworkView.stageOf(item) === 'pending')
+      .sort((a, b) => String(a.deadline || '').localeCompare(String(b.deadline || '')));
+    const activeHomework = activeItems.filter(item => homeworkView.typeOf(item) === 'homework');
+    const presentIds = new Set((state.faceDetections || []).filter(face => face.isRecognized && face.studentId).map(face => face.studentId));
+    const recentBoundary = Date.now() - 30 * 86400000;
+    const recentClosedHomework = scopedItems.filter(item => {
+      if (homeworkView.typeOf(item) !== 'homework' || homeworkView.stageOf(item) !== 'closed') return false;
+      const deadline = homeworkView.parseLocalDateTime(item.deadline);
+      return deadline && deadline.getTime() >= recentBoundary;
+    });
+    const recentTotals = recentClosedHomework.reduce((totals, item) => {
+      const summary = homeworkView.submissionSummary(item, students);
+      totals.completed += summary.completed;
+      totals.required += Math.max(0, summary.total - summary.exempt);
+      return totals;
+    }, { completed: 0, required: 0 });
+    const recentRate = recentTotals.required ? Math.round(recentTotals.completed / recentTotals.required * 100) : null;
+    const hour = new Date().getHours();
+    const period = hour < 11 ? '上午好' : hour < 14 ? '中午好' : hour < 18 ? '下午好' : '晚上好';
+
+    setAnimatedText(studentCountEl, students.length);
+    setAnimatedText(homeworkCountEl, activeHomework.length);
+    setAnimatedText(presentCountEl, presentIds.size);
+    setAnimatedText(subjectCountEl, teacherSubjects.length);
+    if (subjectHintEl) subjectHintEl.textContent = teacherSubjects.length ? teacherSubjects.join('、') : '等待科目授权';
+    setAnimatedText(completionRateEl, recentRate === null ? '--' : `${recentRate}%`);
+    if (completionHintEl) completionHintEl.textContent = recentClosedHomework.length ? `近 30 天 ${recentClosedHomework.length} 项已截止作业` : '暂无已截止作业';
+    if (attendanceHintEl) attendanceHintEl.textContent = students.length ? `${Math.max(0, students.length - presentIds.size)} 人当前未到` : '等待学生名单同步';
+    if (roleBadgeEl) roleBadgeEl.textContent = isHomeroomTeacher() ? '班主任' : '任课教师';
+    if (subjectTextEl) subjectTextEl.textContent = teacherSubjects.length ? teacherSubjects.join(' · ') : '暂未设置授课科目';
+    if (greetingEl) greetingEl.textContent = `${period}，${state.account && state.account.name ? state.account.name : '老师'}`;
+    if (summaryEl) {
+      const notices = activeItems.filter(item => homeworkView.typeOf(item) === 'notice').length;
+      summaryEl.textContent = !teacherSubjects.length
+        ? '请先完成授课科目设置，工作台将自动生成与你相关的教学数据。'
+        : activeHomework.length || notices
+          ? `你的学科当前有 ${activeHomework.length} 项待提交作业${notices ? `，${notices} 条生效中通知` : ''}。`
+          : '你的学科当前没有待处理内容，可以开始课堂教学。';
+    }
+
+    if (!teacherSubjects.length) {
+      subjectProgressEl.innerHTML = '<div class="dashboard-empty"><span>科</span><div><strong>尚未设置授课科目</strong><small>完成科目设置后，这里会按学科展示作业数量和完成率。</small></div></div>';
+    } else {
+      subjectProgressEl.innerHTML = teacherSubjects.map(subject => {
+        const subjectHomework = scopedItems.filter(item => item.subject === subject && homeworkView.typeOf(item) === 'homework');
+        const pending = subjectHomework.filter(item => homeworkView.stageOf(item) === 'pending').length;
+        const closed = subjectHomework.filter(item => homeworkView.stageOf(item) === 'closed');
+        const totals = closed.reduce((result, item) => {
+          const summary = homeworkView.submissionSummary(item, students);
+          result.completed += summary.completed;
+          result.required += Math.max(0, summary.total - summary.exempt);
+          return result;
+        }, { completed: 0, required: 0 });
+        const rate = totals.required ? Math.round(totals.completed / totals.required * 100) : null;
+        const progress = rate === null ? 0 : rate;
+        return `<button class="subject-progress-item" type="button" data-open-tab="homework" data-dashboard-subject="${esc(subject)}"><span class="subject-progress-badge">${esc(subject.slice(0, 1))}</span><span class="subject-progress-main"><span><strong>${esc(subject)}</strong><small>${pending} 项待提交 · ${closed.length} 项已统计</small></span><span class="subject-progress-track"><i style="width:${progress}%"></i></span></span><b>${rate === null ? '--' : `${rate}%`}</b></button>`;
+      }).join('');
+    }
+
+    if (!activeItems.length) {
+      todayListEl.innerHTML = '<div class="dashboard-empty is-success"><span>✓</span><div><strong>暂无待处理内容</strong><small>与你授课科目相关的新作业和通知会显示在这里。</small></div></div>';
+      return;
+    }
+    todayListEl.innerHTML = activeItems.slice(0, 4).map(item => {
+      const isNotice = homeworkView.typeOf(item) === 'notice';
+      return `<div class="overview-list-item"><span>${isNotice ? '通' : '作'}</span><div><strong>${esc(item.title)}</strong><small>${esc(item.subject || (isNotice ? '班级通知' : '未设置学科'))}</small></div><time>${item.deadline ? esc(formatDeadline(item.deadline)) : '未设置时间'}</time></div>`;
+    }).join('');
   }
 
   function isHomeroomTeacher() { return !!(state.teacherStatus && state.teacherStatus.role === '班主任'); }
-  function canModifySubject(subject) { return isHomeroomTeacher() || !!(state.teacherStatus && (state.teacherStatus.subjects || []).includes(subject)); }
+  function canModifySubject(subject) {
+    if (isHomeroomTeacher()) return true;
+    return ((state.teacherStatus && state.teacherStatus.subjects) || []).map(String).includes(String(subject || ''));
+  }
 
   function applyTeacherPermissions() {
     const homeroom = isHomeroomTeacher();
+    document.getElementById('overviewTabBtn')?.classList.remove('hidden');
+    document.getElementById('callTabBtn')?.classList.remove('hidden');
     if (classroomTabBtn) classroomTabBtn.classList.toggle('hidden', !homeroom);
-    if (!homeroom && document.querySelector('.main-tab.active')?.dataset.tab === 'classroom') switchMainTab('call');
+    document.querySelectorAll('[data-permission="homeroom"]').forEach(element => element.classList.toggle('hidden', !homeroom));
+    if (!homeroom) closeFacePreview(false);
+    document.querySelector('.workspace-tool-grid')?.classList.toggle('is-teacher-view', !homeroom);
+    const canPublish = homeroom || (((state.teacherStatus && state.teacherStatus.subjects) || []).length > 0);
+    if (addAssignmentBtn2) addAssignmentBtn2.classList.toggle('hidden', !canPublish);
+    if (publishNoticeBtn) publishNoticeBtn.classList.toggle('hidden', !canPublish);
+    document.getElementById('homeworkReadOnlyNote')?.classList.toggle('hidden', homeroom);
+    const unknownFaceTab = document.querySelector('.face-subtab[data-subtab="unknown"]');
+    const registeredFaceTab = document.querySelector('.face-subtab[data-subtab="registered"]');
+    if (unknownFaceTab) unknownFaceTab.classList.toggle('hidden', !homeroom);
+    if (!homeroom && unknownFaceTab?.classList.contains('active') && registeredFaceTab) registeredFaceTab.click();
+    const activeTab = document.querySelector('.main-tab.active')?.dataset.tab;
+    if (!homeroom && !['overview', 'call', 'homework', 'attendance'].includes(activeTab)) switchMainTab('overview');
+    updateFaceSystemUI();
   }
 
   function buildStudentsFromText(value) {
@@ -817,7 +1365,7 @@
       const homeroom = teacher.role === '班主任';
       return `<div class="teacher-manage-item">
         <div class="teacher-manage-main"><div class="teacher-role-line"><strong>${esc(teacher.name)}</strong><span class="teacher-role-chip${homeroom ? ' homeroom' : ''}">${esc(teacher.role)}</span></div><small>${esc(teacherSubjectText(teacher))} · ${esc(teacher.connection_id.slice(-8))}</small></div>
-        <div class="teacher-manage-actions">${homeroom ? `<button class="btn" data-teacher-action="edit" data-id="${esc(teacher.connection_id)}">设置科目</button>` : `<button class="btn" data-teacher-action="edit" data-id="${esc(teacher.connection_id)}">科目授权</button><button class="btn btn-danger-text" data-teacher-action="remove" data-id="${esc(teacher.connection_id)}">移除</button>`}</div>
+        <div class="teacher-manage-actions">${homeroom ? `<button class="btn" data-teacher-action="edit" data-id="${esc(teacher.connection_id)}">设置科目</button>` : `<button class="btn" data-teacher-action="edit" data-id="${esc(teacher.connection_id)}">科目授权</button><button class="btn btn-transfer-text" data-teacher-action="transfer" data-id="${esc(teacher.connection_id)}">转让班主任</button><button class="btn btn-danger-text" data-teacher-action="remove" data-id="${esc(teacher.connection_id)}">移除</button>`}</div>
       </div>`;
     }).join('') : '<div class="teacher-manage-empty">暂无已加入教师</div>';
   }
@@ -828,8 +1376,11 @@
   }
 
   function hideRoomUI() {
-    // 离线状态始终回到“呼叫”空页面，不能停留在上一教室的作业/出勤 Tab。
-    switchMainTab('call');
+    multiCallMode = false;
+    selectedCallStudentIds.clear();
+    updateCallBatchUI();
+    // 离线状态始终回到概览，不能停留在上一教室的作业/出勤页面。
+    switchMainTab('overview');
     if (mainTabs)   mainTabs.classList.add('hidden');
     if (roomHeader) roomHeader.classList.add('hidden');
     if (msgRow)     msgRow.classList.add('hidden');
@@ -837,6 +1388,7 @@
     if (callFlow)   callFlow.classList.add('hidden');
     if (emptyState) emptyState.style.display = '';
     if (roomTitle)  roomTitle.textContent = '';
+    renderOverview();
   }
 
   function renderStudents() {
@@ -845,7 +1397,7 @@
     if (studentCount) studentCount.textContent = '';
     if (searchResult) searchResult.textContent = '';
 
-    if (!state.currentRoom || state.students.length === 0) return;
+    if (!state.currentRoom || state.students.length === 0) { updateCallBatchUI(); renderOverview(); return; }
 
     const q = state.searchQuery || '';
     const list = q ? state.students.filter(s => s.name.toLowerCase().includes(q)) : state.students;
@@ -861,16 +1413,19 @@
 
     list.forEach(s => {
       const card = document.createElement('div');
-      card.className = 'student-card';
+      const selected = selectedCallStudentIds.has(s.id);
+      card.className = `student-card${selected ? ' selected' : ''}`;
       card.innerHTML = `<div class="stu-name">${esc(s.name)}</div>`;
 
       const btn = document.createElement('button');
       btn.className = 'call-btn';
-      btn.textContent = '呼叫';
-      btn.addEventListener('click', () => callStudent(s, btn));
+      btn.textContent = multiCallMode ? (selected ? '✓ 已选择' : '选择') : '呼叫';
+      btn.addEventListener('click', () => multiCallMode ? toggleCallStudent(s.id) : callStudent(s, btn));
       card.appendChild(btn);
       studentGrid.appendChild(card);
     });
+    updateCallBatchUI();
+    renderOverview();
   }
 
   // ═══════════════════════════════════
@@ -878,33 +1433,7 @@
   // ═══════════════════════════════════
 
   function callStudent(student, btnEl) {
-    if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
-      alert('未连接到教室，请先输入连接码并连接');
-      return;
-    }
-
-    const callId = genId();
-    const rawMsg = (callMessageInp && callMessageInp.value.trim()) || '{name}同学，请到办公室';
-    const msg = rawMsg.replace(/\{name\}/g, student.name);
-
-    state.ws.send(JSON.stringify({
-      type: 'call', callId,
-      studentName: student.name,
-      className: state.className,
-      message: msg,
-    }));
-
-    state.callHistory.unshift({
-      id: callId,
-      roomName: state.className || (state.currentRoom ? state.currentRoom.name : ''),
-      studentName: student.name,
-      time: new Date().toISOString(),
-      status: 'sent',
-    });
-    if (state.callHistory.length > MAX_HISTORY) state.callHistory.length = MAX_HISTORY;
-    renderHistory();
-    saveToDisk();
-
+    if (!sendCallToStudents([student])) return;
     btnEl.classList.add('called');
     btnEl.textContent = '✓ 已发送';
     clearTimeout(state.callTimers[student.name]);
@@ -912,6 +1441,83 @@
       btnEl.classList.remove('called');
       btnEl.textContent = '呼叫';
     }, 5000);
+  }
+
+  function formatCallTarget(students) {
+    const base = students.map(student => student.name).join('、');
+    return { base, display:base };
+  }
+
+  function sendCallToStudents(students) {
+    if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
+      alert('未连接到教室，请先输入连接码并连接');
+      return false;
+    }
+    if (!students.length) return false;
+
+    const callId = genId();
+    const rawMsg = (callMessageInp && callMessageInp.value.trim()) || '{name}同学，请到办公室';
+    const target = formatCallTarget(students);
+    const studentName = target.display;
+    const studentNames = students.map(student => student.name);
+    const msg = rawMsg.replace(/\{name\}同学/g, `${target.base}同学`).replace(/\{name\}/g, studentName);
+
+    state.ws.send(JSON.stringify({
+      type: 'call', callId,
+      studentName,
+      studentNames,
+      className: state.className,
+      message: msg,
+    }));
+
+    state.callHistory.unshift({
+      id: callId,
+      roomName: state.className || (state.currentRoom ? state.currentRoom.name : ''),
+      studentName,
+      time: new Date().toISOString(),
+      status: 'sent',
+    });
+    if (state.callHistory.length > MAX_HISTORY) state.callHistory.length = MAX_HISTORY;
+    renderHistory();
+    saveToDisk();
+    return true;
+  }
+
+  function updateCallBatchUI() {
+    if (multiCallToggle) {
+      multiCallToggle.classList.toggle('active', multiCallMode);
+      multiCallToggle.textContent = multiCallMode ? '取消多选' : '多选呼叫';
+    }
+    if (callSelectionHint) callSelectionHint.textContent = multiCallMode ? '勾选多名学生后统一发送' : '点击学生卡片中的呼叫按钮即可发送';
+    if (callBatchBar) callBatchBar.classList.toggle('hidden', !multiCallMode);
+    if (callBatchCount) callBatchCount.textContent = `已选 ${selectedCallStudentIds.size} 人`;
+    if (sendBatchCall) sendBatchCall.disabled = selectedCallStudentIds.size === 0;
+    if (clearCallSelection) clearCallSelection.disabled = selectedCallStudentIds.size === 0;
+  }
+
+  function toggleCallMultiMode() {
+    multiCallMode = !multiCallMode;
+    if (!multiCallMode) selectedCallStudentIds.clear();
+    renderStudents();
+  }
+
+  function toggleCallStudent(studentId) {
+    if (selectedCallStudentIds.has(studentId)) selectedCallStudentIds.delete(studentId);
+    else selectedCallStudentIds.add(studentId);
+    renderStudents();
+  }
+
+  function clearSelectedCallStudents() {
+    selectedCallStudentIds.clear();
+    renderStudents();
+  }
+
+  function sendSelectedCallStudents() {
+    const students = state.students.filter(student => selectedCallStudentIds.has(student.id));
+    if (!students.length || !sendCallToStudents(students)) return;
+    selectedCallStudentIds.clear();
+    multiCallMode = false;
+    renderStudents();
   }
 
   function updateCallStatus(callId, status) {
@@ -1003,10 +1609,10 @@
     const presentCount = registeredCards.filter(c => c.isPresent).length;
     const totalRegistered = registeredCards.length;
     const absentCount = Math.max(0, totalRegistered - presentCount);
-    if (attendanceTotalCount) attendanceTotalCount.textContent = totalRegistered;
-    if (attendancePresentCount) attendancePresentCount.textContent = presentCount;
-    if (attendanceAbsentCount) attendanceAbsentCount.textContent = absentCount;
-    if (attendancePendingCount) attendancePendingCount.textContent = unknownCards.length;
+    setAnimatedText(attendanceTotalCount, totalRegistered);
+    setAnimatedText(attendancePresentCount, presentCount);
+    setAnimatedText(attendanceAbsentCount, absentCount);
+    setAnimatedText(attendancePendingCount, unknownCards.length);
     if (faceSummary) {
       if (totalRegistered > 0) {
         faceSummary.textContent = `实时更新 · ${presentCount}/${totalRegistered} 已到`;
@@ -1094,6 +1700,7 @@
         }
       }).join('');
     }
+    renderOverview();
   }
 
   // ═══════════════════════════════════
@@ -1145,8 +1752,9 @@
     }
 
     // 发送标注到教室端
-    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-      state.ws.send(JSON.stringify({
+    const faceTransport = state.faceLanWs && state.faceLanWs.readyState === WebSocket.OPEN ? state.faceLanWs : state.ws;
+    if (faceTransport && faceTransport.readyState === WebSocket.OPEN) {
+      faceTransport.send(JSON.stringify({
         type: 'label-face',
         faceId: state.pendingLabelFace.faceId,
         studentId,
@@ -1188,14 +1796,19 @@
       b.setAttribute('aria-selected', selected ? 'true' : 'false');
     });
     mainTabContents.forEach(c => c.classList.toggle('hidden', c.id !== 'tab-' + name));
+    if (mainTabs) {
+      mainTabs.classList.toggle('is-overview', name === 'overview');
+      mainTabs.classList.toggle('is-detail', name !== 'overview');
+    }
+    if (name === 'overview') renderOverview();
   }
 
   function handleTabKeydown(event, buttons) {
-    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
     event.preventDefault();
     const buttonList = Array.from(buttons).filter(button => !button.classList.contains('hidden'));
     const current = buttonList.indexOf(event.currentTarget);
-    const offset = event.key === 'ArrowRight' ? 1 : -1;
+    const offset = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1;
     const next = buttonList[(current + offset + buttonList.length) % buttonList.length];
     next.focus();
     next.click();
@@ -1210,6 +1823,8 @@
     document.addEventListener('click', (e) => {
       if (hwSubjectDrop && !hwSubjectMs.contains(e.target)) hwSubjectDrop.classList.add('hidden');
       if (hwAssignDrop && !hwAssignMs.contains(e.target)) hwAssignDrop.classList.add('hidden');
+      if (connectSubjectDrop && !document.getElementById('connectSubjectPicker')?.contains(e.target)) closeSubjectPicker(document.getElementById('connectSubjectInput'), connectSubjectDrop);
+      if (teacherEditSubjectDrop && !document.getElementById('teacherEditSubjectPicker')?.contains(e.target)) closeSubjectPicker(teacherEditSubjects, teacherEditSubjectDrop);
     });
     // 学科按钮
     if (hwSubjectBtn) hwSubjectBtn.addEventListener('click', (e) => {
@@ -1222,6 +1837,46 @@
       e.stopPropagation();
       hwAssignDrop.classList.toggle('hidden');
       if (hwSubjectDrop) hwSubjectDrop.classList.add('hidden');
+    });
+    bindSubjectPicker(document.getElementById('connectSubjectInput'), connectSubjectDrop, () => connectSubjectSelection, value => { connectSubjectSelection = value; setConnectRoomState('', false, false); });
+    bindSubjectPicker(teacherEditSubjects, teacherEditSubjectDrop, () => teacherEditSubjectSelection, value => { teacherEditSubjectSelection = value; });
+  }
+
+  function subjectOptionsWith(selected = []) { return Array.from(new Set([...SUBJECT_OPTIONS, ...selected.filter(Boolean)])); }
+
+  function subjectPickerLabel(selected) {
+    if (!selected.length) return '请选择授课科目 ▾';
+    return selected.length <= 2 ? `${selected.join('、')} ▾` : `已选择 ${selected.length} 个科目 ▾`;
+  }
+
+  function closeSubjectPicker(button, drop) {
+    drop?.classList.add('hidden');
+    button?.classList.remove('open');
+    button?.setAttribute('aria-expanded', 'false');
+  }
+
+  function renderSubjectPicker(button, drop, selected, onChange) {
+    if (!button || !drop) return;
+    button.textContent = subjectPickerLabel(selected);
+    drop.innerHTML = subjectOptionsWith(selected).map(subject => `<label><input type="checkbox" value="${esc(subject)}" ${selected.includes(subject) ? 'checked' : ''}> ${esc(subject)}</label>`).join('') + '<div class="ms-actions"><button type="button" data-subject-action="clear">清除选择</button></div>';
+    drop.querySelectorAll('input[type="checkbox"]').forEach(input => input.addEventListener('change', () => {
+      const next = Array.from(drop.querySelectorAll('input[type="checkbox"]:checked')).map(item => item.value);
+      onChange(next);
+      button.textContent = subjectPickerLabel(next);
+    }));
+    drop.querySelector('[data-subject-action="clear"]')?.addEventListener('click', () => { onChange([]); renderSubjectPicker(button, drop, [], onChange); });
+  }
+
+  function bindSubjectPicker(button, drop, getSelected, onChange) {
+    if (!button || !drop) return;
+    button.addEventListener('click', event => {
+      event.stopPropagation();
+      const opening = drop.classList.contains('hidden');
+      document.querySelectorAll('.subject-picker-drop').forEach(item => item.classList.add('hidden'));
+      document.querySelectorAll('.subject-picker-button').forEach(item => { item.classList.remove('open'); item.setAttribute('aria-expanded','false'); });
+      if (!opening) return;
+      renderSubjectPicker(button, drop, getSelected(), onChange);
+      drop.classList.remove('hidden'); button.classList.add('open'); button.setAttribute('aria-expanded','true');
     });
   }
 
@@ -1340,6 +1995,7 @@
     } else {
       renderHomeworkList(null);
     }
+    renderOverview();
   }
 
   // ── 辅助函数 ──
@@ -1365,6 +2021,7 @@
     });
     if (hwStatusFilter) hwStatusFilter.classList.toggle('hidden', homeworkContentType === 'notice');
     if (exportHomeworkBtn) exportHomeworkBtn.classList.toggle('hidden', homeworkContentType === 'notice');
+    if (aiHomeworkBtn) aiHomeworkBtn.classList.toggle('hidden', homeworkContentType === 'notice');
   }
 
   function setHomeworkContentType(type) {
@@ -1541,15 +2198,145 @@
     }
     try {
       const result = await api.exportHomework(payload);
-      if (!result || !result.ok) alert((result && result.message) || '导出表格失败，请重试');
+      if (!result || !result.ok) reportClientError('作业统计导出失败', new Error((result && result.message) || '导出表格失败'), { context:'导出作业统计', suggestions:['确认目标目录可写且磁盘空间充足', '关闭正在占用同名文件的表格软件'] });
       else if (!result.canceled) alert(`作业统计已导出：\n${result.filePath}`);
     } catch (error) {
-      alert('导出表格失败，请重试');
+      reportClientError('作业统计导出失败', error, { context:'导出作业统计', suggestions:['确认目标目录可写且磁盘空间充足', '关闭正在占用同名文件的表格软件'] });
     } finally {
       if (exportHomeworkBtn) {
         exportHomeworkBtn.disabled = false;
         exportHomeworkBtn.textContent = originalText || '导出表格';
       }
+    }
+  }
+
+  function aiAssignmentsForScope() {
+    const subject = aiSubject ? aiSubject.value : '';
+    const stage = aiStage ? aiStage.value : 'all';
+    const from = aiDateFrom ? aiDateFrom.value : '';
+    const to = aiDateTo ? aiDateTo.value : '';
+    return state.assignments.filter(assignment => {
+      if (homeworkView.typeOf(assignment) !== 'homework') return false;
+      if (subject && assignment.subject !== subject) return false;
+      if (stage !== 'all' && homeworkView.stageOf(assignment) !== stage) return false;
+      const date = homeworkView.dateKey(assignment.date || assignment.deadline);
+      if (from && date < from) return false;
+      if (to && date > to) return false;
+      return true;
+    });
+  }
+
+  function setAiStatus(message, success = false) {
+    if (!aiAnalysisStatus) return;
+    aiAnalysisStatus.textContent = message || '';
+    aiAnalysisStatus.classList.toggle('is-success', !!success);
+  }
+
+  function reportSection(title, content, className = '') {
+    if (!content) return '';
+    return `<section class="ai-report-section ${className}"><h5>${esc(title)}</h5>${content}</section>`;
+  }
+
+  function studentChips(students) {
+    return students && students.length ? `<div class="ai-student-chips">${students.map(name => `<span>${esc(name)}</span>`).join('')}</div>` : '';
+  }
+
+  function renderAiReport(result) {
+    const report = result.report || {};
+    const metadata = result.metadata || {};
+    const evidence = (report.evidence || []).map(item => `<div class="ai-evidence-card"><strong>${esc(item.value)}</strong><span>${esc(item.metric)}</span><p>${esc(item.interpretation)}</p></div>`).join('');
+    const issues = (report.learningIssues || []).map(item => `<div class="ai-report-card"><div class="ai-report-card-head"><span class="ai-report-badge ${item.severity === '优先' ? 'is-priority' : ''}">${esc(item.severity || '关注')}</span><strong>${esc(item.title)}</strong></div><p>${esc(item.evidence)}</p>${studentChips(item.affectedStudents)}</div>`).join('');
+    const groups = (report.studentGroups || []).map(item => `<div class="ai-report-card"><div class="ai-report-card-head"><strong>${esc(item.group)}</strong></div><p>${esc(item.basis)}</p>${studentChips(item.students)}<div class="ai-action-line"><strong>建议：</strong>${esc(item.action)}</div></div>`).join('');
+    const suggestions = (report.teachingSuggestions || []).map(item => `<div class="ai-report-card"><div class="ai-report-card-head"><span class="ai-report-badge ${item.priority === '高' ? 'is-high' : ''}">${esc(item.priority || '中')}优先级</span><strong>${esc(item.title)}</strong></div><p>${esc(item.reason)}</p><div class="ai-action-line">${esc(item.action)}</div></div>`).join('');
+    const followUp = (report.followUpPlan || []).map(item => `<div class="ai-report-card"><div class="ai-report-card-head"><span class="ai-report-badge">${esc(item.timeframe)}</span><strong>${esc(item.action)}</strong></div><p>检查指标：${esc(item.successMetric)}</p></div>`).join('');
+    const limitations = (report.limitations || []).length ? `<ul class="ai-limitations">${report.limitations.map(item => `<li>${esc(item)}</li>`).join('')}</ul>` : '';
+    const scope = metadata.scope || {};
+    const scopeText = `${scope.subject || '全部授权学科'} · ${scope.dateFrom || '不限日期'} 至 ${scope.dateTo || '不限日期'} · ${metadata.assignmentCount || 0} 项作业 / ${metadata.studentCount || 0} 名学生`;
+    aiReportContent.innerHTML = `<div class="ai-report-toolbar"><div><h4>学情分析报告</h4><p>${esc(scopeText)} · ${metadata.anonymized ? '已匿名传输' : '包含学生姓名'}</p></div><button id="copyAiReportBtn" class="btn btn-sm" type="button">复制报告</button></div><div class="ai-report-summary">${esc(report.summary)}</div>${evidence ? reportSection('关键数据证据', `<div class="ai-evidence-grid">${evidence}</div>`, 'ai-evidence-section') : ''}${issues ? reportSection('需要关注的问题', `<div class="ai-report-list">${issues}</div>`) : ''}${groups ? reportSection('学生分层支持', `<div class="ai-report-list">${groups}</div>`) : ''}${suggestions ? reportSection('教学建议', `<div class="ai-report-list">${suggestions}</div>`) : ''}${followUp ? reportSection('后续行动计划', `<div class="ai-report-list">${followUp}</div>`) : ''}${limitations ? reportSection('数据限制', limitations) : ''}`;
+    aiReportEmpty.classList.add('hidden');
+    aiReportLoading.classList.add('hidden');
+    aiReportContent.classList.remove('hidden');
+    document.getElementById('copyAiReportBtn')?.addEventListener('click', copyAiReport);
+  }
+
+  function aiReportAsText() {
+    if (!lastAiAnalysis) return '';
+    const report = lastAiAnalysis.report || {};
+    const lines = ['AI 学情分析报告', '', `整体结论：${report.summary || ''}`];
+    const appendObjects = (title, items, formatter) => {
+      if (!items || !items.length) return;
+      lines.push('', title); items.forEach((item, index) => lines.push(`${index + 1}. ${formatter(item)}`));
+    };
+    appendObjects('关键数据证据', report.evidence, item => `${item.metric}：${item.value}。${item.interpretation}`);
+    appendObjects('需要关注的问题', report.learningIssues, item => `${item.title}（${item.severity}）：${item.evidence}${item.affectedStudents?.length ? `；涉及：${item.affectedStudents.join('、')}` : ''}`);
+    appendObjects('学生分层支持', report.studentGroups, item => `${item.group}：${item.basis}；建议：${item.action}${item.students?.length ? `；学生：${item.students.join('、')}` : ''}`);
+    appendObjects('教学建议', report.teachingSuggestions, item => `[${item.priority}] ${item.title}：${item.action}（${item.reason}）`);
+    appendObjects('后续行动计划', report.followUpPlan, item => `${item.timeframe}：${item.action}；检查指标：${item.successMetric}`);
+    if (report.limitations?.length) lines.push('', '数据限制', ...report.limitations.map((item, index) => `${index + 1}. ${item}`));
+    return lines.join('\n');
+  }
+
+  async function copyAiReport() {
+    const text = aiReportAsText();
+    if (!text) return;
+    try { await navigator.clipboard.writeText(text); setAiStatus('报告已复制到剪贴板', true); }
+    catch (_error) { setAiStatus('无法复制报告，请手动选择内容'); }
+  }
+
+  async function openAiHomeworkAnalysis() {
+    if (!aiHomeworkModal || !api.analyzeHomework || !api.getHomeworkAiSettings) {
+      alert('当前版本不支持 AI 学情分析，请更新教师端');
+      return;
+    }
+    const subjects = Array.from(new Set(state.assignments.filter(item => homeworkView.typeOf(item) === 'homework').map(item => item.subject).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'zh-CN'));
+    aiSubject.innerHTML = '<option value="">全部授权学科</option>' + subjects.map(subject => `<option value="${esc(subject)}">${esc(subject)}</option>`).join('');
+    if (selectedSubjects.length === 1 && subjects.includes(selectedSubjects[0])) aiSubject.value = selectedSubjects[0];
+    aiStage.value = homeworkStage === 'pending' || homeworkStage === 'closed' ? homeworkStage : 'all';
+    aiDateFrom.value = hwDateFrom ? hwDateFrom.value : '';
+    aiDateTo.value = hwDateTo ? hwDateTo.value : '';
+    setAiStatus('');
+    aiHomeworkModal.classList.remove('hidden');
+    const settings = await loadHomeworkAiSettings();
+    if (settings && !(settings.endpoint && settings.model)) setAiStatus('请先在教师端设置中配置 AI 服务');
+  }
+
+  function closeAiHomeworkAnalysis() { aiHomeworkModal?.classList.add('hidden'); }
+
+  async function runAiHomeworkAnalysis() {
+    if (aiDateFrom.value && aiDateTo.value && aiDateFrom.value > aiDateTo.value) { setAiStatus('开始日期不能晚于结束日期'); return; }
+    const assignments = aiAssignmentsForScope();
+    if (!assignments.length) { setAiStatus('所选范围内没有可分析的作业'); return; }
+    const settings = await loadHomeworkAiSettings();
+    if (!settings || !settings.endpoint || !settings.model) { setAiStatus('请先在教师端设置中配置 API 地址和模型'); return; }
+    aiAnalyzeBtn.disabled = true;
+    aiAnalyzeBtn.innerHTML = '<span aria-hidden="true">✦</span> 正在分析…';
+    aiReportEmpty.classList.add('hidden');
+    aiReportContent.classList.add('hidden');
+    aiReportLoading.classList.remove('hidden');
+    setAiStatus(`正在分析 ${assignments.length} 项作业…`, true);
+    const payload = {
+      className:state.className || state.currentRoom?.name || '教室',
+      teacherName:state.account?.name || '教师',
+      scope:{ subject:aiSubject.value || '全部授权学科', stage:aiStage.value, dateFrom:aiDateFrom.value, dateTo:aiDateTo.value },
+      focus:aiFocus.value,
+      anonymize:aiAnonymize.checked,
+      students:state.students.map(student => ({ id:student.id, name:student.name })),
+      assignments:assignments.map(assignment => ({ id:assignment.id, subject:assignment.subject, title:assignment.title, date:assignment.date, deadline:assignment.deadline, type:homeworkView.typeOf(assignment), submissions:assignment.submissions || {} })),
+    };
+    try {
+      const result = await api.analyzeHomework(payload);
+      if (!result || !result.ok) throw new Error((result && result.message) || 'AI 学情分析失败');
+      lastAiAnalysis = result;
+      renderAiReport(result);
+      setAiStatus('分析完成。建议结合课堂观察和作业内容进行人工判断。', true);
+    } catch (error) {
+      aiReportLoading.classList.add('hidden');
+      aiReportEmpty.classList.remove('hidden');
+      setAiStatus(error.message || 'AI 学情分析失败');
+      reportClientError('AI 学情分析失败', error, { context:'AI 作业分析', suggestions:['检查 API 地址、模型名称和密钥', '确认网络可以访问所配置的 AI 服务', '如果使用本地模型，请确认模型服务已经启动'] });
+    } finally {
+      aiAnalyzeBtn.disabled = false;
+      aiAnalyzeBtn.innerHTML = '<span aria-hidden="true">✦</span> 开始分析';
     }
   }
 
@@ -1924,19 +2711,27 @@
 
   function bindEvents() {
     if (connectBtn) connectBtn.addEventListener('click', () => connect(connectionCodeInput ? connectionCodeInput.value : ''));
+    document.getElementById('openConnectModalBtn')?.addEventListener('click', openConnectRoomModal);
+    document.getElementById('emptyAddRoomBtn')?.addEventListener('click', openConnectRoomModal);
+    document.getElementById('closeConnectModalBtn')?.addEventListener('click', closeConnectRoomModal);
+    const connectRoomModal = document.getElementById('connectRoomModal');
+    if (connectRoomModal) connectRoomModal.addEventListener('click', event => { if (event.target === connectRoomModal) closeConnectRoomModal(); });
     if (connectionCodeInput) connectionCodeInput.addEventListener('input', () => {
       connectionCodeInput.value = connectionCode.format(connectionCodeInput.value);
+      setConnectRoomState('', false, false);
     });
     if (connectionCodeInput) connectionCodeInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') connect(connectionCodeInput.value);
     });
-
     if (searchInput) {
       searchInput.addEventListener('input', () => {
         state.searchQuery = searchInput.value.trim().toLowerCase();
         renderStudents();
       });
     }
+    if (multiCallToggle) multiCallToggle.addEventListener('click', toggleCallMultiMode);
+    if (clearCallSelection) clearCallSelection.addEventListener('click', clearSelectedCallStudents);
+    if (sendBatchCall) sendBatchCall.addEventListener('click', sendSelectedCallStudents);
 
     initEditor();
 
@@ -1944,6 +2739,37 @@
     mainTabBtns.forEach(btn => {
       btn.addEventListener('click', () => switchMainTab(btn.dataset.tab));
       btn.addEventListener('keydown', event => handleTabKeydown(event, mainTabBtns));
+    });
+    document.querySelectorAll('[data-open-tab]').forEach(button => {
+      button.addEventListener('click', () => {
+        switchMainTab(button.dataset.openTab);
+        if (button.dataset.dashboardSubject) {
+          selectedSubjects = [button.dataset.dashboardSubject];
+          selectedAssigns = [];
+          buildSubjectDrop();
+          updateSubjectBtn();
+          buildAssignDrop();
+          updateAssignBtn();
+          applyFilters();
+        }
+        if (button.dataset.overviewAction === 'publish-homework') openAddHw('homework');
+      });
+    });
+    document.addEventListener('click', event => {
+      const subjectButton = event.target.closest('[data-dashboard-subject]');
+      if (!subjectButton) return;
+      switchMainTab('homework');
+      selectedSubjects = [subjectButton.dataset.dashboardSubject];
+      selectedAssigns = [];
+      buildSubjectDrop();
+      updateSubjectBtn();
+      buildAssignDrop();
+      updateAssignBtn();
+      applyFilters();
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && connectRoomModal && !connectRoomModal.classList.contains('hidden')) closeConnectRoomModal();
+      if (event.key === 'Escape' && aiHomeworkModal && !aiHomeworkModal.classList.contains('hidden')) closeAiHomeworkAnalysis();
     });
 
     // 多选组件初始化
@@ -1970,6 +2796,11 @@
 
     // 学科按钮
     if (exportHomeworkBtn) exportHomeworkBtn.addEventListener('click', exportHomeworkStatistics);
+    if (aiHomeworkBtn) aiHomeworkBtn.addEventListener('click', openAiHomeworkAnalysis);
+    if (aiHomeworkClose) aiHomeworkClose.addEventListener('click', closeAiHomeworkAnalysis);
+    if (aiAnalyzeBtn) aiAnalyzeBtn.addEventListener('click', runAiHomeworkAnalysis);
+    if (openAiSettingsBtn) openAiSettingsBtn.addEventListener('click', openGlobalAiSettings);
+    if (aiHomeworkModal) aiHomeworkModal.addEventListener('click', event => { if (event.target === aiHomeworkModal) closeAiHomeworkAnalysis(); });
     if (addAssignmentBtn2) addAssignmentBtn2.addEventListener('click', () => openAddHw('homework'));
     if (publishNoticeBtn) publishNoticeBtn.addEventListener('click', () => openAddHw('notice'));
     if (saveClassroomBtn) saveClassroomBtn.addEventListener('click', () => submitClassroomConfig(manageClassName, manageStudents, false));
@@ -1989,9 +2820,14 @@
         const teacherEditTitle = document.getElementById('teacherEditTitle');
         if (teacherEditTitle) teacherEditTitle.textContent = teacher.role === '班主任' ? '设置班主任授课科目' : '设置授课科目';
         teacherEditName.textContent = `${teacher.name} · ${teacher.role || '授课教师'}`;
-        teacherEditSubjects.value = (teacher.subjects || []).join(', ');
+        teacherEditSubjectSelection = [...(teacher.subjects || [])];
+        renderSubjectPicker(teacherEditSubjects, teacherEditSubjectDrop, teacherEditSubjectSelection, value => { teacherEditSubjectSelection = value; });
         teacherEditModal.classList.remove('hidden');
         teacherEditSubjects.focus();
+      } else if (action === 'transfer') {
+        const teacher = (state.teachers.approved || []).find(item => item.connection_id === connectionId);
+        if (!teacher || !confirm(`确认将班主任身份转让给“${teacher.name}”吗？\n\n转让后，对方将获得全部班级管理权限；你会变为普通任课教师并保留当前授课科目。`)) return;
+        sendTeacherManagement(action, connectionId);
       } else if ((action === 'remove' || action === 'reject') && !confirm(action === 'remove' ? '确定移除这位任课教师吗？' : '确定拒绝这条加入请求吗？')) {
         return;
       } else {
@@ -2002,8 +2838,8 @@
     if (approvedTeacherList) approvedTeacherList.addEventListener('click', handleTeacherListClick);
     if (teacherEditCancel) teacherEditCancel.addEventListener('click', () => teacherEditModal.classList.add('hidden'));
     if (teacherEditSave) teacherEditSave.addEventListener('click', () => {
-      const subjects = teacherEditSubjects.value.split(/[,，]/).map(item => item.trim()).filter(Boolean);
-      if (!subjects.length) { alert('请至少填写一个授课科目'); teacherEditSubjects.focus(); return; }
+      const subjects = [...teacherEditSubjectSelection];
+      if (!subjects.length) { alert('请至少选择一个授课科目'); teacherEditSubjects.focus(); return; }
       sendTeacherManagement('update', editingTeacherId, subjects);
       teacherEditModal.classList.add('hidden');
     });
@@ -2042,12 +2878,35 @@
 
     const refreshTeacherLoginQr = document.getElementById('refreshTeacherLoginQr');
     if (refreshTeacherLoginQr) refreshTeacherLoginQr.addEventListener('click', handleTeacherLoginQr);
+    document.querySelectorAll('.mode-switch-btn').forEach(button => button.addEventListener('click', () => setTeacherLoginMode(button.dataset.mode)));
+    document.getElementById('personalStartBtn')?.addEventListener('click', startPersonalSession);
+    document.getElementById('organizationLoginBtn')?.addEventListener('click', loginOrganization);
+    const saveTeacherDirectUrl = document.getElementById('saveTeacherDirectUrl');
+    if (saveTeacherDirectUrl) saveTeacherDirectUrl.addEventListener('click', async () => {
+      const input = document.getElementById('teacherDirectBaseUrl');
+      const status = document.getElementById('teacherDirectStatus');
+      saveTeacherDirectUrl.disabled = true;
+      if (status) status.textContent = '正在保存…';
+      try {
+        const result = await api.setWechatDirectLinkSettings(input && input.value || '');
+        if (!result || !result.ok) throw new Error(result && result.message || '保存失败');
+        if (input) input.value = result.baseUrl || '';
+        if (status) status.textContent = result.enabled ? '已启用微信直接扫码。' : '已关闭，继续使用小程序内扫码。';
+        await handleTeacherLoginQr();
+      } catch (error) { if (status) status.textContent = error.message || '保存失败'; }
+      finally { saveTeacherDirectUrl.disabled = false; }
+    });
     const generateMiniProgramQrBtn = document.getElementById('generateMiniProgramQrBtn');
     if (generateMiniProgramQrBtn) generateMiniProgramQrBtn.addEventListener('click', handleGenerateMiniProgramQr);
     if (accountMenuBtn) accountMenuBtn.addEventListener('click', openAccountModal);
+    document.getElementById('chooseAccountAvatar')?.addEventListener('click', chooseAccountAvatar);
+    document.getElementById('saveAccountProfile')?.addEventListener('click', saveAccountProfile);
     const accountModalClose = document.getElementById('accountModalClose');
     const logoutBtn = document.getElementById('logoutBtn');
     if (accountModalClose) accountModalClose.addEventListener('click', () => accountModal && accountModal.classList.add('hidden'));
+    document.getElementById('accountCloudConnectBtn')?.addEventListener('click', enrollTeacherCloud);
+    document.getElementById('accountCloudRefreshBtn')?.addEventListener('click', refreshCloudRooms);
+    if (saveAccountAiSettings) saveAccountAiSettings.addEventListener('click', saveHomeworkAiSettings);
     if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
     if (accountModal) accountModal.addEventListener('click', event => {
       if (event.target === accountModal) accountModal.classList.add('hidden');
@@ -2132,6 +2991,12 @@
     searchInput    = document.getElementById('searchInput');
     searchRow      = document.getElementById('searchRow');
     searchResult   = document.getElementById('searchResult');
+    multiCallToggle = document.getElementById('multiCallToggle');
+    callBatchBar = document.getElementById('callBatchBar');
+    callBatchCount = document.getElementById('callBatchCount');
+    clearCallSelection = document.getElementById('clearCallSelection');
+    sendBatchCall = document.getElementById('sendBatchCall');
+    callSelectionHint = document.getElementById('callSelectionHint');
     historyTbody   = document.querySelector('#historyTable tbody');
     noHistory      = document.getElementById('noHistory');
 
@@ -2175,6 +3040,28 @@
     addAssignmentBtn2    = document.getElementById('addAssignmentBtn2');
     publishNoticeBtn     = document.getElementById('publishNoticeBtn');
     exportHomeworkBtn    = document.getElementById('exportHomeworkBtn');
+    aiHomeworkBtn        = document.getElementById('aiHomeworkBtn');
+    aiHomeworkModal      = document.getElementById('aiHomeworkModal');
+    aiHomeworkClose      = document.getElementById('aiHomeworkClose');
+    aiSubject            = document.getElementById('aiSubject');
+    aiStage              = document.getElementById('aiStage');
+    aiDateFrom           = document.getElementById('aiDateFrom');
+    aiDateTo             = document.getElementById('aiDateTo');
+    aiFocus              = document.getElementById('aiFocus');
+    aiAnonymize          = document.getElementById('aiAnonymize');
+    aiProviderStatus     = document.getElementById('aiProviderStatus');
+    openAiSettingsBtn    = document.getElementById('openAiSettingsBtn');
+    accountAiSettings    = document.getElementById('accountAiSettings');
+    accountAiEndpoint    = document.getElementById('accountAiEndpoint');
+    accountAiModel       = document.getElementById('accountAiModel');
+    accountAiApiKey      = document.getElementById('accountAiApiKey');
+    accountAiStatus      = document.getElementById('accountAiStatus');
+    saveAccountAiSettings = document.getElementById('saveAccountAiSettings');
+    aiAnalysisStatus     = document.getElementById('aiAnalysisStatus');
+    aiAnalyzeBtn         = document.getElementById('aiAnalyzeBtn');
+    aiReportEmpty        = document.getElementById('aiReportEmpty');
+    aiReportLoading      = document.getElementById('aiReportLoading');
+    aiReportContent      = document.getElementById('aiReportContent');
     hwContent            = document.getElementById('hwContent');
     hwModal               = document.getElementById('hwModal');
     hwModalTitleLabel     = document.getElementById('hwModalTitleLabel');
@@ -2206,6 +3093,8 @@
     teacherEditModal      = document.getElementById('teacherEditModal');
     teacherEditName       = document.getElementById('teacherEditName');
     teacherEditSubjects   = document.getElementById('teacherEditSubjects');
+    connectSubjectDrop    = document.getElementById('connectSubjectDrop');
+    teacherEditSubjectDrop = document.getElementById('teacherEditSubjectDrop');
     teacherEditCancel     = document.getElementById('teacherEditCancel');
     teacherEditSave       = document.getElementById('teacherEditSave');
 
@@ -2224,13 +3113,45 @@
     labelConfirm      = document.getElementById('labelConfirm');
 
     bindEvents();
+    document.getElementById('retryFaceLanBtn')?.addEventListener('click', () => startFaceLan(state.currentRoom));
+    document.getElementById('faceSystemToggle')?.addEventListener('click', () => {
+      const transport = getFaceLanTransport();
+      if (!transport) { setFaceLanUnavailable(true); alert('当前未建立教室局域网连接，无法控制人脸系统'); return; }
+      transport.send(JSON.stringify({ type:'set-face-system', enabled:!state.faceSystemEnabled }));
+    });
+    document.getElementById('faceCameraToggle')?.addEventListener('click', () => {
+      const transport = getFaceLanTransport();
+      if (!transport) { setFaceLanUnavailable(true); alert('当前局域网连接失败，无法查看教室摄像头画面'); return; }
+      if (state.facePreviewOpen) closeFacePreview(true);
+      else {
+        document.getElementById('faceCameraEmpty')?.classList.remove('hidden');
+        const status = document.getElementById('faceCameraStatus');
+        if (status) status.textContent = '正在连接';
+        transport.send(JSON.stringify({ type:'face-preview-subscribe', enabled:true }));
+      }
+    });
     loadFromDisk().then(data => {
       state.rooms       = data.rooms;
       state.callHistory = data.callHistory;
+      state.cloud       = data.cloud || null;
       renderRooms();
       renderHistory();
-      // 每次启动只允许从已登录小程序同步身份。
-      showAccountOverlay();
+      if (data.account) {
+        if (state.cloud?.mustChangePassword) {
+          showAccountOverlay();
+          setTeacherLoginMode('tob');
+          const server = document.getElementById('organizationServer');
+          const loginName = document.getElementById('organizationLoginName');
+          if (server) server.value = state.cloud.serverUrl || '';
+          if (loginName) loginName.value = state.cloud.loginName || '';
+          document.getElementById('organizationProfileFields')?.classList.remove('hidden');
+          const status = document.getElementById('organizationLoginStatus');
+          if (status) status.textContent = '请完成首次资料设置并修改默认密码。';
+        } else {
+          setSignedInAccount(data.account);
+          if (state.cloud) refreshCloudRooms({ silent:true });
+        }
+      } else showAccountOverlay();
     });
   }
 

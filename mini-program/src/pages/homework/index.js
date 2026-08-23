@@ -23,7 +23,7 @@ Page({
     const context=roomContext.activateByCode(options && options.code);if(!context){wx.showToast({title:'教室信息已失效',icon:'none'});setTimeout(()=>wx.navigateBack(),300);return;}
     this.session = context.session; this.setData({ roomName:context.room.name });
     this.unsubscribe = socket.subscribe((event,payload) => {
-      if (event === 'status') this.setData({ status:payload.status,statusMessage:payload.message,canCompose:payload.status === 'online' && this.data.allowedSubjects.length > 0 });
+      if (event === 'status') this.setData({ status:payload.status,statusMessage:payload.message,canCompose:payload.status === 'online' && this.data.isHomeroom && this.data.allowedSubjects.length > 0 });
       if (event === 'sync') this.applySync(payload);
       if (event === 'error') wx.showToast({ title:payload.message || '操作失败',icon:'none' });
     });
@@ -40,7 +40,8 @@ Page({
     const teacher = data.teacher || {};
     const allowedSubjects = teacher.role === '班主任' ? (data.subjects || []) : (teacher.subjects || []);
     const assignments=data.assignments || []; const homework=assignments.filter(item=>homeworkView.typeOf(item)==='homework'); const notices=assignments.filter(item=>homeworkView.typeOf(item)==='notice'); const pendingCount=homework.filter(item => homeworkView.stageOf(item) === 'pending').length; const activeNoticeCount=notices.filter(item=>homeworkView.stageOf(item)==='pending').length;
-    this.setData({ className:data.className || '',subjects:data.subjects || [],assignments,isHomeroom:teacher.role==='班主任',studentCount:(data.students || []).length,allowedSubjects,canCompose:this.data.status === 'online' && allowedSubjects.length > 0,assignmentCount:homework.length,pendingCount,closedCount:homework.length-pendingCount,activeNoticeCount,endedNoticeCount:notices.length-activeNoticeCount,subjectCount:new Set(assignments.map(item => item.subject).filter(Boolean)).size });
+    const isHomeroom=teacher.role==='班主任';
+    this.setData({ className:data.className || '',subjects:data.subjects || [],assignments,isHomeroom,studentCount:(data.students || []).length,allowedSubjects,canCompose:this.data.status === 'online' && isHomeroom && allowedSubjects.length > 0,assignmentCount:homework.length,pendingCount,closedCount:homework.length-pendingCount,activeNoticeCount,endedNoticeCount:notices.length-activeNoticeCount,subjectCount:new Set(assignments.map(item => item.subject).filter(Boolean)).size });
     this.buildVisible();
   },
   buildVisible() {
@@ -48,7 +49,7 @@ Page({
     const filtered = (this.data.assignments || []).filter(item => homeworkView.typeOf(item) === this.data.contentType && (!this.data.selectedSubject || item.subject === this.data.selectedSubject));
     const visibleAssignments = homeworkView.groupByDeadline(filtered, this.data.homeworkStage).map(group => ({
       date:group.key,dateLabel:group.label,total:group.assignments.length,
-      items:group.assignments.map(item => ({ ...item,isNotice:homeworkView.typeOf(item)==='notice',isStudentCreated:item.source==='student',canManage:this.data.allowedSubjects.includes(item.subject),deadlineText:formatDeadline(item.deadline),summary:homeworkView.submissionSummary(item,students) })),
+      items:group.assignments.map(item => ({ ...item,isNotice:homeworkView.typeOf(item)==='notice',isStudentCreated:item.source==='student',canManage:this.data.isHomeroom,deadlineText:formatDeadline(item.deadline),summary:homeworkView.submissionSummary(item,students) })),
     }));
     this.setData({ visibleAssignments });
   },
@@ -60,13 +61,14 @@ Page({
   selectContentType(event) { this.setData({ contentType:event.currentTarget.dataset.type,homeworkStage:'pending' }); this.buildVisible(); },
   selectStage(event) { this.setData({ homeworkStage:event.currentTarget.dataset.stage }); this.buildVisible(); },
   selectSubject(event) { this.setData({ selectedSubject:event.currentTarget.dataset.subject || '' }); this.buildVisible(); },
-  openComposer(event) { const type=(event && event.currentTarget.dataset.type) || 'homework'; this.setData({ composerOpen:true,editingAssignmentId:'',publishType:type,draftSubjectIndex:0,draftTitle:'',draftDate:dateValue(),draftTime:'20:00' }); },
-  editAssignment(event) { const id=event.currentTarget.dataset.id;const assignment=(this.data.assignments||[]).find(item=>item.id===id);if(!assignment||!this.data.allowedSubjects.includes(assignment.subject))return;const draft=deadlineDraft(assignment.deadline);const subjectIndex=Math.max(0,this.data.allowedSubjects.indexOf(assignment.subject));this.setData({composerOpen:true,editingAssignmentId:assignment.id,publishType:homeworkView.typeOf(assignment),draftSubjectIndex:subjectIndex,draftTitle:assignment.title||'',draftDate:draft.date,draftTime:draft.time}); },
-  deleteAssignment(event) { const id=event.currentTarget.dataset.id;const assignment=(this.data.assignments||[]).find(item=>item.id===id);if(!assignment||!this.data.allowedSubjects.includes(assignment.subject))return;const isNotice=homeworkView.typeOf(assignment)==='notice';wx.showModal({title:`删除${isNotice?'通知':'作业'}？`,content:isNotice?`删除后，教室端和所有教师设备都将不再显示“${assignment.title}”。`:`删除“${assignment.title}”后，该作业的全部学生提交统计也会一并删除，且无法恢复。`,confirmText:'删除',confirmColor:'#FA5151',success:result=>{if(!result.confirm)return;if(!socket.send({type:'update-assignments',action:'delete',assignment:{id:assignment.id}})){wx.showToast({title:'教室连接已断开',icon:'none'});return;}wx.showToast({title:`${isNotice?'通知':'作业'}已删除`,icon:'success'});socket.send({type:'request-sync'});}}); },
+  openComposer(event) { if(!this.data.isHomeroom)return;const type=(event && event.currentTarget.dataset.type) || 'homework'; this.setData({ composerOpen:true,editingAssignmentId:'',publishType:type,draftSubjectIndex:0,draftTitle:'',draftDate:dateValue(),draftTime:'20:00' }); },
+  editAssignment(event) { if(!this.data.isHomeroom)return;const id=event.currentTarget.dataset.id;const assignment=(this.data.assignments||[]).find(item=>item.id===id);if(!assignment)return;const draft=deadlineDraft(assignment.deadline);const subjectIndex=Math.max(0,this.data.allowedSubjects.indexOf(assignment.subject));this.setData({composerOpen:true,editingAssignmentId:assignment.id,publishType:homeworkView.typeOf(assignment),draftSubjectIndex:subjectIndex,draftTitle:assignment.title||'',draftDate:draft.date,draftTime:draft.time}); },
+  deleteAssignment(event) { if(!this.data.isHomeroom)return;const id=event.currentTarget.dataset.id;const assignment=(this.data.assignments||[]).find(item=>item.id===id);if(!assignment)return;const isNotice=homeworkView.typeOf(assignment)==='notice';wx.showModal({title:`删除${isNotice?'通知':'作业'}？`,content:isNotice?`删除后，教室端和所有教师设备都将不再显示“${assignment.title}”。`:`删除“${assignment.title}”后，该作业的全部学生提交统计也会一并删除，且无法恢复。`,confirmText:'删除',confirmColor:'#FA5151',success:result=>{if(!result.confirm)return;if(!socket.send({type:'update-assignments',action:'delete',assignment:{id:assignment.id}})){wx.showToast({title:'教室连接已断开',icon:'none'});return;}wx.showToast({title:`${isNotice?'通知':'作业'}已删除`,icon:'success'});socket.send({type:'request-sync'});}}); },
   selectPublishType(event) { if(this.data.editingAssignmentId)return;this.setData({publishType:event.currentTarget.dataset.type}); },
   closeComposer() { this.setData({ composerOpen:false,editingAssignmentId:'' }); },
   setDraftSubject(event) { this.setData({ draftSubjectIndex:Number(event.detail.value) }); }, setDraftTitle(event) { this.setData({ draftTitle:event.detail.value }); }, setDraftDate(event) { this.setData({ draftDate:event.detail.value }); }, setDraftTime(event) { this.setData({ draftTime:event.detail.value }); },
   submitAssignment() {
+    if(!this.data.isHomeroom)return;
     const title = this.data.draftTitle.trim(); const subject = this.data.allowedSubjects[this.data.draftSubjectIndex]; if (!title || !subject) return;
     const submissions = {}; if(this.data.publishType==='homework') ((this.rawData && this.rawData.students) || []).forEach(student => { submissions[student.id] = '未提交'; });
     const existing=this.data.editingAssignmentId?(this.data.assignments||[]).find(item=>item.id===this.data.editingAssignmentId):null;

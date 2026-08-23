@@ -1,14 +1,28 @@
-<view class="profile-page">
-  <view class="profile-account">
-    <view class="avatar">{{initial}}</view>
-    <view class="account-main"><text class="account-name">{{account.name}}</text><text class="account-role">{{roleText}}</text><view class="subject-tags"><text wx:for="{{subjectTags}}" wx:key="*this">{{item}}</text></view></view>
+<view class="profile-page mode-{{usageMode}}" style="--mode-color:{{organizationColor}}">
+  <view class="profile-account" bindtap="openProfileEditor" hover-class="profile-account-pressed" role="button" aria-label="编辑个人信息">
+    <view class="avatar-wrap"><image wx:if="{{profileAvatar}}" class="avatar-image" src="{{profileAvatar}}" mode="aspectFit"></image><view wx:else class="avatar">{{initial}}</view><view class="avatar-edit">✎</view></view>
+    <view class="account-main"><text class="account-name">{{cloudNickname || account.name}}</text><text class="account-role">{{roleText}}</text><view class="subject-tags"><text wx:for="{{subjectTags}}" wx:key="*this">{{item}}</text></view></view>
+    <view class="account-entry"><text>›</text></view>
   </view>
 
-  <view class="profile-section"><text class="profile-section-title">账户与安全</text></view>
-  <view class="weui-cells">
-    <view class="weui-cell"><view class="weui-cell__hd"><view class="setting-icon security-icon">✓</view></view><view class="weui-cell__bd setting-copy"><text>保持登录</text><text>凭证仅保存在当前微信设备</text></view><view class="weui-cell__ft"><text class="state-text">已开启</text></view></view>
-    <view class="weui-cell"><view class="weui-cell__hd"><view class="setting-icon identity-icon">教</view></view><view class="weui-cell__bd setting-copy"><text>登录身份</text><text>{{account.name}} · {{roleText}}</text></view></view>
+  <block wx:if="{{usageMode === 'tob'}}">
+    <view class="profile-section"><text class="profile-section-title">修改密码</text><text class="profile-section-note">修改后请使用新密码登录其他客户端。</text></view>
+    <view class="password-editor">
+      <text class="label compact-label">当前密码</text><input class="field" password maxlength="200" value="{{currentPassword}}" bindinput="onCurrentPasswordInput" placeholder="请输入当前密码"/>
+      <text class="label">新密码</text><input class="field" password maxlength="200" value="{{newPassword}}" bindinput="onNewPasswordInput" placeholder="至少 10 位"/>
+      <text class="label">确认新密码</text><input class="field" password maxlength="200" value="{{confirmPassword}}" bindinput="onConfirmPasswordInput" placeholder="再次输入新密码"/>
+      <button class="primary password-save" loading="{{profileBusy}}" disabled="{{profileBusy}}" bindtap="changePassword">修改密码</button>
+    </view>
+  </block>
+
+  <view class="cloud-card">
+    <block wx:if="{{cloudConnected}}">
+      <view class="organization-profile"><view>{{organizationShortName}}</view><text>{{organizationName}}</text></view>
+      <view class="cloud-connected"><view class="cloud-dot"></view><view><text>云服务已连接</text><text>{{cloudServerUrl}}</text></view></view>
+      <view class="cloud-id-row"><text>云端用户 ID</text><text>{{cloudUserId}}</text></view>
+      <text class="cloud-hint">账号、教室成员和组织标识均由组织管理员统一配置。</text>
+      <button class="primary cloud-action" loading="{{cloudBusy}}" disabled="{{cloudBusy}}" bindtap="refreshCloud">同步账号与教室</button>
+    </block>
   </view>
   <button class="weui-btn weui-btn_warn logout" bindtap="logout">退出登录</button>
-
 </view>

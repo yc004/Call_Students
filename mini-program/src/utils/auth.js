@@ -1,4 +1,5 @@
 const PAIRING_PREFIX = 'CLASSROOM-CALL-PAIR-1';
+const PENDING_PAIRING_KEY = 'classroom_call_pending_teacher_pairing_v1';
 const connectionCode = require('./connection-code');
 
 function authError(code, message) {
@@ -46,6 +47,49 @@ function parsePairingQr(value) {
   return { hosts, port, token, expiresAt };
 }
 
+function parseDirectPairingLink(value) {
+  let text = String(value || '').trim();
+  if (!/^https:\/\//i.test(text)) {
+    try { text = decodeURIComponent(text); } catch (_error) {}
+  }
+  if (!/^https:\/\//i.test(text)) return '';
+  const question = text.indexOf('?');
+  if (question < 0) return '';
+  const hash = text.indexOf('#', question);
+  const queryText = text.slice(question + 1, hash < 0 ? text.length : hash);
+  const query = {};
+  queryText.split('&').forEach(pair => {
+    const separator = pair.indexOf('=');
+    if (separator < 0) return;
+    const decode = part => {
+      try { return decodeURIComponent(part.replace(/\+/g, ' ')); } catch (_error) { return part; }
+    };
+    query[decode(pair.slice(0, separator))] = decode(pair.slice(separator + 1));
+  });
+  if (query.cc_action !== 'teacher-login' || !String(query.cc_pair || '').startsWith(`${PAIRING_PREFIX}.`)) return '';
+  return query.cc_pair;
+}
+
+function savePendingPairing(value) {
+  const payload = String(value || '');
+  try { parsePairingQr(payload); }
+  catch (_error) { return false; }
+  wx.setStorageSync(PENDING_PAIRING_KEY, payload);
+  return true;
+}
+
+function loadPendingPairing() {
+  try {
+    const payload = String(wx.getStorageSync(PENDING_PAIRING_KEY) || '');
+    parsePairingQr(payload);
+    return payload;
+  } catch (_error) { return ''; }
+}
+
+function clearPendingPairing() {
+  try { wx.removeStorageSync(PENDING_PAIRING_KEY); } catch (_error) {}
+}
+
 function requestHost(host, pairing, localSession) {
   return new Promise((resolve, reject) => {
     if (typeof wx.createTCPSocket !== 'function') {
@@ -63,7 +107,7 @@ function requestHost(host, pairing, localSession) {
       try { socket.close(); } catch (_error) {}
       if (error) reject(error); else resolve(data);
     }
-    socket.onConnect(() => socket.write(`${JSON.stringify({ token: pairing.token, account: localSession.account, rooms: localSession.rooms || [] })}\n`));
+    socket.onConnect(() => socket.write(`${JSON.stringify({ token: pairing.token, account: localSession.account, rooms: localSession.rooms || [], cloud:localSession.cloud || null })}\n`));
     socket.onMessage(({ message }) => {
       const bytes = new Uint8Array(message);
       for (let index = 0; index < bytes.length; index += 1) receivedBytes.push(bytes[index]);
@@ -108,6 +152,7 @@ function normalizeSession(data) {
     account: { name, connectionId, subjects: [] },
     rooms,
     activeRoom: rooms[0] || null,
+    cloud: data && data.cloud || null,
     pairedAt: new Date().toISOString(),
   };
 }
@@ -119,7 +164,13 @@ async function pairWithTeacher(value, localSession) {
   for (const host of pairing.hosts) {
     try {
       const result = await requestHost(host, pairing, localSession);
-      return normalizeSession(result);
+      const normalized = normalizeSession(result);
+      // A wxfile:// or temporary avatar belongs to the current phone and is not
+      // usable by the desktop client. Keep it locally when pairing instead of
+      // letting a desktop response without an avatar erase the user's profile.
+      const localAvatar = String(localSession.account.avatarUrl || '').trim();
+      if (localAvatar) normalized.account.avatarUrl = localAvatar;
+      return normalized;
     } catch (error) {
       lastError = error;
       if (error && (error.code === 'PAIR_UNSUPPORTED' || error.code === 'PAIR_QR_EXPIRED')) throw error;
@@ -130,4 +181,11 @@ async function pairWithTeacher(value, localSession) {
   throw authError('PAIR_NETWORK', `无法连接教师端${detail}`);
 }
 
-module.exports = { parsePairingQr, pairWithTeacher };
+module.exports = {
+  parsePairingQr,
+  parseDirectPairingLink,
+  savePendingPairing,
+  loadPendingPairing,
+  clearPendingPairing,
+  pairWithTeacher,
+};

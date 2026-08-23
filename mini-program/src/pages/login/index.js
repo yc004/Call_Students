@@ -1,96 +1,139 @@
-const { pairWithTeacher } = require('../../utils/auth');
+const { pairWithTeacher, loadPendingPairing, clearPendingPairing } = require('../../utils/auth');
 const { sessionStore } = require('../../utils/session');
+const cloudApi = require('../../utils/cloud');
 const sharedRoom = require('../../utils/shared-room');
+const errorReport = require('../../utils/error-report');
+
+function genConnectionId() {
+  const random = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2) + '-' + Math.random().toString(36).slice(2);
+  return ('mini-' + random).slice(0, 128);
+}
 
 Page({
-  data: { scanning: false, registerOpen: false, registerName: '' },
-  onLoad(options) { this.fromRoomShare = !!(options && options.from === 'roomShare'); },
+  data: {
+    screen:'choice', localName:'', cloudServerUrl:'', cloudUseHttps:false, cloudLoginName:'', cloudPassword:'',
+    profileNickname:'', profilePassword:'', profileConfirmPassword:'', profileAvatar:'',
+    organizationName:'组织空间', organizationShortName:'组织', organizationMark:'组', organizationColor:'#2563EB', busy:false,
+  },
+
+  onLoad(options) {
+    this.fromRoomShare = !!(options && options.from === 'roomShare');
+    this.fromCloud = !!(options && options.from === 'cloud');
+    if (this.fromCloud) this.setData({ screen:'organization' });
+  },
+
   onShow() {
-    if (!sessionStore.load()) return;
+    const session = sessionStore.load();
+    if (!session) return;
+    if (session.cloud && session.cloud.mustChangePassword) {
+      this.pendingCloudSession = session;
+      this.showProfile(session.cloud);
+      return;
+    }
+    const pendingPairing = loadPendingPairing();
+    if (pendingPairing) { this.completePendingPairing(pendingPairing); return; }
     if (this.fromRoomShare && sharedRoom.resumePending()) return;
-    wx.switchTab({ url: '/pages/home/index' });
+    wx.switchTab({ url:'/pages/home/index' });
   },
-  scanLogin() {
-    if (this.data.scanning) return;
-    this.setData({ scanning: true });
-    wx.scanCode({
-      scanType: ['qrCode'],
-      success: async ({ result }) => {
-        try {
-          wx.showLoading({ title: '正在连接教师端', mask: true });
-          const current = sessionStore.load();
-          if (!current) throw Object.assign(new Error('请先创建小程序教师账户，再从“我的”扫描教师端二维码'), { code:'PAIR_ACCOUNT_REQUIRED' });
-          const session = await pairWithTeacher(result, current);
-          sessionStore.save(session);
-          getApp().globalData.session = session;
-          wx.hideLoading();
-          wx.showToast({ title: `欢迎，${session.account.name}`, icon: 'success' });
-          setTimeout(() => { if (!sharedRoom.resumePending()) wx.switchTab({ url: '/pages/home/index' }); }, 300);
-        } catch (error) {
-          wx.hideLoading();
-          this.showPairingFailure(error);
-        } finally {
-          this.setData({ scanning: false });
-        }
-      },
-      fail: error => {
-        if (!String(error.errMsg || '').includes('cancel')) wx.showToast({ title: '扫码失败，请重试', icon: 'none' });
-        this.setData({ scanning: false });
-      },
-    });
-  },
-  openRegister() { this.setData({ registerOpen: true, registerName: '' }); },
-  closeRegister() { this.setData({ registerOpen: false }); },
-  setRegisterName(event) { this.setData({ registerName: String(event.detail.value || '').slice(0, 20) }); },
-  registerAccount() {
-    const name = String(this.data.registerName || '').trim();
-    if (!name) { wx.showToast({ title: '请输入教师姓名', icon: 'none' }); return; }
-    const random = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
-    const session = sessionStore.save({ account: { name, connectionId: `mini-${random}`.slice(0, 128), subjects: [] }, rooms: [], activeRoom: null, pairedAt: new Date().toISOString() });
+
+  chooseMode(event) { this.setData({ screen:event.currentTarget.dataset.mode === 'tob' ? 'organization' : 'personal' }); },
+  backToChoice() { if (!this.data.busy) this.setData({ screen:'choice' }); },
+  onLocalNameInput(event) { this.setData({ localName:String(event.detail.value || '').trimStart().slice(0, 20) }); },
+  onCloudServerInput(event) { this.setData({ cloudServerUrl:String(event.detail.value || '').replace(/^https?:\/\//i, '').trim().slice(0, 500) }); },
+  onCloudHttpsChange(event) { this.setData({ cloudUseHttps:!!(event.detail.value && event.detail.value.length) }); },
+  onCloudLoginNameInput(event) { this.setData({ cloudLoginName:String(event.detail.value || '').trim().slice(0, 80) }); },
+  onCloudPasswordInput(event) { this.setData({ cloudPassword:String(event.detail.value || '') }); },
+  onProfileNicknameInput(event) { this.setData({ profileNickname:String(event.detail.value || '').trimStart().slice(0, 40) }); },
+  onProfilePasswordInput(event) { this.setData({ profilePassword:String(event.detail.value || '') }); },
+  onProfileConfirmInput(event) { this.setData({ profileConfirmPassword:String(event.detail.value || '') }); },
+
+  enterPersonal() {
+    const name = this.data.localName.trim();
+    if (!name) { wx.showToast({ title:'请输入你的称呼', icon:'none' }); return; }
+    const account = { name, loginName:name, connectionId:genConnectionId(), subjects:[] };
+    const session = sessionStore.save({ account, rooms:[], activeRoom:null, cloud:null, usageMode:'toc', pairedAt:new Date().toISOString() });
     getApp().globalData.session = session;
-    this.setData({ registerOpen: false });
-    wx.showToast({ title: '账户创建成功', icon: 'success' });
-    setTimeout(() => { if (!sharedRoom.resumePending()) wx.switchTab({ url: '/pages/home/index' }); }, 300);
+    this.afterLogin();
   },
-  showPairingFailure(error) {
-    const code = error && error.code;
-    if (code === 'PAIR_NETWORK') {
-      wx.showModal({
-        title: '无法连接教师端',
-        content: [
-          '请检查以下情况：',
-          '1. 手机和电脑连接同一个 Wi‑Fi；',
-          '2. 不要使用访客网络，并暂时关闭 VPN 或移动网络加速；',
-          '3. 教师端保持运行，二维码未过期；',
-          '4. 电脑防火墙允许教师端访问专用网络和 TCP 3457 端口。',
-          '',
-          '调整后请在教师端重新生成二维码。',
-        ].join('\n'),
-        cancelText: '稍后再试',
-        confirmText: '重新扫码',
-        success: result => {
-          if (result.confirm) setTimeout(() => this.scanLogin(), 150);
-        },
-      });
-      return;
+
+  async loginOrganization() {
+    if (this.data.busy) return;
+    const { cloudServerUrl:serverUrl, cloudLoginName:loginName, cloudPassword:password } = this.data;
+    if (!serverUrl || !loginName || !password) { wx.showToast({ title:'请填写服务器、账号和密码', icon:'none' }); return; }
+    this.setData({ busy:true });
+    wx.showLoading({ title:'正在进入组织', mask:true });
+    try {
+      const cloud = await cloudApi.loginMiniProgramAccount({ serverUrl, useHttps:this.data.cloudUseHttps, loginName, password, deviceName:'微信小程序' });
+      const rooms = cloud.mustChangePassword ? [] : await cloudApi.listClassrooms(cloud);
+      const existing = sessionStore.load();
+      const account = { name:cloud.nickname || cloud.userName || loginName, loginName, avatarUrl:cloud.avatarUrl || '', connectionId:existing && existing.account && existing.account.connectionId || genConnectionId(), subjects:[] };
+      const session = sessionStore.save({ account, rooms, activeRoom:rooms[0] || null, cloud, usageMode:'tob', pairedAt:new Date().toISOString() });
+      getApp().globalData.session = session;
+      wx.hideLoading(); this.setData({ busy:false });
+      if (cloud.mustChangePassword) { this.pendingCloudSession = session; this.showProfile(cloud); }
+      else this.afterLogin('登录成功');
+    } catch (error) {
+      wx.hideLoading(); this.setData({ busy:false });
+      errorReport.show({ title:'无法登录组织', error, context:'组织模式登录', suggestions:['检查服务器地址和 HTTP/HTTPS 选项', '确认账号密码正确且组织服务器已经启动'] });
     }
-    if (code === 'PAIR_QR_EXPIRED') {
-      wx.showModal({
-        title: '二维码已过期',
-        content: '临时二维码只有 2 分钟有效期。请在教师端点击“刷新二维码”，然后重新扫描。',
-        cancelText: '稍后再试',
-        confirmText: '重新扫码',
-        success: result => {
-          if (result.confirm) setTimeout(() => this.scanLogin(), 150);
-        },
-      });
-      return;
-    }
-    wx.showModal({
-      title: code === 'PAIR_UNSUPPORTED' ? '微信版本过低' : '二维码无法使用',
-      content: error && error.message || '请在教师端重新生成二维码后再试。',
-      showCancel: false,
-      confirmText: '我知道了',
+  },
+
+  showProfile(cloud) {
+    const organization = cloud.organization || {};
+    this.setData({
+      screen:'profile', profileNickname:cloud.nickname || cloud.userName || '', profileAvatar:cloud.avatarUrl || '',
+      profilePassword:'', profileConfirmPassword:'', organizationName:organization.name || '组织空间',
+      organizationShortName:organization.shortName || organization.name || '组织', organizationColor:organization.primaryColor || '#2563EB',
+      organizationMark:String(organization.shortName || organization.name || '组织').slice(0, 1),
     });
+  },
+
+  async completeProfile() {
+    if (this.data.busy) return;
+    const session = this.pendingCloudSession || sessionStore.load();
+    if (!session || !session.cloud) return;
+    const nickname = this.data.profileNickname.trim();
+    const name = nickname;
+    const password = this.data.profilePassword;
+    if (!nickname) { wx.showToast({ title:'请输入用户名', icon:'none' }); return; }
+    if (password.length < 10) { wx.showToast({ title:'新密码至少 10 位', icon:'none' }); return; }
+    if (password !== this.data.profileConfirmPassword) { wx.showToast({ title:'两次密码输入不一致', icon:'none' }); return; }
+    this.setData({ busy:true }); wx.showLoading({ title:'正在保存资料', mask:true });
+    try {
+      let cloud = session.cloud;
+      cloud = await cloudApi.completeTeacherProfile(cloud, { name, nickname, newPassword:password });
+      const rooms = await cloudApi.listClassrooms(cloud);
+      const account = { ...session.account, name:nickname || name, avatarUrl:cloud.avatarUrl || '', loginName:this.data.cloudLoginName || session.account.loginName };
+      const updated = sessionStore.save({ ...session, account, rooms, activeRoom:rooms[0] || null, cloud, usageMode:'tob' });
+      getApp().globalData.session = updated;
+      this.pendingCloudSession = null;
+      wx.hideLoading(); this.setData({ busy:false });
+      this.afterLogin('资料设置完成');
+    } catch (error) {
+      wx.hideLoading(); this.setData({ busy:false });
+      errorReport.show({ title:'资料保存失败', error, context:'首次登录资料设置', suggestions:['检查网络连接后重试', '确认用户名有效且新密码至少为 10 位'] });
+    }
+  },
+
+  afterLogin(toastTitle) {
+    const pendingPairing = loadPendingPairing();
+    if (pendingPairing) { this.completePendingPairing(pendingPairing); return; }
+    if (toastTitle) wx.showToast({ title:toastTitle, icon:'success' });
+    setTimeout(() => { if (!sharedRoom.resumePending()) wx.switchTab({ url:'/pages/home/index' }); }, 250);
+  },
+
+  async completePendingPairing(payload) {
+    if (this.completingPendingPairing) return;
+    this.completingPendingPairing = true;
+    wx.showLoading({ title:'正在连接教师端', mask:true });
+    try {
+      const session = await pairWithTeacher(payload, sessionStore.load());
+      sessionStore.save(session); getApp().globalData.session = session; clearPendingPairing();
+      wx.hideLoading(); wx.showToast({ title:'欢迎，' + session.account.name, icon:'success' });
+      setTimeout(() => wx.switchTab({ url:'/pages/home/index' }), 300);
+    } catch (error) {
+      wx.hideLoading(); clearPendingPairing();
+      errorReport.show({ title:'无法登录教师端', error, context:'教师端扫码登录', suggestions:['确认手机和教师电脑位于同一局域网', '请重新生成并扫描教师端二维码'] });
+    } finally { this.completingPendingPairing = false; }
   },
 });

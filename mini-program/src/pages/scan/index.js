@@ -4,6 +4,10 @@ const { pairWithTeacher } = require('../../utils/auth');
 const { parseClassroomQr } = require('../../utils/classroom-qr');
 const sharedRoom = require('../../utils/shared-room');
 const scanAction = require('../../utils/scan-action');
+const errorReport = require('../../utils/error-report');
+const networkDiagnostics = require('../../utils/network-diagnostics');
+const subjectOptions = require('../../utils/subject-options');
+const shareCard = require('../../utils/share-card');
 
 Page({
   data: {
@@ -48,11 +52,8 @@ Page({
   onShareAppMessage() {
     const session = sessionStore.load();
     const room = session && session.activeRoom;
-    if (!room || !this.isCurrentRoomHomeroom(session)) return { title: '教室连接', path: '/pages/scan/index' };
-    return {
-      title: `${session.account.name} 邀请你连接“${room.name}”`,
-      path: sharedRoom.createPath(room),
-    };
+    if (!room || !this.isCurrentRoomHomeroom(session)) return shareCard.classroomInvite('班达 · 连接教室', '/pages/scan/index');
+    return shareCard.classroomInvite(`${session.account.name} 邀请你连接“${room.name}”`, sharedRoom.createPath(room));
   },
 
   chooseScanAction() {
@@ -85,10 +86,10 @@ Page({
       let room;
       try { room = parseClassroomQr(result); }
       catch (error) {
-        wx.showModal({ title: '无法添加教室', content: error.message || '请扫描教室端显示的连接二维码', showCancel: false });
+        errorReport.show({title:'无法添加教室',error,context:'扫码－解析教室二维码',suggestions:['请扫描教室端当前显示的连接二维码', '让教室端刷新二维码后重新扫描']});
         return;
       }
-      wx.navigateTo({url:`/pages/room-connect/index?name=${encodeURIComponent(room.name)}&code=${encodeURIComponent(room.connectionCode)}&auto=1`});
+      scanAction.openClassroomConnection(room);
     });
   },
 
@@ -108,10 +109,8 @@ Page({
   },
 
   async saveClassroom(room) {
-    const result=await new Promise(resolve=>wx.showModal({title:'填写授课科目',content:'这是加入教室的必填信息。多个科目可用逗号分隔。',editable:true,placeholderText:'例如：数学、物理',success:resolve,fail:()=>resolve({confirm:false})}));
-    if(!result.confirm)return;
-    const subjects=String(result.content||'').split(/[,，、\s]+/).map(value=>value.trim()).filter(Boolean);
-    if(!subjects.length){wx.showToast({title:'请至少填写一个科目',icon:'none'});return;}
+    const subjects=await subjectOptions.choose([], '选择授课科目');
+    if(!subjects)return;
     wx.showLoading({title:'正在连接教室',mask:true});
     try {
       const saved=await scanAction.saveClassroom(room,subjects);
@@ -121,7 +120,7 @@ Page({
       wx.showModal({title:saved.connection.status==='pending'?'身份已发送':'教室连接成功',content:saved.connection.status==='pending'?'请在教室电脑上确认当前教师身份并绑定为班主任。':'当前教师身份已通过验证。',showCancel:false});
     } catch(error) {
       wx.hideLoading();
-      this.showConnectionFailure('无法连接教室',error&&error.message);
+      networkDiagnostics.showFailure({ error,room,context:'扫码连接教室' });
     }
   },
 
@@ -130,13 +129,6 @@ Page({
   },
 
   showConnectionFailure(title, detail) {
-    const reason = detail ? `\n\n错误信息：${detail}` : '';
-    wx.showModal({
-      title,
-      content: `请确认：\n1. 手机和电脑在同一局域网\n2. 微信已获本地网络权限\n3. 电脑端二维码仍在有效期内${reason}`,
-      confirmText: '重新扫码',
-      cancelText: '稍后再试',
-      success: result => { if (result.confirm) this.chooseScanAction(); },
-    });
+    errorReport.show({ title, error:new Error(detail || title), context:'小程序扫码连接', message:'二维码已经读取，但无法与对应电脑建立连接。', suggestions:['确认手机和电脑在同一局域网', '确认微信已获本地网络权限', '确认电脑端二维码仍在有效期内'] });
   },
 });

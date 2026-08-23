@@ -1,11 +1,11 @@
 {
-  "description": "教室呼叫系统配套教师微信小程序",
+  "description": "班达微信小程序",
   "packOptions": {
     "ignore": [],
     "include": []
   },
   "setting": {
-    "urlCheck": true,
+    "urlCheck": false,
     "es6": true,
     "enhance": true,
     "postcss": true,
@@ -21,7 +21,7 @@
     "localPlugins": false,
     "disableUseStrict": false,
     "useCompilerPlugins": false,
-    "condition": false,
+    "condition": true,
     "swc": false,
     "disableSWC": true,
     "babelSetting": {
@@ -36,6 +36,9 @@
   "appid": "wx2be8de3949e62822",
   "projectname": "classroom-call-mini",
   "condition": {},
-  "simulatorPluginLibVersion": {},
-  "editorSetting": {}
+  "simulatorPluginLibVersion": {
+    "wxext14566970e7e9f62": "2.27.3"
+  },
+  "editorSetting": {},
+  "projectArchitecture": "multiPlatform"
 }

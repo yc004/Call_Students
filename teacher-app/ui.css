@@ -41,6 +41,14 @@
 .modal-card textarea { width:100%; min-height:180px; padding:11px 13px; border:1px solid #dce3ee; border-radius:10px; color:var(--text); background:#fff; font:inherit; line-height:1.55; resize:vertical; outline:none; }
 .modal-card textarea:focus { border-color:#82a8f4; box-shadow:0 0 0 3px rgba(53,104,232,.11); }
 
+/* 登录入口：个人与组织模式共用同一套会话流程 */
+.mode-switch { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin:4px 0 14px; padding:5px; border-radius:13px; background:#eef2f8; }
+.mode-switch-btn { display:flex; flex-direction:column; gap:1px; min-height:52px; padding:8px 10px; border:0; border-radius:9px; color:var(--text-2); background:transparent; text-align:left; cursor:pointer; }
+.mode-switch-btn strong { font-size:13px; }.mode-switch-btn small { color:var(--text-3); font-size:11px; }.mode-switch-btn.active { color:#2457c5; background:#fff; box-shadow:0 2px 8px rgba(23,32,51,.08); }.mode-switch-btn.active small { color:#6f91d8; }
+.mode-panel { margin-bottom:4px; }.checkbox-row { display:flex !important; align-items:center; gap:8px; margin:1px 0 3px !important; color:var(--text-2) !important; font-size:12px; font-weight:500 !important; }.checkbox-row input { width:16px !important; min-height:16px !important; accent-color:var(--primary); }
+.profile-fields { display:flex; flex-direction:column; gap:7px; margin-top:5px; padding:11px; border:1px solid #dfe7f5; border-radius:11px; background:#f7f9fd; }.profile-fields label { margin-top:2px !important; }.profile-fields input { min-height:40px; }
+.login-divider { display:flex; align-items:center; gap:9px; margin:3px 0 1px; color:var(--text-3); font-size:11px; }.login-divider::before,.login-divider::after { content:''; flex:1; height:1px; background:var(--border); }
+
 /* 账户与审批界面补全：避免未覆盖的控件退回浏览器原生样式。 */
 .account-card,.approval-card {
   display:flex;
@@ -210,6 +218,14 @@
 .teacher-manage-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
 .teacher-manage-actions .btn { min-height:34px; padding:0 10px; font-size:12px; }
 .btn-danger-text { color:#c52d35; border-color:#efc3c6; }
+.btn-transfer-text { color:#9a5b00; border-color:#efd29f; background:#fff9ed; }
+.flow-heading-students .call-multi-toggle { width:auto; min-height:36px; margin-left:auto; padding:0 13px; }
+.call-multi-toggle.active { color:#16784d; border-color:#acd9c4; background:#e9f8f1; }
+.student-card.selected { border-color:#66b991; background:#f0faf5; box-shadow:0 0 0 2px rgba(22,148,92,.08); }
+.student-card.selected .call-btn { color:#fff; border-color:var(--success); background:var(--success); }
+.call-batch-bar { position:sticky; z-index:20; bottom:12px; display:flex; align-items:center; gap:10px; margin-top:18px; padding:14px 16px; border:1px solid #cde7da; border-radius:14px; background:rgba(255,255,255,.96); box-shadow:0 12px 30px rgba(23,32,51,.14); backdrop-filter:blur(14px); }
+.call-batch-bar > div { display:flex; min-width:0; flex:1; flex-direction:column; }
+.call-batch-bar strong { font-size:14px; }.call-batch-bar small { margin-top:2px; color:var(--text-3); font-size:11px; }.call-batch-bar .btn { min-height:38px; }
 
 /* 出勤页：先看概览，再处理待匹配，最后查看学生明细。 */
 .attendance-section { gap:20px; padding:24px; background:transparent; box-shadow:none; }
@@ -235,12 +251,153 @@
 .attendance-content .subtab-count { min-width:21px; padding:1px 7px; color:#667085; background:#e9edf3; }
 .attendance-content .face-subtab.active .subtab-count { color:#2457c5; background:#dbe7ff; }
 .attendance-content .face-hint-row { display:flex; align-items:flex-start; gap:9px; margin:14px 0 18px; padding:10px 12px; border:0; border-radius:10px; color:#667085; background:#f7f9fc; font-size:12px; line-height:1.55; }
+.face-lan-warning{display:flex;align-items:center;gap:12px;margin:0 0 16px;padding:12px 14px;border-radius:12px;background:#fff4e5;color:#8a5200}.face-lan-warning>span{display:grid;flex:0 0 28px;height:28px;place-items:center;border-radius:50%;background:#f59e0b;color:#fff;font-weight:800}.face-lan-warning>div{flex:1}.face-lan-warning strong,.face-lan-warning small{display:block}.face-lan-warning small{margin-top:3px;color:#a36d1f}
 .face-hint-icon { display:grid; width:18px; height:18px; flex:0 0 18px; place-items:center; margin-top:1px; border-radius:50%; color:#3568e8; background:#e4edff; font-size:11px; font-weight:800; }
 .attendance-content .face-grid { grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:12px; }
 .attendance-content .face-card { min-height:194px; justify-content:center; gap:12px; padding:18px 14px; border:1px solid var(--border) !important; border-radius:13px; background:#fff; box-shadow:none; }
 .attendance-content .face-card:hover { transform:translateY(-2px); border-color:#cbd8ec !important; box-shadow:0 8px 18px rgba(20,38,70,.07); }
 .attendance-content .face-card.absent { opacity:.68; background:#fafbfc; }
 .attendance-content .face-card.unknown { background:#fffcf6; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   macOS 风格重构：克制层级、连续留白、轻量材质与清晰操作焦点
+   仅覆盖视觉表现，不改变现有 DOM 和交互逻辑。
+   ═══════════════════════════════════════════════════════════════════ */
+:root {
+  --apple-blue: var(--primary);
+  --apple-blue-soft: #e8f2ff;
+  --apple-bg: #f5f5f7;
+  --apple-sidebar: rgba(255,255,255,.78);
+  --apple-surface: rgba(255,255,255,.92);
+  --apple-border: rgba(60,60,67,.16);
+  --apple-separator: rgba(60,60,67,.12);
+  --apple-label: #1d1d1f;
+  --apple-secondary: #6e6e73;
+  --apple-tertiary: #8e8e93;
+  --apple-shadow: 0 8px 28px rgba(0,0,0,.055);
+  --radius: 14px;
+}
+
+body {
+  color: var(--apple-label);
+  background: var(--apple-bg);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  letter-spacing: -.005em;
+  -webkit-font-smoothing: antialiased;
+}
+
+button, input, select, textarea { font-family: inherit; }
+button { transition: background-color .16s ease, border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
+button:active { transform: scale(.985); }
+
+.app { min-width: 820px; background: var(--apple-bg); }
+.sidebar {
+  width: 252px;
+  min-width: 252px;
+  color: var(--apple-label);
+  background: var(--apple-sidebar);
+  border-right: 1px solid var(--apple-border);
+  box-shadow: 1px 0 0 rgba(255,255,255,.8) inset;
+  backdrop-filter: saturate(180%) blur(24px);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+}
+.sidebar-header { padding: 25px 20px 18px; border-bottom: 1px solid var(--apple-separator); }
+.sidebar-header h1 { color: var(--apple-label); font-size: 19px; font-weight: 720; letter-spacing: -.02em; }
+.brand-sub { margin-top: 5px; padding: 0; color: var(--apple-secondary); background: transparent; font-size: 12px; letter-spacing: 0; }
+.connect-box { grid-template-columns: minmax(0,1fr) 58px; gap: 8px; padding: 16px 14px 14px; border-bottom: 1px solid var(--apple-separator); }
+.connect-box input { min-height: 38px; padding: 0 11px; border: 1px solid var(--apple-border); border-radius: 9px; color: var(--apple-label); background: rgba(118,118,128,.08); }
+.connect-box input::placeholder { color: var(--apple-tertiary); }
+.connect-box input:focus { border-color: var(--apple-blue); background: #fff; box-shadow: 0 0 0 3px rgba(10,132,255,.16); }
+.connect-box .btn { min-height: 38px; padding: 0 7px; }
+.room-section { padding: 16px 10px; }
+.section-label { padding: 0 10px 8px; color: var(--apple-tertiary); font-size: 11px; font-weight: 650; letter-spacing: .04em; }
+.room-item { min-height: 46px; margin-bottom: 3px; padding: 8px 10px; border: 1px solid transparent; border-radius: 9px; color: var(--apple-secondary); }
+.room-item:hover { color: var(--apple-label); background: rgba(118,118,128,.10); }
+.room-item.active { color: var(--apple-label); border-color: rgba(10,132,255,.12); background: var(--apple-blue-soft); }
+.room-item .room-name { font-weight: 600; }
+.room-item .room-ip { color: var(--apple-tertiary); }
+.room-item .room-del { color: var(--apple-tertiary); }
+.room-item .room-del:hover { color: #ff3b30; }
+.dot.online { background: #34c759; box-shadow: 0 0 0 3px rgba(52,199,89,.13); }
+.dot.offline { background: #a1a1a6; }
+.dot.connecting { background: #ff9f0a; }
+.sidebar-footer { padding: 14px; border-top: 1px solid var(--apple-separator); }
+.account-session { grid-template-columns: 34px 1fr 12px; gap: 9px; margin-bottom: 12px; padding: 0 0 12px; border-bottom-color: var(--apple-separator); color: var(--apple-label); }
+.account-avatar { width: 34px; height: 34px; border-radius: 10px; color: #fff; background: var(--apple-blue); font-size: 14px; }
+.account-session-text strong { color: var(--apple-label); font-size: 13px; }
+.account-session-text small, .account-chevron, .status-row { color: var(--apple-secondary); }
+.status-row { font-size: 12px; }
+
+.main { padding: 30px 38px 44px; gap: 18px; }
+.room-header { min-height: 64px; }
+.workspace-kicker { color: var(--apple-secondary); font-size: 11px; font-weight: 650; letter-spacing: .04em; }
+.room-header h2 { color: var(--apple-label); font-size: 28px; font-weight: 750; letter-spacing: -.035em; }
+.badge { padding: 5px 10px; border: 1px solid var(--apple-border); color: var(--apple-secondary); background: rgba(118,118,128,.08); font-size: 12px; }
+.main-tabs { gap: 2px; padding: 3px; border: 1px solid var(--apple-border); border-radius: 10px; background: rgba(118,118,128,.10); box-shadow: none; }
+.main-tab { min-height: 32px; padding: 0 16px; border-radius: 7px; color: var(--apple-secondary); font-size: 13px; font-weight: 650; }
+.main-tab:hover { color: var(--apple-label); background: rgba(255,255,255,.6); }
+.main-tab.active { color: var(--apple-label); background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+
+.call-flow, .history-section, .hw-section, .face-section { border: 1px solid var(--apple-border); border-radius: 16px; background: var(--apple-surface); box-shadow: var(--apple-shadow); }
+.call-flow { padding: 24px; }
+.flow-heading strong { color: var(--apple-label); font-size: 16px; font-weight: 700; }
+.flow-heading small, .account-field-hint, .field-hint { color: var(--apple-secondary); }
+.flow-heading > span { width: 28px; height: 28px; border-radius: 50%; color: #fff; background: var(--apple-blue); }
+.flow-heading-students { border-top-color: var(--apple-separator); }
+.msg-editor, .search-input, .modal-card input, .modal-card .field-select, .hw-filter-select, .hw-date-input, .ms-btn { min-height: 42px; border: 1px solid var(--apple-border); border-radius: 9px; color: var(--apple-label); background: #fff; }
+.msg-editor:focus, .search-input:focus, .modal-card input:focus, .modal-card .field-select:focus, .hw-filter-select:focus, .hw-date-input:focus { border-color: var(--apple-blue); box-shadow: 0 0 0 3px rgba(10,132,255,.15); }
+.student-card, .attendance-content .face-card, .attendance-stat, .manage-card { border-color: var(--apple-border); border-radius: 13px; background: #fff; box-shadow: none; }
+.student-card:hover, .attendance-content .face-card:hover { border-color: rgba(10,132,255,.34); box-shadow: 0 7px 18px rgba(0,0,0,.06); }
+.student-card .call-btn { border-radius: 9px; }
+.history-section { box-shadow: none; }
+.history-section summary { padding: 15px 18px; color: var(--apple-secondary); }
+
+.hw-section, .face-section { padding: 20px; }
+.hw-content-switch, .publish-type-switch { border-radius: 9px; background: rgba(118,118,128,.10); }
+.hw-content-switch button, .publish-type-switch button { min-height: 32px; border-radius: 7px; color: var(--apple-secondary); font-weight: 650; }
+.hw-content-switch button.active, .publish-type-switch button.active { color: var(--apple-label); background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+.hw-stage-tab { border-color: var(--apple-border); border-radius: 12px; background: rgba(118,118,128,.06); }
+.hw-stage-tab.active { border-color: rgba(10,132,255,.28); color: var(--apple-blue); background: var(--apple-blue-soft); }
+.hw-overview-card, .hw-single-summary, .notice-detail { border-color: var(--apple-border); border-radius: 12px; }
+.hw-overview-card:hover { border-color: rgba(10,132,255,.34); box-shadow: 0 7px 18px rgba(0,0,0,.05); }
+.hw-overview-subject { color: #0569c9; background: var(--apple-blue-soft); }
+.btn { min-height: 38px; padding: 0 14px; border-color: var(--apple-border); border-radius: 9px; color: var(--apple-label); background: #fff; font-weight: 650; }
+.btn:hover { border-color: rgba(10,132,255,.3); background: #f7f7f8; }
+.btn-primary { color: #fff; border-color: var(--apple-blue); background: var(--apple-blue); box-shadow: 0 3px 9px rgba(10,132,255,.22); }
+.btn-primary:hover { border-color: #0077ed; background: #0077ed; }
+.btn-danger-outline { color: #ff3b30; border-color: rgba(255,59,48,.3); }
+
+.attendance-section { padding: 22px; background: transparent; box-shadow: none; }
+.attendance-header h2 { color: var(--apple-label); font-weight: 750; }
+.attendance-header p { color: var(--apple-secondary); }
+.attendance-content { border-color: var(--apple-border); border-radius: 14px; background: rgba(255,255,255,.94); box-shadow: var(--apple-shadow); }
+.attendance-content .face-subtab.active { color: var(--apple-label); background: var(--apple-blue-soft); }
+.attendance-content .face-hint-row { color: var(--apple-secondary); background: rgba(118,118,128,.07); }
+.face-lan-warning { border: 1px solid rgba(255,159,10,.26); background: #fff7e8; }
+
+.modal { background: rgba(0,0,0,.28); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+.modal-card { border: 1px solid var(--apple-border); border-radius: 16px; background: rgba(255,255,255,.96); box-shadow: 0 24px 70px rgba(0,0,0,.18); }
+.modal-card h3 { font-weight: 750; }
+.account-overlay, .approval-overlay { background: rgba(245,245,247,.92); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); }
+.account-card, .approval-card { border-color: var(--apple-border); border-radius: 18px; background: rgba(255,255,255,.96); box-shadow: 0 20px 60px rgba(0,0,0,.13); }
+.account-brand span { width: 50px; height: 50px; border-radius: 14px; background: var(--apple-blue); box-shadow: 0 8px 18px rgba(10,132,255,.22); }
+.account-card h2, .approval-card h2 { color: var(--apple-label); font-size: 25px; letter-spacing: -.03em; }
+.account-form input { border-color: var(--apple-border); border-radius: 9px; background: rgba(118,118,128,.06); }
+.account-form input:focus { border-color: var(--apple-blue); background: #fff; box-shadow: 0 0 0 3px rgba(10,132,255,.15); }
+.mode-switch { border: 1px solid var(--apple-border); background: rgba(118,118,128,.09); }
+.mode-switch-btn.active { color: var(--apple-label); }
+.mode-switch-btn.active small { color: var(--apple-secondary); }
+.mini-login-section { border-color: var(--apple-border); background: rgba(118,118,128,.05); }
+
+@media (prefers-color-scheme: dark) {
+  :root { --apple-bg:#1c1c1e; --apple-sidebar:rgba(39,39,42,.84); --apple-surface:rgba(44,44,46,.94); --apple-label:#f5f5f7; --apple-secondary:#a1a1a6; --apple-tertiary:#8e8e93; --apple-border:rgba(255,255,255,.16); --apple-separator:rgba(255,255,255,.10); --apple-blue-soft:rgba(10,132,255,.20); }
+  .sidebar-header h1, .room-header h2, .flow-heading strong, .student-card, .modal-card h3, .account-card h2, .approval-card h2, .account-session-text strong { color:var(--apple-label); }
+  .connect-box input, .account-form input, .msg-editor, .search-input, .modal-card input, .modal-card .field-select, .hw-filter-select, .hw-date-input, .ms-btn, .student-card, .attendance-content, .attendance-stat, .manage-card, .modal-card, .account-card, .approval-card { color:var(--apple-label); background:#2c2c2e; }
+  .main-tab.active, .hw-content-switch button.active, .publish-type-switch button.active, .btn { color:var(--apple-label); background:#3a3a3c; }
+  .main-tab.active, .hw-content-switch button.active, .publish-type-switch button.active { box-shadow:0 1px 4px rgba(0,0,0,.28); }
+  .modal, .account-overlay, .approval-overlay { background:rgba(0,0,0,.52); }
+}
 .attendance-content .face-card.recognized { background:#f8fcfa; }
 .attendance-content .face-crop,.attendance-content .face-placeholder { width:82px; height:82px; border:0; border-radius:16px; }
 .attendance-content .face-crop { background:#eef2f7; }
@@ -293,3 +450,5 @@
   .teacher-manage-actions { justify-content:flex-start; }
 }
 .mini-scan-login { align-items:center; }.mini-scan-qr-wrap { display:flex; align-items:center; justify-content:center; width:220px; height:220px; margin:4px auto 10px; border:1px solid var(--line,#d8dee9); border-radius:18px; background:#fff; }.mini-scan-qr-wrap img { display:block; width:198px; height:198px; object-fit:contain; }.mini-scan-qr-wrap img:not([src]) { visibility:hidden; }
+.wechat-direct-settings { width:100%;margin-top:6px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;text-align:left;background:var(--surface-soft,#f7f8fa); }.wechat-direct-settings summary { color:var(--text-2);font-weight:700;cursor:pointer; }.wechat-direct-settings p,.wechat-direct-settings small { display:block;margin:7px 0 0;color:var(--text-3);font-size:11px;line-height:1.5; }.wechat-direct-settings div { display:flex;gap:7px;margin-top:8px; }.wechat-direct-settings input { min-width:0;flex:1;height:34px;padding:0 9px;border:1px solid var(--border);border-radius:8px;color:var(--text-1);background:var(--surface);font:inherit; }
+.wechat-direct-settings .direct-warning { color:#a15c08; }

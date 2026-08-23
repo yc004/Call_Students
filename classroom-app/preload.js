@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld('api', {
   winMinimize:  () => ipcRenderer.send('win-minimize'),
   winMaximize:  () => ipcRenderer.send('win-maximize'),
   winClose:     () => ipcRenderer.send('win-close'),
+  copyText:     (value) => ipcRenderer.invoke('copy-text', value),
+  showClientError: (payload) => ipcRenderer.invoke('show-client-error', payload),
 
   // ── 数据读写（管理页用） ──
   getData:    ()      => ipcRenderer.invoke('get-data'),
@@ -14,8 +16,13 @@ contextBridge.exposeInMainWorld('api', {
   // ── 首次安装班主任绑定引导 ──
   getOnboardingStatus: () => ipcRenderer.invoke('get-onboarding-status'),
   getClassroomQr: () => ipcRenderer.invoke('get-classroom-qr'),
+  getWechatDirectLinkSettings: () => ipcRenderer.invoke('get-wechat-direct-link-settings'),
+  setWechatDirectLinkSettings: (baseUrl) => ipcRenderer.invoke('set-wechat-direct-link-settings', baseUrl),
   getNetworkInterfaces: () => ipcRenderer.invoke('get-network-interfaces'),
   setNetworkInterface: (name) => ipcRenderer.invoke('set-network-interface', name),
+  getCloudConfig: () => ipcRenderer.invoke('get-cloud-config'),
+  enrollCloud: (input) => ipcRenderer.invoke('enroll-cloud', input),
+  disconnectCloud: () => ipcRenderer.invoke('disconnect-cloud'),
   onNetworkInterfaceChanged: (cb) => ipcRenderer.on('network-interface-changed', () => cb()),
   bindHomeroomTeacher: (connectionId) => ipcRenderer.invoke('bind-homeroom-teacher', connectionId),
   finishOnboarding: () => ipcRenderer.send('finish-onboarding'),
@@ -30,7 +37,6 @@ contextBridge.exposeInMainWorld('api', {
 
   // ── 作业看板（board 页用） ──
   closeBoard:  ()     => ipcRenderer.send('close-board'),
-  moveBoard:   (dx, dy) => ipcRenderer.send('move-board', dx, dy),
   openHomeworkWidget: () => ipcRenderer.send('open-homework-widget'),
   hideHomeworkWidget: () => ipcRenderer.send('hide-homework-widget'),
   openHomeworkBoard: () => ipcRenderer.send('open-homework-board'),
@@ -44,10 +50,10 @@ contextBridge.exposeInMainWorld('api', {
   // ── 人脸识别（face-check / face-register 页用） ──
   faceAPI: {
     getGallery:      ()      => ipcRenderer.invoke('face:get-gallery'),
-    registerFace:    (id, name, img) => ipcRenderer.invoke('face:register', id, name, img),
     saveDescriptor:  (id, name, desc) => ipcRenderer.invoke('face:save-descriptor', id, name, desc),
     reportDetections:(dets)  => ipcRenderer.invoke('face:report-detections', dets),
-    reportPresence:  (results) => ipcRenderer.invoke('face:report-presence', results),
+    previewRequested:()      => ipcRenderer.invoke('face:preview-requested'),
+    reportPreview:   (image) => ipcRenderer.send('face:report-preview', image),
     getAttendance:   ()      => ipcRenderer.invoke('face:get-attendance'),
     getStudents:     ()      => ipcRenderer.invoke('face:get-students'),
     resetAdaptive:   (id)    => ipcRenderer.invoke('face:reset-adaptive', id),

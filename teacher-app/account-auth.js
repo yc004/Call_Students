@@ -6,11 +6,13 @@ const LOGIN_KEY_PREFIX = 'TEACHER-KEY-1';
 
 function publicAccount(account) {
   if (!account) return null;
-  return {
+  const result = {
     name: account.name,
     subjects: [],
     connectionId: account.connectionId,
   };
+  if (account.avatarUrl) result.avatarUrl = String(account.avatarUrl);
+  return result;
 }
 
 function hashPassword(password, salt) {

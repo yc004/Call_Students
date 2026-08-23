@@ -1,8 +1,8 @@
-<view class="custom-tabbar">
+<view class="custom-tabbar mode-{{usageMode}}" style="--mode-color:{{modeColor}}">
   <view class="tabbar-inner compact">
-    <view class="tab-item {{item.scan ? 'scan-item' : ''}} {{selected === index ? 'selected' : ''}}" wx:for="{{items}}" wx:key="key" data-index="{{index}}" bindtap="tapItem">
+    <view class="tab-item {{item.scan ? 'scan-item' : ''}} {{selected === index ? 'selected' : ''}}" wx:for="{{items}}" wx:key="key" data-index="{{index}}" bindtap="tapItem" hover-class="tab-pressed" hover-stay-time="80">
       <view class="scan-ring" wx:if="{{item.scan}}"><image src="{{item.icon}}" mode="aspectFit"/></view>
-      <image wx:else src="{{selected === index ? item.activeIcon : item.icon}}" mode="aspectFit"/>
+      <image wx:else src="{{selected === index ? item.activeIcon : item.icon}}" mode="aspectFit" style="filter:{{selected === index ? iconFilter : 'none'}}"/>
       <text>{{item.text}}</text>
     </view>
   </view>

@@ -12,6 +12,10 @@
   var el = {};
   var toastTimer = null;
 
+  function reportError(title, error, context, suggestions) {
+    if (window.clientErrors) window.clientErrors.show({ title:title, error:error, context:context, suggestions:suggestions || ['点击刷新后重试', '如果问题重复出现，请复制错误信息提交管理员'] });
+  }
+
   function esc(value) { var node = document.createElement('div'); node.textContent = value || ''; return node.innerHTML; }
   function today() { return new Date().toISOString().slice(0, 10); }
   function currentDate() { return el.date.value || today(); }
@@ -46,6 +50,7 @@
     } catch (error) {
       console.error(error);
       notify('读取班级数据失败，请点击刷新重试', true);
+      reportError('无法读取班级作业数据', error, '教室大屏－作业上报');
     }
   }
 
@@ -133,7 +138,7 @@
       target.submissions[studentId] = value;
       await api.saveData(latest);
       state.data = latest;
-    }).catch(function (error) { console.error(error); notify('保存失败，请刷新后重试', true); });
+    }).catch(function (error) { console.error(error); notify('保存失败，请刷新后重试', true); reportError('作业提交状态保存失败', error, '教室大屏－作业上报', ['不要重复快速点击，先刷新确认数据状态', '检查教室端数据目录是否可写']); });
   }
 
   function openCreate() {
@@ -162,7 +167,7 @@
       state.filter = 'all';
       render();
       notify('作业已补录，现在可以上报提交情况');
-    } catch (error) { notify(error.message || '创建作业失败', true); }
+    } catch (error) { notify(error.message || '创建作业失败', true); reportError('学生补录作业失败', error, '教室大屏－创建作业'); }
     finally { el.confirmCreate.disabled = false; el.confirmCreate.textContent = '创建并开始上报'; }
   }
 

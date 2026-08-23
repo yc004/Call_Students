@@ -4,6 +4,8 @@
     <button class="header-action" size="mini" bindtap="refresh">刷新</button>
   </view>
 
+  <view class="lan-warning" wx:if="{{faceLanUnavailable}}"><view>!</view><view><text>当前局域网连接失败，人脸服务不可用</text><text>{{faceLanMessage}}</text></view></view>
+
   <view class="attendance-summary surface">
     <view class="summary-top">
       <view class="attendance-ring" style="background:conic-gradient(#07c160 {{presentPercent}}%,#ededed 0)"><view><text>{{presentCount}}</text><text>/{{totalCount}}</text></view></view>
@@ -16,16 +18,16 @@
 
   <view class="face-section" wx:if="{{liveFaces.length}}">
     <view class="section-heading"><view><text class="section-title">实时人脸</text><text class="section-note">点击图片可放大查看</text></view><text class="section-count">{{liveFaces.length}} 张</text></view>
-    <scroll-view scroll-x enhanced show-scrollbar="{{false}}"><view class="face-strip"><view class="face-card" wx:for="{{liveFaces}}" wx:key="id" data-source="live" data-index="{{index}}" data-name="{{item.name}}" bindtap="previewFace"><image src="{{item.image}}" mode="aspectFill"></image><view class="face-caption"><view class="face-state {{item.recognized ? 'recognized' : ''}}"></view><text>{{item.name}}</text></view></view></view></scroll-view>
+    <scroll-view scroll-x enhanced show-scrollbar="{{false}}"><view class="face-strip"><view class="face-card" wx:for="{{liveFaces}}" wx:key="id" data-source="live" data-index="{{index}}" data-name="{{item.name}}" bindtap="previewFace" hover-class="face-pressed"><image src="{{item.image}}" mode="aspectFill"></image><view class="face-caption"><view class="face-state {{item.recognized ? 'recognized' : ''}}"></view><text>{{item.name}}</text></view></view></view></scroll-view>
   </view>
 
   <view class="face-section" wx:if="{{isHomeroom && pendingFaces.length}}">
     <view class="section-heading"><view><text class="section-title">待匹配人脸</text><text class="section-note">仅班主任账户可查看</text></view><text class="section-count">{{pendingFaceCount}} 张</text></view>
-    <scroll-view scroll-x enhanced show-scrollbar="{{false}}"><view class="face-strip"><view class="face-card pending" wx:for="{{pendingFaces}}" wx:key="id" data-source="pending" data-index="{{index}}" data-name="{{item.name}}" bindtap="previewFace"><image src="{{item.image}}" mode="aspectFill"></image><view class="face-caption"><view class="face-state"></view><text>待匹配</text></view></view></view></scroll-view>
+    <scroll-view scroll-x enhanced show-scrollbar="{{false}}"><view class="face-strip"><view class="face-card pending" wx:for="{{pendingFaces}}" wx:key="id" data-source="pending" data-index="{{index}}" data-name="{{item.name}}" bindtap="previewFace" hover-class="face-pressed"><image src="{{item.image}}" mode="aspectFill"></image><view class="face-caption"><view class="face-state"></view><text>待匹配</text></view></view></view></scroll-view>
   </view>
 
   <view class="section-heading student-heading"><view><text class="section-title">学生状态</text><text class="section-note">按当前识别状态筛选</text></view></view>
-  <view class="filter-tabs surface"><view class="filter-tab {{filter === 'all' ? 'active' : ''}}" data-filter="all" bindtap="setFilter">全部 {{totalCount}}</view><view class="filter-tab {{filter === 'present' ? 'active' : ''}}" data-filter="present" bindtap="setFilter">在教室 {{presentCount}}</view><view class="filter-tab {{filter === 'away' ? 'active' : ''}}" data-filter="away" bindtap="setFilter">已离开 {{awayCount}}</view><view class="filter-tab {{filter === 'unseen' ? 'active' : ''}}" data-filter="unseen" bindtap="setFilter">未识别 {{unseenCount}}</view></view>
+  <view class="filter-tabs surface"><view class="filter-tab {{filter === 'all' ? 'active' : ''}}" data-filter="all" bindtap="setFilter" hover-class="filter-pressed">全部 {{totalCount}}</view><view class="filter-tab {{filter === 'present' ? 'active' : ''}}" data-filter="present" bindtap="setFilter" hover-class="filter-pressed">在教室 {{presentCount}}</view><view class="filter-tab {{filter === 'away' ? 'active' : ''}}" data-filter="away" bindtap="setFilter" hover-class="filter-pressed">已离开 {{awayCount}}</view><view class="filter-tab {{filter === 'unseen' ? 'active' : ''}}" data-filter="unseen" bindtap="setFilter" hover-class="filter-pressed">未识别 {{unseenCount}}</view></view>
   <view class="search-box student-search"><view class="search-icon"></view><input placeholder="搜索学生姓名" value="{{query}}" bindinput="search"/><text class="search-clear" wx:if="{{query}}" bindtap="clearSearch">×</text></view>
 
   <view class="attendance-list surface" wx:if="{{visibleStudents.length}}">

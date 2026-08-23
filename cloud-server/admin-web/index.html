@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>班达云服务管理</title>
+  <link rel="stylesheet" href="/admin/style.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand-lockup"><span id="brandMark" class="brand">班</span><img id="brandLogo" class="brand-logo hidden" alt="组织 Logo"><div><strong id="brandName">班达云服务</strong><small id="brandSubtitle">统一管理中心</small></div></div>
+      <button id="logoutBtn" class="ghost hidden">退出登录</button>
+    </header>
+
+    <section id="setupView" class="auth-card hidden"><span class="eyebrow">首次设置</span><h1>初始化云服务</h1><p>创建组织和第一个系统管理员。</p><form id="setupForm"><input name="setupToken" type="password" placeholder="初始化令牌" required><input name="organizationName" placeholder="组织名称" required><input name="name" placeholder="管理员姓名" required><input name="loginName" placeholder="登录账号" required><input name="password" type="password" minlength="10" placeholder="密码（至少 10 位）" required><button>完成初始化</button></form></section>
+    <section id="loginView" class="auth-card hidden"><span class="eyebrow">管理中心</span><h1>管理员登录</h1><p>登录后管理教室、教师和接入密钥。</p><form id="loginForm"><input name="loginName" placeholder="登录账号" required><input name="password" type="password" placeholder="登录密码" required><button>登录</button></form></section>
+
+    <section id="dashboardView" class="dashboard hidden">
+      <div class="dashboard-head">
+        <div><span class="eyebrow">云服务控制台</span><h1>管理中心</h1><p>在不同页面中集中处理教室、教师账号与连接授权。</p></div>
+        <div class="service-state"><i></i><span>云服务运行中</span></div>
+      </div>
+
+      <nav class="tabbar" role="tablist" aria-label="管理功能">
+        <button class="tab active" type="button" role="tab" aria-selected="true" aria-controls="overviewPage" data-tab="overview"><span class="tab-icon">⌂</span><span>概览</span></button>
+        <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="classroomsPage" data-tab="classrooms"><span class="tab-icon">▦</span><span>教室</span><b id="classroomTabCount">0</b></button>
+        <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="teachersPage" data-tab="teachers"><span class="tab-icon">人</span><span>教师</span><b id="teacherTabCount">0</b></button>
+        <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="organizationPage" data-tab="organization"><span class="tab-icon">组</span><span>组织设置</span></button>
+      </nav>
+
+      <div class="tab-content">
+        <section id="overviewPage" class="tab-page active" role="tabpanel" data-tab-page="overview">
+          <div class="page-heading"><div><h2>系统概览</h2><p>快速了解当前云服务中的资源与连接状态。</p></div><button class="secondary-action" type="button" data-refresh-dashboard>刷新数据</button></div>
+          <div class="stats"><article><span>已接入教室</span><strong id="statClassrooms">0</strong><small>至少成功连接过一次</small></article><article><span>已接入教师</span><strong id="statUsers">0</strong><small>已完成客户端身份注册</small></article><article class="accent-stat"><span>在线教室端</span><strong id="statOnline">0</strong><small id="overviewOnlineText">等待数据</small></article><article><span>待接入对象</span><strong id="statPending">0</strong><small id="overviewPendingText">等待数据</small></article></div>
+          <div class="overview-grid">
+            <section class="panel welcome-panel"><span class="eyebrow">开始管理</span><h2>选择一项工作</h2><p>功能已按管理对象分开，数据监控和成员权限统一在对应教室内处理。</p><div class="quick-actions"><button type="button" data-open-tab="classrooms"><span>▦</span><div><strong>管理教室</strong><small>查看连接与同步数据</small></div><b>›</b></button><button type="button" data-open-tab="teachers"><span>人</span><div><strong>管理教师</strong><small>发放账号和默认密码</small></div><b>›</b></button><button type="button" data-open-tab="organization"><span>组</span><div><strong>设置组织标识</strong><small>配置名称、Logo 与主题色</small></div><b>›</b></button></div></section>
+            <section class="panel guide-panel"><span class="eyebrow">推荐流程</span><h2>首次部署</h2><ol><li><b>1</b><div><strong>配置组织信息</strong><small>设置小程序展示的名称与主题。</small></div></li><li><b>2</b><div><strong>创建教室和教师账号</strong><small>向教师发放账号和默认密码。</small></div></li><li><b>3</b><div><strong>配置成员权限</strong><small>在教室页设置班主任、任课教师和科目。</small></div></li></ol></section>
+          </div>
+        </section>
+
+        <section id="classroomsPage" class="tab-page hidden" role="tabpanel" data-tab-page="classrooms">
+          <div id="classroomOverview">
+            <div class="page-heading"><div><h2>教室管理</h2><p>管理全部教室、设备与教室接入密钥。</p></div><form id="classroomForm" class="inline create-form"><input name="name" placeholder="创建待接入教室" required><button>创建并配置</button></form></div>
+            <div class="batch-bar"><button id="deleteClassroomsBatch" class="mini-action danger" type="button">删除选中教室</button></div>
+            <div id="classroomList" class="admin-table-wrap"></div>
+          </div>
+          <section id="classroomConfigPanel" class="classroom-config hidden">
+            <div class="config-hero"><button id="backToClassrooms" class="back-button" type="button">← 返回教室列表</button><div class="config-title-row"><div><span class="eyebrow">教室配置中心</span><h2 id="classroomConfigTitle">教室名称</h2><p id="classroomConfigMeta">加载教室资料中…</p></div><span id="classroomConfigStatus" class="status offline">当前离线</span></div></div>
+            <nav class="subtabbar" aria-label="教室配置功能"><button class="active" type="button" data-config-tab="basic">基本信息</button><button type="button" data-config-tab="students">学生名单</button><button type="button" data-config-tab="members">教师成员</button><button type="button" data-config-tab="content">作业与通知</button></nav>
+            <div class="config-pane" data-config-pane="basic">
+              <section class="panel"><div class="panel-title"><div><span class="eyebrow">基本资料</span><h3>教室信息</h3></div><span class="panel-hint">修改名称会同步到在线教室端</span></div><form id="classroomBasicForm" class="settings-form"><label><span>教室名称</span><input id="classroomBasicName" name="name" maxlength="120" required></label><label><span>使用状态</span><select id="classroomBasicStatus" name="status"><option value="active">正常使用</option><option value="disabled">已停用</option></select></label><button>保存基本信息</button></form><div id="classroomDeviceSummary" class="device-summary"></div><section class="panel" id="classroomKeyPanel"><div class="panel-title"><div><span class="eyebrow">教室接入</span><h3>教室身份密钥</h3></div><button id="generateClassroomKey" class="secondary-action" type="button">生成新密钥</button></div><div id="classroomNewKey" class="new-key hidden"></div><div id="classroomKeyList" class="list"></div></section><div class="danger-zone"><div><strong>危险操作</strong><p>删除教室会清理学生、成员、作业、通知和设备凭证。</p></div><button id="deleteConfiguredClassroom" class="danger-action" type="button">删除教室</button></div></section>
+            </div>
+            <div class="config-pane hidden" data-config-pane="students">
+              <section class="panel"><div class="panel-title"><div><span class="eyebrow">班级名单</span><h3>学生名单</h3></div><span id="configStudentCount" class="panel-hint">0 名学生</span></div><form id="classroomStudentsForm" class="student-editor"><label for="classroomStudentsText">每行输入一名学生，也支持从表格复制整列姓名</label><textarea id="classroomStudentsText" rows="14" placeholder="张同学&#10;李同学&#10;王同学"></textarea><div><span>保存后会同步到在线教室端。</span><button>保存学生名单</button></div></form></section>
+            </div>
+            <div class="config-pane hidden" data-config-pane="members">
+              <section class="panel"><div class="panel-title"><div><span class="eyebrow">直接分配</span><h3 id="memberPanelTitle">教师成员</h3></div><span class="panel-hint">管理员分配后立即生效，无需班主任邀请或审批</span></div><form id="memberAddForm" class="key-form detail-form"><select name="userId" id="memberTeacher" required><option value="">选择教师</option></select><select name="role"><option value="teacher">任课教师</option><option value="homeroom">班主任</option></select><details id="memberSubjectPicker" class="subject-dropdown"><summary id="memberSubjectSummary">选择授课科目</summary><div id="memberSubjectOptions" class="subject-option-list"></div></details><button>直接分配</button></form><div id="memberList" class="list"></div></section>
+            </div>
+            <div class="config-pane hidden" data-config-pane="content">
+              <div id="monitorSummary" class="stats compact-stats"></div><section class="panel"><div class="panel-title"><div><span class="eyebrow">教学内容</span><h3 id="monitorPanelTitle">作业与通知</h3></div><span class="panel-hint">展示教室端同步到云端的当前内容</span></div><div id="monitorList" class="content-list"></div></section>
+            </div>
+          </section>
+        </section>
+
+        <section id="teachersPage" class="tab-page hidden" role="tabpanel" data-tab-page="teachers">
+          <div class="page-heading"><div><h2>教师账号</h2><p>由管理员发放账号和默认密码，教师首次登录后必须改密。</p></div><form id="teacherForm" class="inline create-form teacher-create-form"><input name="name" placeholder="教师姓名" required><input name="loginName" minlength="3" placeholder="登录账号" required><input name="defaultPassword" type="password" minlength="8" placeholder="默认密码（至少 8 位）" required><button>创建账号</button></form></div>
+          <div class="batch-bar"><button id="deleteTeachersBatch" class="mini-action danger" type="button">删除选中教师</button></div>
+          <section class="panel"><div class="panel-title"><div><span class="eyebrow">身份管理</span><h3>教师账号</h3></div><span class="panel-hint">授课科目在教师加入教室时设置</span></div><div id="userList" class="admin-table-wrap"></div></section>
+        </section>
+
+        <section id="organizationPage" class="tab-page hidden" role="tabpanel" data-tab-page="organization">
+          <div class="page-heading"><div><h2>组织设置</h2><p>这些品牌信息会在组织版小程序登录成功后自动显示。</p></div></div>
+          <section class="panel"><div class="panel-title"><div><span class="eyebrow">组织身份</span><h3>品牌与主题</h3></div><span class="panel-hint">主题色使用十六进制颜色，例如 #2563EB</span></div><form id="organizationForm" class="organization-form"><label><span>组织全称</span><input id="organizationName" name="name" maxlength="120" required></label><label><span>组织简称</span><input id="organizationShortName" name="shortName" maxlength="40" required></label><label><span>Logo 地址</span><input id="organizationLogoUrl" name="logoUrl" type="url" placeholder="https://...（可选）"></label><label><span>小程序主题色</span><input id="organizationPrimaryColor" name="primaryColor" type="color" value="#2563EB" required></label><button>保存组织设置</button></form></section>
+        </section>
+
+      </div>
+    </section>
+
+    <dialog id="entityDialog" class="entity-dialog">
+      <div class="dialog-head"><div><span id="entityEyebrow" class="eyebrow">对象详情</span><h2 id="entityDialogTitle">详情</h2></div><button id="closeEntityDialog" class="dialog-close" type="button" aria-label="关闭">×</button></div>
+      <div id="entityDetailSummary" class="entity-summary"></div>
+      <div id="teacherKeyPanel" class="entity-key-panel hidden"><div class="panel-title"><div><span class="eyebrow">桌面端兼容接入</span><h3>教师桌面端设备密钥</h3><small>仅供现有教师桌面端绑定设备，小程序请使用上方账号和密码登录。</small></div><button id="generateTeacherKey" class="secondary-action" type="button">生成桌面端密钥</button></div><div id="teacherNewKey" class="new-key hidden"></div><div id="teacherKeyList" class="list"></div></div>
+      <form id="entityEditForm" class="entity-form">
+        <input id="entityType" name="entityType" type="hidden">
+        <input id="entityId" name="entityId" type="hidden">
+        <label><span>名称</span><input id="entityName" name="name" maxlength="120" required></label>
+        <label><span>状态</span><select id="entityStatus" name="status"><option value="active">正常使用</option><option value="disabled">已停用</option></select></label>
+        <div id="teacherCredentialFields" class="credential-fields hidden"><label><span>登录账号</span><input id="entityLoginName" name="loginName" minlength="3" maxlength="80"></label><label><span>重置默认密码</span><input id="entityDefaultPassword" name="defaultPassword" type="password" minlength="8" maxlength="200" placeholder="留空表示不修改"></label><small>重置密码后，教师下次登录必须重新修改密码并确认个人资料。</small></div>
+        <div id="deleteConfirm" class="delete-confirm hidden"><strong>确认永久删除</strong><p id="deleteConfirmText">此操作无法恢复，请输入完整名称进行确认。</p><input id="deleteConfirmName" autocomplete="off" placeholder="输入完整名称"><div><button id="cancelDeleteEntity" class="secondary-action" type="button">暂不删除</button><button id="confirmDeleteEntity" class="danger-solid" type="button">确认删除</button></div></div>
+        <div class="dialog-actions"><button id="deleteEntityBtn" class="danger-action" type="button">删除</button><div><button id="cancelEntityEdit" class="secondary-action" type="button">取消</button><button type="submit">保存修改</button></div></div>
+      </form>
+    </dialog>
+    <dialog id="memberSubjectDialog" class="entity-dialog subject-dialog">
+      <div class="dialog-head"><div><span class="eyebrow">教师成员</span><h2 id="memberSubjectDialogTitle">设置授课科目</h2></div><button id="closeMemberSubjectDialog" class="dialog-close" type="button" aria-label="关闭">×</button></div>
+      <form id="memberSubjectForm" class="entity-form">
+        <label><span>教室身份</span><select id="memberSubjectRole"><option value="teacher">任课教师</option><option value="homeroom">班主任</option></select></label>
+        <div><span class="field-caption">授课科目（可多选）</span><div id="memberEditSubjectOptions" class="subject-option-list subject-option-grid"></div></div>
+        <div class="dialog-actions subject-dialog-actions"><button id="cancelMemberSubjectDialog" class="secondary-action" type="button">取消</button><button type="submit">保存修改</button></div>
+      </form>
+    </dialog>
+    <div id="newKey" class="new-key hidden"></div>
+    <div id="message" class="message hidden" role="status"></div>
+  </main>
+  <script src="/admin/app.js"></script>
+</body>
+</html>

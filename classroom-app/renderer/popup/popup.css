@@ -79,6 +79,7 @@ html, body {
   margin: 8px 0 12px; letter-spacing: 6px; line-height: 1.2;
   position: relative; z-index: 1;
 }
+.call-student.batch { max-width:420px; margin:12px auto 16px; font-size:34px; letter-spacing:2px; line-height:1.35; overflow-wrap:anywhere; }
 
 .call-message {
   font-size: 20px; color: #007AFF; font-weight: 500;

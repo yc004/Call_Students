@@ -39,3 +39,19 @@
   .subject-pill { background:#173a29; color:#35d67c; }.student-source{color:#ffc86f;background:#44351b}.assignment-title { color:rgba(255,255,255,.92); }.assignment-deadline, .submission-stats { color:rgba(255,255,255,.55); }.progress-track { background:#343434; }.notice-state,.assignment-actions { border-color:rgba(255,255,255,.1); }.notice-state { color:rgba(255,255,255,.55); }.notice-state text:first-child { background:#4a3515; color:#ffc36b; }.assignment-actions button{background:#2a2a2a;color:#aebff2}.assignment-actions .delete{background:#3a2022;color:#ff8d8d}.picker-field.disabled{background:#242424;color:rgba(255,255,255,.5)}
 }
 .homework-page { padding-bottom:48rpx; }
+
+/* 页面内切换与数据变化使用短促、可打断的微信式反馈。 */
+.content-switch view,.publish-switch view{transition:transform .16s cubic-bezier(.22,1,.36,1),background-color .22s ease,color .22s ease,box-shadow .22s ease}
+.content-switch view.active,.publish-switch view.active{animation:segment-select .25s cubic-bezier(.22,1,.36,1)}
+.segment-pressed,.chip-pressed{opacity:.76;transform:scale(.96)}
+.stage-option.active{box-shadow:inset 0 0 0 1rpx rgba(7,193,96,.12)}
+.stage-option.active .stage-count{animation:count-pop .28s cubic-bezier(.22,1,.36,1)}
+.filter-chip{transition:transform .16s cubic-bezier(.22,1,.36,1),background-color .2s ease,color .2s ease}
+.date-section{animation:assignment-section-in .32s cubic-bezier(.22,1,.36,1) both}
+.progress-value{transform-origin:left center;animation:progress-grow .55s .08s cubic-bezier(.22,1,.36,1) both;transition:width .4s cubic-bezier(.22,1,.36,1)}
+.assignment-actions button{transition:transform .16s cubic-bezier(.22,1,.36,1),opacity .16s ease}
+@keyframes segment-select{from{transform:scale(.94)}to{transform:scale(1)}}
+@keyframes count-pop{0%{opacity:.4;transform:scale(.72)}70%{transform:scale(1.12)}100%{opacity:1;transform:scale(1)}}
+@keyframes assignment-section-in{from{opacity:0;transform:translateY(16rpx)}to{opacity:1;transform:none}}
+@keyframes progress-grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@media(prefers-reduced-motion:reduce){.content-switch view.active,.publish-switch view.active,.stage-option.active .stage-count,.date-section,.progress-value{animation:none}.content-switch view,.publish-switch view,.filter-chip,.progress-value,.assignment-actions button{transition:none}}

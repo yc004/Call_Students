@@ -1,13 +1,16 @@
 {
   "pages": [
     "pages/login/index",
+    "pages/room-preflight/index",
     "pages/room-connect/index",
+    "pages/subject-select/index",
     "pages/home/index",
     "pages/call/index",
     "pages/homework/index",
     "pages/scan/index",
     "pages/attendance/index",
     "pages/classroom-settings/index",
+    "pages/profile-edit/index",
     "pages/profile/index"
   ],
   "window": {

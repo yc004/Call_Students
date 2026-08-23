@@ -3,16 +3,24 @@
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>教室连接二维码</title><link rel="stylesheet" href="connection-qr.css"></head>
 <body>
   <main class="qr-shell">
-    <div class="brand">教</div>
+    <div class="brand">班</div>
     <p class="eyebrow">教室连接</p>
     <h1 id="roomName">本教室</h1>
-    <p class="lead">在微信小程序底部点击“扫码”，选择“添加教室”后扫描。</p>
+    <p id="scanGuide" class="lead">在微信小程序底部点击“扫码”，选择“添加教室”后扫描。</p>
     <div class="network-picker"><label for="networkInterface">用于手机连接的网卡</label><select id="networkInterface"><option value="">自动选择（推荐）</option></select><small id="networkDetail">正在检测网卡…</small></div>
     <div class="qr-card"><img id="qrImage" alt="教室连接二维码"><div id="placeholder" class="placeholder">正在生成二维码…</div></div>
     <div class="code-line"><span>连接码</span><strong id="connectionCode">读取中…</strong></div>
     <p class="network-tip">请选择与手机处于同一 Wi-Fi/局域网的网卡，不要选择虚拟机、VPN 或 Docker 网卡。</p>
+    <details class="wechat-direct">
+      <summary>允许直接使用微信扫码</summary>
+      <p>先在微信公众平台配置“扫普通链接二维码打开小程序”，再填写与二维码规则完全一致的 HTTPS 链接前缀。</p>
+      <p class="direct-warning">个人主体小程序不能发布普通链接二维码规则；个人主体需要接入服务端小程序码生成服务后才能启用。</p>
+      <div class="direct-form"><input id="directBaseUrl" type="url" inputmode="url" placeholder="https://example.com/classroom"><button id="saveDirectBtn" type="button">保存</button></div>
+      <small id="directStatus">未配置时继续使用小程序内扫码。</small>
+    </details>
     <button id="retryBtn" type="button">重新读取</button>
   </main>
+  <script src="../shared/error-report.js"></script>
   <script src="connection-qr.js"></script>
 </body>
 </html>

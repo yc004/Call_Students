@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>云服务设置</title><link rel="stylesheet" href="../shared/ui.css"><link rel="stylesheet" href="cloud-settings.css"></head>
+<body><main class="cloud-page">
+  <header><span>云</span><div><h1>云服务设置</h1><p>联网使用教室管理、呼叫和作业；人脸数据不会上传云端。</p></div></header>
+  <section class="cloud-card">
+    <div id="connectedState" class="connected hidden"><i></i><div><strong>已接入云服务</strong><small id="connectedServer"></small></div></div>
+    <label for="serverUrl">服务器地址</label><input id="serverUrl" type="url" placeholder="https://cloud.example.com">
+    <label for="connectionKey">教室连接密钥</label><input id="connectionKey" type="password" placeholder="ck_...">
+    <p id="message" role="alert"></p>
+    <div class="actions"><button id="disconnectBtn" class="secondary hidden">断开云服务</button><button id="saveBtn" class="primary">连接云服务</button></div>
+  </section>
+  <aside>隐私边界：人脸图片、特征、识别结果与人脸出勤只保留在教室电脑，并仅通过局域网提供。</aside>
+</main><script src="../shared/error-report.js"></script><script src="cloud-settings.js"></script></body></html>

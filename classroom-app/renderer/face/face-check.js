@@ -41,10 +41,13 @@
   const MATCH_CONFIRM_COUNT = 2;
   const IMG_WIDTH = 320;
   const IMG_HEIGHT = 240;
+  const PREVIEW_WIDTH = 640;
+  const PREVIEW_HEIGHT = 480;
   const CROP_SIZE = 80;
 
   let fcVideo, fcCanvas, fcStatus;
   let fcCropCanvas;
+  let fcPreviewCanvas;
   let stream = null;
   let modelsLoaded = false;
   let isRunning = false;
@@ -109,7 +112,7 @@
   async function startCamera() {
     try {
       stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: IMG_WIDTH, height: IMG_HEIGHT, facingMode: 'user' }
+        video: { width: { ideal: PREVIEW_WIDTH }, height: { ideal: PREVIEW_HEIGHT }, facingMode: 'user' }
       });
       fcVideo.srcObject = stream;
       await fcVideo.play();
@@ -149,6 +152,9 @@
     try {
       if (api.faceAPI && api.faceAPI.getGallery) {
         galleryData = await api.faceAPI.getGallery();
+        if (galleryData && galleryData.config && Number.isFinite(galleryData.config.recognitionThreshold)) {
+          recognitionThreshold = galleryData.config.recognitionThreshold;
+        }
       }
     } catch (e) {}
   }
@@ -271,6 +277,18 @@
       var ctx = fcCanvas.getContext('2d');
       ctx.drawImage(fcVideo, 0, 0, IMG_WIDTH, IMG_HEIGHT);
 
+      // 完整画面只在班主任通过局域网主动打开预览时编码和发送；不上传云端、不落盘。
+      if (api.faceAPI && api.faceAPI.previewRequested && api.faceAPI.reportPreview) {
+        var previewRequested = await api.faceAPI.previewRequested();
+        if (previewRequested) {
+          if (!fcPreviewCanvas) fcPreviewCanvas = document.createElement('canvas');
+          fcPreviewCanvas.width = PREVIEW_WIDTH;
+          fcPreviewCanvas.height = PREVIEW_HEIGHT;
+          fcPreviewCanvas.getContext('2d').drawImage(fcVideo, 0, 0, PREVIEW_WIDTH, PREVIEW_HEIGHT);
+          api.faceAPI.reportPreview(fcPreviewCanvas.toDataURL('image/jpeg', 0.66));
+        }
+      }
+
       // ═══════════════════════════════════════════
       //  原生加速路径（C++ ONNX Runtime）
       // ═══════════════════════════════════════════
@@ -380,6 +398,7 @@
             name: t.name,
             similarity: t.similarity,
             isRecognized: t.isRecognized,
+            seenCount: t.seenCount || 1,
           };
         });
 
@@ -498,6 +517,7 @@
           name: t.name,
           similarity: t.similarity,
           isRecognized: t.isRecognized,
+          seenCount: t.seenCount || 1,
         };
       });
 

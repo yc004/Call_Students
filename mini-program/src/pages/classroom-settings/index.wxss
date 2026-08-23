@@ -2,5 +2,54 @@
 @media(prefers-color-scheme:dark){.segmented{background:#292929}.segmented button{color:#999}.segmented button.active{background:#3a3a3a;color:#fff}.form-label,.list-heading text,.member-copy>text,.member-copy>view>text,.face-guide text,.batch-title text,.setup-brand,.setup-title{color:rgba(255,255,255,.92)}.list-heading button,.member-row button,.face-card button,.role,.batch-title button,.setup-buttons button{background:#2a2a2a;color:#aebff2}.student-row,.member-row{border-color:rgba(255,255,255,.1)}.student-row input{color:#fff}.member-row .danger-text{background:transparent;color:#ff8d8d}.role.homeroom,.approved-avatar{background:#173a29;color:#35d67c}.member-avatar{background:#3b2c17;color:#ffc36b}.face-guide-icon{background:#252d40;color:#aebff2}.face-card image{background:#292929}.batch-sheet,.setup-card{background:#1e1e1e}.setup-overlay{background:#111}.batch-sheet textarea,.setup-textarea,.setup-input{border-color:rgba(255,255,255,.14);background:#242424;color:#fff}.setup-buttons .primary{background:#07c160;color:#fff}.progress-line{background:#444}.setup-progress i{background:#333;color:#aaa}}
 .step-number{display:flex;width:52rpx;height:52rpx;align-items:center;justify-content:center;margin-bottom:10rpx;border-radius:50%;background:#e5e5e5;color:#888}.setup-progress .done .step-number{background:#07c160;color:#fff}@media(prefers-color-scheme:dark){.step-number{background:#333;color:#aaa}}
 .student-setup-card{padding-bottom:30rpx}.setup-textarea{display:block;height:260rpx;margin-top:24rpx;padding:22rpx 24rpx;line-height:1.65}.setup-count{height:72rpx;margin:8rpx 0 16rpx}.setup-buttons{display:flex;width:100%;gap:16rpx}.setup-buttons button{box-sizing:border-box;height:84rpx;margin:0!important;border-radius:16rpx;font-size:27rpx;line-height:84rpx}.setup-buttons .setup-back{width:180rpx;min-width:180rpx;padding:0;background:#f2f2f2;color:#191919}.setup-buttons .setup-submit{min-width:0;flex:1;padding:0 18rpx;background:#07c160;color:#fff;font-weight:500}.setup-buttons .setup-submit[disabled]{background:#a9dfbf;color:rgba(255,255,255,.9)}
+.teacher-invite-card{display:flex;align-items:center;margin-bottom:30rpx;padding:26rpx 24rpx;background:linear-gradient(135deg,#f0fbf4,#fff)}.invite-icon{position:relative;width:72rpx;height:72rpx;flex:0 0 auto;margin-right:18rpx;border-radius:18rpx;background:#07c160}.invite-icon view:first-child{position:absolute;top:20rpx;left:25rpx;width:22rpx;height:22rpx;border:4rpx solid #fff;border-radius:50%;box-sizing:border-box}.invite-icon view:last-child{position:absolute;right:17rpx;bottom:15rpx;left:17rpx;height:18rpx;border:4rpx solid #fff;border-top-left-radius:16rpx;border-top-right-radius:16rpx;border-bottom:0;box-sizing:border-box}.invite-copy{display:flex;min-width:0;flex:1;flex-direction:column}.invite-copy text{color:#191919;font-size:28rpx;font-weight:600}.invite-copy small{margin-top:6rpx;color:#888;font-size:21rpx;line-height:1.5}.teacher-invite-card button{height:62rpx;margin:0 0 0 16rpx;padding:0 18rpx;border-radius:12rpx;background:#07c160;color:#fff;font-size:23rpx;line-height:62rpx;transition:transform .16s ease,opacity .16s ease}.invite-button-pressed{opacity:.78;transform:scale(.96)}.empty-inline{display:flex;flex-direction:column}.empty-inline small{margin-top:8rpx;color:#aaa;font-size:20rpx}.member-row button[disabled]{opacity:.5}.member-security-note{display:flex;align-items:flex-start;margin:22rpx 12rpx 0;color:#888;font-size:21rpx;line-height:1.55}.member-security-note view{display:flex;width:30rpx;height:30rpx;flex:0 0 auto;align-items:center;justify-content:center;margin:1rpx 10rpx 0 0;border-radius:50%;background:#e9f8ef;color:#07a34f;font-size:18rpx}.member-security-note text{flex:1}
 @media(max-height:700px){.setup-progress{margin:34rpx 20rpx 28rpx}.setup-card{padding-top:30rpx}.setup-textarea{height:220rpx}.setup-note{margin-top:18rpx}}
-@media(prefers-color-scheme:dark){.setup-buttons .setup-back{background:#2a2a2a;color:rgba(255,255,255,.9)}.setup-buttons .setup-submit{background:#07c160;color:#fff}}
+@media(prefers-color-scheme:dark){.setup-buttons .setup-back{background:#2a2a2a;color:rgba(255,255,255,.9)}.setup-buttons .setup-submit{background:#07c160;color:#fff}.teacher-invite-card{background:linear-gradient(135deg,#173a29,#202321)}.invite-copy text{color:rgba(255,255,255,.92)}.member-security-note view{background:#173a29;color:#35d67c}}
+
+/* 设置页切换、名单更新与自定义弹层动效。 */
+.segmented button{transition:transform .16s cubic-bezier(.22,1,.36,1),background-color .22s ease,color .22s ease,box-shadow .22s ease}
+.segmented button.active{animation:settings-tab-select .25s cubic-bezier(.22,1,.36,1)}
+.segment-pressed{opacity:.74;transform:scale(.96)}
+.form-card,.member-list,.face-guide,.face-grid{animation:settings-content-in .32s cubic-bezier(.22,1,.36,1) both}
+.student-row,.member-row,.face-card{animation:settings-row-in .28s cubic-bezier(.22,1,.36,1) both}
+.modal-mask{animation:mask-in .22s ease both}
+.batch-sheet{animation:batch-sheet-in .3s cubic-bezier(.22,1,.36,1) both}
+.setup-overlay{animation:mask-in .24s ease both}
+.setup-card{animation:setup-card-in .34s cubic-bezier(.22,1,.36,1) both}
+.progress-line,.step-number{transition:background-color .3s ease,color .3s ease,transform .3s cubic-bezier(.22,1,.36,1)}
+.setup-progress .done .step-number{animation:step-complete .32s cubic-bezier(.22,1,.36,1)}
+@keyframes settings-tab-select{from{transform:scale(.94)}to{transform:scale(1)}}
+@keyframes settings-content-in{from{opacity:0;transform:translateY(14rpx)}to{opacity:1;transform:none}}
+@keyframes settings-row-in{from{opacity:0;transform:translateX(10rpx)}to{opacity:1;transform:none}}
+@keyframes mask-in{from{opacity:0}to{opacity:1}}
+@keyframes batch-sheet-in{from{opacity:.4;transform:translateY(70rpx)}to{opacity:1;transform:none}}
+@keyframes setup-card-in{from{opacity:0;transform:translateX(22rpx) scale(.985)}to{opacity:1;transform:none}}
+@keyframes step-complete{0%{transform:scale(.78)}70%{transform:scale(1.12)}100%{transform:scale(1)}}
+@media(prefers-reduced-motion:reduce){.segmented button.active,.form-card,.member-list,.face-guide,.face-grid,.student-row,.member-row,.face-card,.modal-mask,.batch-sheet,.setup-overlay,.setup-card,.setup-progress .done .step-number{animation:none}.segmented button,.progress-line,.step-number{transition:none}}
+
+/* 手机窄屏布局：原生 button 自带尺寸，必须显式约束以免挤出网格。 */
+.segmented{width:100%;grid-template-columns:repeat(3,minmax(0,1fr))}
+.segmented button{width:100%;min-width:0;max-width:none}
+.list-heading{display:block;margin:36rpx 0 18rpx}
+.list-heading>view:first-child{display:flex;align-items:baseline;justify-content:flex-start;min-width:0}
+.list-heading>view:first-child text{white-space:nowrap}
+.student-add-actions{display:grid!important;width:100%;grid-template-columns:repeat(2,minmax(0,1fr));gap:12rpx;margin-top:18rpx}
+.student-add-actions button{width:100%;min-width:0;height:64rpx;padding:0 8rpx;line-height:64rpx;white-space:nowrap}
+.teacher-invite-card{display:grid;grid-template-columns:72rpx minmax(0,1fr);gap:0 18rpx;align-items:center;padding:26rpx}
+.teacher-invite-card .invite-icon{grid-column:1;grid-row:1;margin:0}
+.teacher-invite-card .invite-copy{grid-column:2;grid-row:1}
+.teacher-invite-card>button{width:100%;min-width:0;height:72rpx;grid-column:1/-1;grid-row:2;margin:22rpx 0 0;padding:0;line-height:72rpx}
+.member-list{padding:0 24rpx}
+.member-row{display:grid;min-width:0;grid-template-columns:72rpx minmax(0,1fr);gap:0 18rpx;align-items:center;padding:22rpx 0}
+.member-avatar{grid-column:1;grid-row:1;margin:0}
+.member-copy{grid-column:2;grid-row:1;margin:0}
+.member-copy>view{display:flex;min-width:0;flex-wrap:wrap;align-items:center;gap:8rpx}
+.member-copy>view>text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.role{flex:0 0 auto;margin-left:0}
+.member-actions{display:flex;grid-column:2;grid-row:2;justify-content:flex-end;gap:12rpx;margin-top:16rpx}
+.member-actions button,.member-row .member-actions button{width:auto;min-width:128rpx;height:60rpx;margin:0;padding:0 20rpx;flex:0 0 auto;line-height:60rpx;white-space:nowrap}
+.member-actions .danger-text{background:#fff1f0;color:#fa5151}
+.member-actions .transfer-text{background:#fff4e5;color:#b96800}
+@media(max-width:360px){.form-card{padding:26rpx 22rpx}.settings-head{align-items:flex-start;flex-direction:column}.connection-state{margin-top:12rpx}.member-row{grid-template-columns:64rpx minmax(0,1fr);gap:0 14rpx}.member-avatar{width:64rpx;height:64rpx}.member-actions{grid-column:1/-1}.member-actions button,.member-row .member-actions button{min-width:0;flex:1}.teacher-invite-card{grid-template-columns:64rpx minmax(0,1fr)}.invite-icon{width:64rpx;height:64rpx}}
+@media(prefers-color-scheme:dark){.member-actions .danger-text{background:#3a2020;color:#ff8d8d}.member-actions .transfer-text{background:#493719;color:#ffc36b}}
+.room-settings-card{display:flex;align-items:center;justify-content:space-between;gap:20rpx;margin-bottom:24rpx;padding:24rpx}.room-settings-main{display:flex;min-width:0;flex:1;align-items:center}.room-settings-mark{display:flex;width:68rpx;height:68rpx;flex:0 0 auto;align-items:center;justify-content:center;margin-right:18rpx;border-radius:17rpx;background:#e9f8ef;color:#078844;font-size:28rpx;font-weight:600}.room-settings-main>view:last-child{display:flex;min-width:0;flex-direction:column}.room-settings-main text{font-size:27rpx;font-weight:600}.room-settings-main small{overflow:hidden;margin-top:6rpx;color:#888;font-size:20rpx;text-overflow:ellipsis;white-space:nowrap}.room-exit-button{width:auto;min-width:142rpx;height:62rpx;flex:0 0 auto;margin:0;padding:0 18rpx;border-radius:12rpx;background:#fff1f0;color:#fa5151;font-size:22rpx;line-height:62rpx}.room-exit-pressed{opacity:.72;transform:scale(.96)}.teacher-limited-card{display:flex;flex-direction:column;align-items:center;padding:56rpx 38rpx;text-align:center}.limited-mark{display:flex;width:72rpx;height:72rpx;align-items:center;justify-content:center;margin-bottom:20rpx;border-radius:50%;background:#e9f8ef;color:#07a34f;font-size:30rpx}.teacher-limited-card>text{font-size:30rpx;font-weight:600}.teacher-limited-card small{max-width:560rpx;margin-top:12rpx;color:#888;font-size:23rpx;line-height:1.65}@media(max-width:360px){.room-settings-card{align-items:stretch;flex-direction:column}.room-exit-button{width:100%}}@media(prefers-color-scheme:dark){.room-settings-mark,.limited-mark{background:#173a29;color:#35d67c}.room-exit-button{background:#3a2020;color:#ff8d8d}.room-settings-main text,.teacher-limited-card>text{color:rgba(255,255,255,.92)}}

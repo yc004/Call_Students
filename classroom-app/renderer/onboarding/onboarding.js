@@ -17,6 +17,10 @@
   let selectedId = '';
   let refreshing = false;
 
+  function reportError(title, error, context, suggestions) {
+    if (window.clientErrors) window.clientErrors.show({ title, error, context, suggestions:suggestions || ['稍后重试刚才的操作', '如果仍然失败，请复制错误信息提交管理员'] });
+  }
+
   function esc(value) {
     return String(value || '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
   }
@@ -85,15 +89,17 @@
     refreshBtn.disabled = true;
     try {
       const status = await api.getOnboardingStatus();
-      if (status.bound) {
+      if (status && status.bound) {
         successDesc.textContent = `已绑定班主任 ${status.homeroom.name}。`;
         successOverlay.classList.remove('hidden');
         return;
       }
+      const candidates = (status && status.candidates) || [];
+      successOverlay.classList.add('hidden');
       renderAddresses(status);
       renderNetworks(status.network);
       renderClassroomQr();
-      renderCandidates(status.candidates || []);
+      renderCandidates(candidates);
     } catch (_) {
       setError('暂时无法读取绑定状态，请稍后重试');
     } finally {
@@ -119,7 +125,10 @@
       if (!result || !result.success) throw new Error(result && result.message || '网卡设置失败');
       renderNetworks(result);
       await refresh();
-    } catch (error) { setError(error.message || '网卡设置失败'); }
+    } catch (error) {
+      setError(error.message || '网卡设置失败');
+      reportError('网卡设置失败', error, '首次设置－选择网卡', ['确认所选网卡当前可用并已连接局域网', '尝试恢复自动选择后重试']);
+    }
     finally { networkInterface.disabled = false; }
   });
   bindBtn.addEventListener('click', async () => {
@@ -129,13 +138,13 @@
     try {
       const result = await api.bindHomeroomTeacher(selectedId);
       if (!result || !result.success) {
-        setError(result && result.message ? result.message : '绑定失败，请重试');
-        return;
+        throw new Error(result && result.message ? result.message : '绑定失败，请重试');
       }
       successDesc.textContent = `已绑定班主任 ${result.teacher.name}。`;
       successOverlay.classList.remove('hidden');
-    } catch (_) {
+    } catch (error) {
       setError('绑定服务暂时不可用，请重试');
+      reportError('绑定班主任失败', error, '首次设置－教师身份确认');
     } finally {
       bindBtn.textContent = '确认绑定班主任';
       bindBtn.disabled = !selectedId;

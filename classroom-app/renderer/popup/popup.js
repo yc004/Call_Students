@@ -10,7 +10,7 @@
   // ── DOM ──
   let callClass, callStudent, callMessage, closeBtn, timerBar;
 
-  const DISPLAY_DURATION = 8000;
+  const MIN_DISPLAY_DURATION = 8000;
   let dismissTimer = null;
 
   // ═══════════════════════════════════
@@ -42,6 +42,11 @@
     loadVoices();
   }
 
+  function estimateDisplayDuration(text) {
+    // 中文系统语音在 0.9 倍速下通常每字约 220—280ms；为完整名单预留充分时间。
+    return Math.max(MIN_DISPLAY_DURATION, String(text || '').length * 280);
+  }
+
   function speak(text) {
     if (!('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel();
@@ -63,18 +68,25 @@
     if (!call) return;
 
     if (callClass)   callClass.textContent   = call.className || '';
-    if (callStudent) callStudent.textContent = call.studentName || '';
+    const studentNames = Array.isArray(call.studentNames) ? call.studentNames.filter(Boolean) : [];
+    if (callStudent) {
+      callStudent.textContent = call.studentName || '';
+      callStudent.classList.toggle('batch', studentNames.length > 1);
+    }
     if (callMessage) callMessage.textContent = call.message || '办公室';
+
+    const speechText = call.message || `${studentNames.join('、') || call.studentName || ''}同学，请到办公室`;
+    const displayDuration = estimateDisplayDuration(speechText);
 
     // 倒计时条
     if (timerBar) {
       timerBar.style.animation = 'none';
       void timerBar.offsetWidth;
-      timerBar.style.animation = `shrink ${DISPLAY_DURATION}ms linear forwards`;
+      timerBar.style.animation = `shrink ${displayDuration}ms linear forwards`;
     }
 
     // 朗读（教师端已拼好完整消息）
-    speak(call.message || `${call.studentName || ''}同学，请到办公室`);
+    speak(speechText);
 
     // ack
     if (call.callId && api.callAck) {
@@ -85,7 +97,7 @@
     clearTimeout(dismissTimer);
     dismissTimer = setTimeout(() => {
       if (api.closePopup) api.closePopup();
-    }, DISPLAY_DURATION);
+    }, displayDuration);
   }
 
   function close() {

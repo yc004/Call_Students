@@ -27,20 +27,22 @@
       <view class="variable-hint"><text>{name}</text><text>会在发送时自动替换为所选学生姓名</text></view>
     </view>
     <scroll-view class="template-scroll" scroll-x enhanced show-scrollbar="false">
-      <view class="template-row"><button class="template-chip {{callText === item ? 'active' : ''}}" wx:for="{{templates}}" wx:key="*this" data-index="{{index}}" bindtap="useTemplate">{{item}}</button></view>
+      <view class="template-row"><button class="template-chip {{callText === item ? 'active' : ''}}" wx:for="{{templates}}" wx:key="*this" data-index="{{index}}" bindtap="useTemplate" hover-class="chip-pressed">{{item}}</button></view>
     </scroll-view>
 
-    <view class="section-heading"><view><text class="section-title">选择学生</text><text class="section-note">共 {{students.length}} 名学生，点击即可呼叫</text></view></view>
+    <view class="section-heading call-student-heading"><view><text class="section-title">选择学生</text><text class="section-note" wx:if="{{multiSelect}}">勾选多名学生后统一发送</text><text class="section-note" wx:else>共 {{students.length}} 名学生，点击即可呼叫</text></view><button class="multi-toggle {{multiSelect?'active':''}}" bindtap="toggleMultiSelect">{{multiSelect?'取消多选':'多选呼叫'}}</button></view>
     <view class="search-box"><view class="search-icon"></view><input placeholder="搜索学生姓名" value="{{query}}" bindinput="search" confirm-type="search"/><text class="search-clear" wx:if="{{query}}" bindtap="clearSearch">×</text></view>
+    <view class="selection-tools" wx:if="{{multiSelect}}"><button bindtap="selectVisible">全选当前列表</button><button bindtap="clearSelection" disabled="{{!selectedCount}}">清空选择</button><text>已选 {{selectedCount}} 人</text></view>
 
     <view class="student-list surface" wx:if="{{filteredStudents.length}}">
-      <view class="student-cell {{callingId === item.id ? 'sent' : ''}}" hover-class="cell-hover" wx:for="{{filteredStudents}}" wx:key="id" data-id="{{item.id}}" bindtap="callStudent">
+      <view class="student-cell {{item.sent ? 'sent' : ''}} {{item.selected ? 'selected' : ''}}" hover-class="cell-hover" hover-stay-time="70" wx:for="{{filteredStudents}}" wx:key="id" data-id="{{item.id}}" bindtap="handleStudentTap">
         <view class="student-avatar">{{item.initial}}</view>
-        <view class="student-main"><text class="student-name">{{item.name}}</text><text class="student-desc">{{callingId === item.id ? '呼叫已发送' : '点击发送当前呼叫内容'}}</text></view>
-        <view class="call-button">{{callingId === item.id ? '✓' : '呼叫'}}</view>
+        <view class="student-main"><text class="student-name">{{item.name}}</text><text class="student-desc">{{item.sent?'呼叫已发送':(multiSelect?(item.selected?'已加入批量呼叫':'点击选择这名学生'):'点击发送当前呼叫内容')}}</text></view>
+        <view class="call-button {{multiSelect?'check-button':''}}">{{item.sent?'✓':(multiSelect?(item.selected?'✓':''):'呼叫')}}</view>
       </view>
     </view>
     <view class="surface empty" wx:else><view class="empty-mark">人</view><text class="empty-title">没有找到学生</text><text class="empty-desc">请检查输入的姓名。</text></view>
+    <view class="batch-call-bar" wx:if="{{multiSelect}}"><view><strong>已选 {{selectedCount}} 人</strong><small>{{selectedCount?'将合并为一条大屏呼叫':'点击学生加入批量呼叫'}}</small></view><button disabled="{{!selectedCount}}" bindtap="callSelected">呼叫已选学生</button></view>
   </block>
 
   <view class="surface empty unavailable" wx:else>
