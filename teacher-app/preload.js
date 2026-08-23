@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('api', {
   updateTeacherProfile: (input) => ipcRenderer.invoke('update-teacher-profile', input),
   generateMiniProgramQr: () => ipcRenderer.invoke('generate-mini-program-qr'),
   getMiniProgramLoginStatus: () => ipcRenderer.invoke('get-mini-program-login-status'),
+  cancelMiniProgramLogin: () => ipcRenderer.invoke('cancel-mini-program-login'),
   getWechatDirectLinkSettings: () => ipcRenderer.invoke('get-wechat-direct-link-settings'),
   setWechatDirectLinkSettings: (baseUrl) => ipcRenderer.invoke('set-wechat-direct-link-settings', baseUrl),
   exportHomework: (data) => ipcRenderer.invoke('export-homework', data),

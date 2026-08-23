@@ -175,7 +175,7 @@ async function logout(cloud) {
 
 function isFaceMessage(message) {
   const type = String(message && message.type || '');
-  return type.startsWith('face-') || type.startsWith('pending-face') || type.startsWith('label-face');
+  return type === 'set-face-system' || type.startsWith('face-') || type.startsWith('pending-face') || type.startsWith('label-face');
 }
 
 module.exports = { normalizeServerUrl, request, loginMiniProgramAccount, completeTeacherProfile, updateTeacherProfile, getTeacherProfile, uploadAvatar, listClassrooms, refreshSession, leaveClassroom, logout, isFaceMessage, explainNetworkError };

@@ -13,14 +13,14 @@
       <view class="scan-corner bottom-left"></view><view class="scan-corner bottom-right"></view>
     </view>
     <text class="scan-title">扫描连接二维码</text>
-    <text class="scan-desc">登录电脑教师端，或扫描教室大屏上的二维码添加教室</text>
+    <text class="scan-desc">使用当前小程序账户登录电脑，或扫描教室大屏二维码添加教室</text>
     <button class="primary scan-button" loading="{{scanning}}" disabled="{{scanning}}" bindtap="chooseScanAction">{{scanning ? '正在打开相机' : '开始扫码'}}</button>
   </view>
 
   <view class="section-heading"><view><text class="section-title">可以扫描</text><text class="section-note">二维码仅用于局域网内建立安全连接</text></view></view>
   <view class="scan-options surface">
     <view class="scan-option" bindtap="scanTeacherLogin" hover-class="scan-option_active">
-      <view class="option-icon teacher-icon">教</view><view class="option-copy"><text>登录电脑教师端</text><text>把当前教师账户和教室列表同步到电脑</text></view><text class="option-arrow">›</text>
+      <view class="option-icon teacher-icon">教</view><view class="option-copy"><text>登录电脑教师端</text><text>使用当前账户登录一台尚未登录的教师端</text></view><text class="option-arrow">›</text>
     </view>
     <view class="scan-option" bindtap="scanClassroom" hover-class="scan-option_active">
       <view class="option-icon room-icon">室</view><view class="option-copy"><text>添加教室</text><text>扫描教室端二维码，保存并立即连接</text></view><text class="option-arrow">›</text>

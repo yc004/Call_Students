@@ -1,6 +1,5 @@
 const PAIRING_PREFIX = 'CLASSROOM-CALL-PAIR-1';
 const PENDING_PAIRING_KEY = 'classroom_call_pending_teacher_pairing_v1';
-const connectionCode = require('./connection-code');
 
 function authError(code, message) {
   const error = new Error(message);
@@ -90,7 +89,63 @@ function clearPendingPairing() {
   try { wx.removeStorageSync(PENDING_PAIRING_KEY); } catch (_error) {}
 }
 
-function requestHost(host, pairing, localSession) {
+function avatarContentType(filePath) {
+  const cleanPath = String(filePath || '').split('?')[0].toLowerCase();
+  if (cleanPath.endsWith('.png')) return 'image/png';
+  if (cleanPath.endsWith('.webp')) return 'image/webp';
+  return 'image/jpeg';
+}
+
+function compressAvatar(filePath) {
+  if (!filePath || typeof wx.compressImage !== 'function') return Promise.resolve(filePath);
+  return new Promise(resolve => {
+    wx.compressImage({
+      src:filePath,
+      quality:72,
+      compressedWidth:512,
+      compressedHeight:512,
+      success:result => resolve(result.tempFilePath || filePath),
+      fail:() => resolve(filePath),
+    });
+  });
+}
+
+function readFileBase64(filePath) {
+  return new Promise((resolve, reject) => {
+    if (!wx.getFileSystemManager) { resolve(''); return; }
+    wx.getFileSystemManager().readFile({
+      filePath,
+      encoding:'base64',
+      success:result => resolve(String(result.data || '')),
+      fail:error => reject(new Error(error && error.errMsg || '无法读取头像文件')),
+    });
+  });
+}
+
+async function preparePairingSession(localSession) {
+  const account = { ...(localSession.account || {}) };
+  const avatarUrl = String(account.avatarUrl || '').trim();
+  let avatar = null;
+  if (avatarUrl && !/^https?:\/\//i.test(avatarUrl)) {
+    const avatarPath = await compressAvatar(avatarUrl);
+    const base64 = await readFileBase64(avatarPath);
+    if (base64) {
+      const byteLength = Math.floor(base64.length * 3 / 4);
+      if (byteLength > 2 * 1024 * 1024) throw authError('PAIR_AVATAR_TOO_LARGE', '头像文件过大，请更换较小的头像后重试');
+      avatar = { contentType:avatarContentType(avatarPath), base64 };
+    }
+    delete account.avatarUrl;
+  }
+  return {
+    account,
+    rooms:Array.isArray(localSession.rooms) ? localSession.rooms : [],
+    cloud:localSession.cloud || null,
+    usageMode:localSession.cloud ? 'tob' : 'toc',
+    avatar,
+  };
+}
+
+function requestHost(host, pairing, transferSession) {
   return new Promise((resolve, reject) => {
     if (typeof wx.createTCPSocket !== 'function') {
       reject(authError('PAIR_UNSUPPORTED', '当前微信版本不支持局域网安全配对，请升级微信后重试'));
@@ -99,7 +154,7 @@ function requestHost(host, pairing, localSession) {
     const socket = wx.createTCPSocket({ type: 'IPv4' });
     let completed = false;
     const receivedBytes = [];
-    const timeout = setTimeout(() => finish(new Error('连接教师端超时')), 6000);
+    const timeout = setTimeout(() => finish(new Error('连接教师端超时')), 12000);
     function finish(error, data) {
       if (completed) return;
       completed = true;
@@ -107,7 +162,7 @@ function requestHost(host, pairing, localSession) {
       try { socket.close(); } catch (_error) {}
       if (error) reject(error); else resolve(data);
     }
-    socket.onConnect(() => socket.write(`${JSON.stringify({ token: pairing.token, account: localSession.account, rooms: localSession.rooms || [], cloud:localSession.cloud || null })}\n`));
+    socket.onConnect(() => socket.write(`${JSON.stringify({ token:pairing.token, ...transferSession })}\n`));
     socket.onMessage(({ message }) => {
       const bytes = new Uint8Array(message);
       for (let index = 0; index < bytes.length; index += 1) receivedBytes.push(bytes[index]);
@@ -137,40 +192,14 @@ function requestHost(host, pairing, localSession) {
   });
 }
 
-function normalizeSession(data) {
-  const sourceAccount = data && data.account;
-  const name = sourceAccount && String(sourceAccount.name || '').trim();
-  const connectionId = sourceAccount && String(sourceAccount.connectionId || '').trim();
-  if (!name || name.length > 20 || !/^[a-zA-Z0-9-]{8,128}$/.test(connectionId)) throw new Error('教师端返回的身份信息无效');
-  const rooms = (Array.isArray(data.rooms) ? data.rooms : []).slice(0, 50).map(room => ({
-    id: String(room.id || '').slice(0, 80),
-    name: String(room.name || '教室').slice(0, 40),
-    connectionCode: connectionCode.format(room.connectionCode),
-    subjects: Array.from(new Set((room.subjects || []).map(value => String(value).trim()).filter(Boolean))).slice(0, 20),
-  })).filter(room => connectionCode.isValid(room.connectionCode));
-  return {
-    account: { name, connectionId, subjects: [] },
-    rooms,
-    activeRoom: rooms[0] || null,
-    cloud: data && data.cloud || null,
-    pairedAt: new Date().toISOString(),
-  };
-}
-
 async function pairWithTeacher(value, localSession) {
   if (!localSession || !localSession.account) throw authError('PAIR_ACCOUNT_REQUIRED', '请先在小程序登录或创建教师账户');
   const pairing = parsePairingQr(value);
+  const transferSession = await preparePairingSession(localSession);
   let lastError = null;
   for (const host of pairing.hosts) {
     try {
-      const result = await requestHost(host, pairing, localSession);
-      const normalized = normalizeSession(result);
-      // A wxfile:// or temporary avatar belongs to the current phone and is not
-      // usable by the desktop client. Keep it locally when pairing instead of
-      // letting a desktop response without an avatar erase the user's profile.
-      const localAvatar = String(localSession.account.avatarUrl || '').trim();
-      if (localAvatar) normalized.account.avatarUrl = localAvatar;
-      return normalized;
+      return await requestHost(host, pairing, transferSession);
     } catch (error) {
       lastError = error;
       if (error && (error.code === 'PAIR_UNSUPPORTED' || error.code === 'PAIR_QR_EXPIRED')) throw error;
@@ -187,5 +216,6 @@ module.exports = {
   savePendingPairing,
   loadPendingPairing,
   clearPendingPairing,
+  preparePairingSession,
   pairWithTeacher,
 };

@@ -267,6 +267,9 @@ function connect(room, account, options = {}) {
     else if (message.type === 'face-status') { state.attendance = message.attendance || []; emit('attendance', message); }
     else if (message.type === 'face-detections') { state.presence = message.detections || []; emit('presence', message); }
     else if (message.type === 'pending-face-library') { state.pendingFaces = message.faces || []; emit('pendingFaces', message); }
+    else if (message.type === 'face-system-state') emit('faceSystemState', message);
+    else if (message.type === 'face-preview-state') emit('facePreviewState', message);
+    else if (message.type === 'face-camera-frame') emit('faceCameraFrame', message);
   };
   // 接收与异常监听必须先于 onOpen。局域网内服务端响应非常快，先发送身份再注册
   // onMessage 会漏掉首次绑定的 approval-required，最终被误判为连接超时。
@@ -288,7 +291,7 @@ function formatSocketError(error, target) {
 
 function send(data) {
   if (!socketTask) return false;
-  if (currentRoom && currentRoom.transport === 'cloud' && /^(face-|pending-face|label-face)/.test(String(data && data.type || ''))) return false;
+  if (currentRoom && currentRoom.transport === 'cloud' && /^(face-|pending-face|label-face|set-face-system)/.test(String(data && data.type || ''))) return false;
   const payload = currentRoom && currentRoom.transport === 'cloud' ? { ...data, classroomId:currentRoom.cloudClassroomId } : data;
   try { socketTask.send({ data: JSON.stringify(payload) }); return true; }
   catch (_error) { return false; }

@@ -166,6 +166,20 @@ function saveLocalTeacherAvatar(filePath) {
   return pathToFileURL(target).toString();
 }
 
+function savePairedTeacherAvatar(avatar) {
+  if (!avatar) return '';
+  const contentType = String(avatar.contentType || '');
+  const extension = contentType === 'image/png' ? '.png' : contentType === 'image/webp' ? '.webp' : contentType === 'image/jpeg' ? '.jpg' : '';
+  if (!extension) throw new Error('小程序头像格式不受支持');
+  const data = Buffer.from(String(avatar.base64 || ''), 'base64');
+  if (!data.length || data.length > 2 * 1024 * 1024) throw new Error('小程序头像大小不能超过 2MB');
+  const directory = path.join(app.getPath('userData'), 'profile');
+  if (!fs.existsSync(directory)) fs.mkdirSync(directory, { recursive:true });
+  const target = path.join(directory, `avatar-paired-${Date.now()}${extension}`);
+  fs.writeFileSync(target, data);
+  return pathToFileURL(target).toString();
+}
+
 async function uploadTeacherAvatar(cloud, filePath) {
   const contentType = avatarContentType(filePath);
   const data = fs.readFileSync(filePath);
@@ -300,7 +314,7 @@ ipcMain.handle('refresh-cloud-classrooms', async () => {
 ipcMain.handle('enroll-teacher-cloud', async (_, input) => {
   try {
     const stored = loadAllData();
-    if (!stored.account) return { ok:false, message:'请先使用小程序扫码登录教师端' };
+    if (!stored.account) return { ok:false, message:'请先登录教师端' };
     if (stored.settings.cloud) return { ok:false, message:'当前教师账号已经接入云服务，请直接刷新教室数据' };
     const serverUrl = normalizeServerUrl(input && input.serverUrl);
     const key = String(input && input.key || '').trim();
@@ -315,10 +329,10 @@ ipcMain.handle('enroll-teacher-cloud', async (_, input) => {
 });
 ipcMain.handle('clear-teacher-session', async () => {
   const stored = loadAllData();
+  saveData({ account:null, rooms:[], callHistory:[], settings:{ ...stored.settings, cloud:null } });
   if (stored.settings.cloud && stored.settings.cloud.refreshToken) {
     try { await requestJson(stored.settings.cloud.serverUrl, '/api/v1/auth/logout', { method:'POST', body:{ refreshToken:stored.settings.cloud.refreshToken } }); } catch (_error) {}
   }
-  saveData({ account:null, rooms:[], callHistory:[], settings:{ ...stored.settings, cloud:null } });
   return true;
 });
 ipcMain.handle('get-wechat-direct-link-settings', () => {
@@ -336,25 +350,32 @@ ipcMain.handle('set-wechat-direct-link-settings', (_, value) => {
 ipcMain.handle('generate-mini-program-qr', async () => {
   const stored = loadAllData();
   try {
+    if (stored.account) return { ok:false, code:'ALREADY_SIGNED_IN', message:'教师端已经登录。请先退出当前账户，再从登录页使用小程序扫码登录。' };
     miniProgramLoginResult = null;
     if (activeMiniProgramPairing) await activeMiniProgramPairing.stop();
     activeMiniProgramPairing = await startPairingServer({
+      canAccept: () => !loadAllData().account,
       onComplete: result => {
         const previous = loadAllData();
-        const accountChanged = !previous.account || previous.account.connectionId !== result.account.connectionId;
+        if (previous.account) throw new Error('教师端已经登录，请先退出当前账户后再扫码');
+        const avatarUrl = savePairedTeacherAvatar(result.avatar)
+          || result.account.avatarUrl
+          || result.cloud && result.cloud.avatarUrl
+          || '';
+        const account = { ...result.account, avatarUrl };
         saveData({
-          account: result.account,
+          account,
           rooms: result.rooms,
-          callHistory: accountChanged ? [] : previous.callHistory,
+          callHistory: [],
           settings:{ ...previous.settings, cloud:result.cloud || null },
         });
         miniProgramLoginResult = {
           ok: true,
-          account: publicAccount(result.account),
+          account: publicAccount(account),
           rooms: result.rooms,
           cloud:result.cloud || null,
-          accountChanged,
-          callHistory: accountChanged ? [] : previous.callHistory,
+          accountChanged:true,
+          callHistory:[],
         };
       },
     });
@@ -385,6 +406,13 @@ ipcMain.handle('get-mini-program-login-status', () => {
   const result = miniProgramLoginResult;
   if (result) miniProgramLoginResult = null;
   return result || { ok: false, pending: true };
+});
+ipcMain.handle('cancel-mini-program-login', async () => {
+  const pairing = activeMiniProgramPairing;
+  activeMiniProgramPairing = null;
+  miniProgramLoginResult = null;
+  if (pairing) await pairing.stop();
+  return { ok:true };
 });
 ipcMain.handle('export-homework', async (event, input) => {
   try {

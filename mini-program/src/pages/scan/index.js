@@ -1,6 +1,5 @@
 const socket = require('../../utils/socket');
 const { sessionStore } = require('../../utils/session');
-const { pairWithTeacher } = require('../../utils/auth');
 const { parseClassroomQr } = require('../../utils/classroom-qr');
 const sharedRoom = require('../../utils/shared-room');
 const scanAction = require('../../utils/scan-action');
@@ -62,23 +61,7 @@ Page({
   },
 
   scanTeacherLogin() {
-    this.scanCode(async result => {
-      wx.showLoading({ title: '正在登录教师端', mask: true });
-      try {
-        const synced = await pairWithTeacher(result, this.session);
-        const previousCode = this.session.activeRoom && this.session.activeRoom.connectionCode;
-        const activeRoom = synced.rooms.find(item => item.connectionCode === previousCode) || synced.rooms[0] || null;
-        const updated = sessionStore.save({ ...synced, activeRoom, pairedAt: new Date().toISOString() });
-        getApp().globalData.session = updated;
-        this.session = updated;
-        this.setData({ activeRoomName: activeRoom && activeRoom.name || '', roomCount: updated.rooms.length });
-        wx.hideLoading();
-        wx.showModal({ title: '教师端登录成功', content: '账户和教室连接信息已安全同步到电脑教师端。', showCancel: false });
-      } catch (error) {
-        wx.hideLoading();
-        this.showConnectionFailure('无法登录教师端', error && error.message);
-      }
-    });
+    this.scanCode(result => scanAction.handleTeacherLogin(result, () => this.onShow()));
   },
 
   scanClassroom() {

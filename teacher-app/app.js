@@ -1,6 +1,6 @@
 /* ══════════════════════════════════════════
    教师端 — 登录与连接流程
-   个人本地 / 组织云端登录 → 小程序扫码同步 → 连接教室 → 使用教学功能
+   个人本地 / 组织云端 / 小程序扫码（三种登录方式）→ 连接教室 → 使用教学功能
    ══════════════════════════════════════════ */
 
 (function () {
@@ -89,8 +89,9 @@
     pendingFaces: [],   // 教室端持久化的待标注人脸库，仅班主任可匹配姓名
     pendingLabelFace: null, // 待标注的人脸 { faceId, descriptor }
     account: null,      // 登录后才存在：{ name, subjects, connectionId }
-    cloud: null,        // 小程序扫码同步的云服务会话
+    cloud: null,        // 当前登录方式对应的云服务会话（个人模式为 null）
     faceLanWs: null,
+    faceSystemStateKnown: false,
     faceSystemEnabled: false,
     facePreviewOpen: false,
     teacherStatus: null,
@@ -200,6 +201,7 @@
 
   function hideAccountOverlay() {
     stopMiniLoginPolling();
+    api.cancelMiniProgramLogin?.().catch?.(() => {});
     accountOverlay && accountOverlay.classList.add('hidden');
     document.body.classList.remove('account-locked');
     const appRoot = document.querySelector('.app');
@@ -225,7 +227,7 @@
       if (image) image.src = result.qrDataUrl;
       if (status) status.textContent = result.qrMode === 'wechat-direct'
         ? '打开微信直接扫描即可登录教师端。二维码 2 分钟内有效。'
-        : '打开小程序“我的—登录电脑教师端”扫码。二维码 2 分钟内有效。';
+        : '打开小程序中间的“扫码”，选择“登录电脑教师端”。二维码 2 分钟内有效。';
       if (button) button.textContent = '刷新二维码';
       miniLoginPollTimer = setInterval(checkMiniProgramLoginStatus, 700);
     } catch (error) {
@@ -246,6 +248,11 @@
 
   async function checkMiniProgramLoginStatus() {
     if (!api.getMiniProgramLoginStatus) return;
+    if (state.account || accountOverlay?.classList.contains('hidden')) {
+      stopMiniLoginPolling();
+      api.cancelMiniProgramLogin?.().catch?.(() => {});
+      return;
+    }
     const result = await api.getMiniProgramLoginStatus();
     if (!result || !result.ok) return;
     stopMiniLoginPolling();
@@ -292,31 +299,6 @@
     element.textContent = avatarUrl ? '' : String(account && account.name || '教').trim().slice(0, 1);
   }
 
-  async function handleGenerateMiniProgramQr() {
-    if (!api.generateMiniProgramQr) return;
-    const button = document.getElementById('generateMiniProgramQrBtn');
-    const resultBox = document.getElementById('miniProgramQrResult');
-    const image = document.getElementById('miniProgramQrImage');
-    const hint = document.getElementById('miniProgramQrHint');
-    if (button) { button.disabled = true; button.textContent = '生成中…'; }
-    try {
-      const result = await api.generateMiniProgramQr();
-      if (!result || !result.ok) { alert(result && result.message ? result.message : '二维码生成失败'); return; }
-      if (image) image.src = result.qrDataUrl;
-      if (hint) hint.textContent = result.roomCount
-        ? `手机与电脑需在同一局域网。扫码后将安全传输 ${result.roomCount} 个已保存教室；二维码 2 分钟内有效，成功后立即失效。`
-        : '手机与电脑需在同一局域网。当前没有已保存教室；二维码 2 分钟内有效，成功后立即失效。';
-      resultBox && resultBox.classList.remove('hidden');
-      if (button) button.textContent = '刷新二维码';
-      stopMiniLoginPolling();
-      miniLoginPollTimer = setInterval(checkMiniProgramLoginStatus, 700);
-    } catch (_error) {
-      alert('二维码生成失败，请重试');
-    } finally {
-      if (button) button.disabled = false;
-    }
-  }
-
   function openAccountModal() {
     if (!state.account || !accountModal) return;
     const name = document.getElementById('accountModalName');
@@ -336,7 +318,6 @@
     renderAccountAvatar(document.getElementById('accountProfileAvatar'), state.account, state.cloud?.avatarUrl || '');
     const profileStatus = document.getElementById('accountProfileStatus');
     if (profileStatus) profileStatus.textContent = state.cloud ? '组织模式可以同时修改登录密码' : '个人模式资料不会上传到云端';
-    document.getElementById('miniProgramQrResult')?.classList.add('hidden');
     accountModal.classList.remove('hidden');
     renderCloudAccountSettings();
     loadHomeworkAiSettings();
@@ -445,10 +426,16 @@
   }
 
   function renderCloudAccountSettings() {
+    const section = document.getElementById('accountCloudSettings');
     const status = document.getElementById('accountCloudStatus');
     const server = document.getElementById('accountCloudServer');
-    if (server && state.cloud && state.cloud.serverUrl) server.value = state.cloud.serverUrl;
-    if (status) status.textContent = state.cloud ? `已连接 ${state.cloud.organization?.name ? `${state.cloud.organization.name} · ` : ''}${state.cloud.serverUrl}` : '当前为个人本地模式';
+    section?.classList.toggle('hidden', !state.cloud);
+    if (!state.cloud) {
+      if (status) status.textContent = '';
+      return;
+    }
+    if (server && state.cloud.serverUrl) server.value = state.cloud.serverUrl;
+    if (status) status.textContent = `已连接 ${state.cloud.organization?.name ? `${state.cloud.organization.name} · ` : ''}${state.cloud.serverUrl}`;
   }
 
   async function enrollTeacherCloud() {
@@ -473,7 +460,7 @@
     state.cloud = result.cloud; state.rooms = [...state.rooms.filter(room => room.transport !== 'cloud'), ...(result.rooms || [])]; if (result.account) setSignedInAccount(result.account); renderRooms(); renderCloudAccountSettings();
   }
 
-  function handleLogout() {
+  async function handleLogout() {
     disconnect();
     hideApprovalOverlay();
     accountModal && accountModal.classList.add('hidden');
@@ -482,7 +469,11 @@
     state.cloud = null;
     state.rooms = [];
     state.callHistory = [];
-    api.clearTeacherSession && api.clearTeacherSession();
+    try {
+      if (api.clearTeacherSession) await api.clearTeacherSession();
+    } catch (error) {
+      reportClientError('本地退出清理失败', error, { context:'退出教师端账户', suggestions:['重新启动教师端后再次退出', '如仍显示原账户，请复制错误信息提交管理员'] });
+    }
     renderRooms();
     renderHistory();
     accountMenuBtn && accountMenuBtn.classList.add('hidden');
@@ -520,13 +511,18 @@
 
   function setFaceLanUnavailable(unavailable) {
     document.getElementById('faceLanWarning')?.classList.toggle('hidden', !unavailable);
-    if (unavailable) closeFacePreview(false);
+    if (unavailable) {
+      state.faceSystemStateKnown = false;
+      closeFacePreview(false);
+    }
+    updateFaceSystemUI();
   }
 
   function updateFaceSystemUI() {
     const toggle = document.getElementById('faceSystemToggle');
     const camera = document.getElementById('faceCameraToggle');
     const hint = document.getElementById('faceSystemHint');
+    const pausedWarning = document.getElementById('faceSystemPausedWarning');
     if (toggle) {
       toggle.textContent = state.faceSystemEnabled ? '关闭人脸系统' : '开启人脸系统';
       toggle.classList.toggle('is-danger', state.faceSystemEnabled);
@@ -536,6 +532,7 @@
       camera.textContent = state.facePreviewOpen ? '关闭完整画面' : '查看完整画面';
     }
     if (hint) hint.textContent = state.faceSystemEnabled ? '当前已开启，正在后台识别' : '当前已关闭，不会采集摄像头画面';
+    if (pausedWarning) pausedWarning.classList.toggle('hidden', !(state.faceSystemStateKnown && !state.faceSystemEnabled));
   }
 
   function getFaceLanTransport() {
@@ -555,9 +552,12 @@
 
   function handleFaceControlMessage(msg) {
     if (msg.type === 'face-system-state') {
+      state.faceSystemStateKnown = true;
       state.faceSystemEnabled = msg.enabled === true;
       if (!state.faceSystemEnabled) closeFacePreview(false);
       updateFaceSystemUI();
+      renderFaceDetections();
+      renderOverview();
       return true;
     }
     if (msg.type === 'face-preview-state') {
@@ -603,7 +603,7 @@
       if (handleFaceControlMessage(msg)) return;
       if (msg.type === 'sync') {
         verified = true; clearTimeout(timer); setFaceLanUnavailable(false);
-        state.studentStatus = msg.attendance || []; state.pendingFaces = msg.pendingFaces || []; state.faceSystemEnabled = msg.faceSystemEnabled === true; updateFaceSystemUI(); renderFaceDetections();
+        state.studentStatus = msg.attendance || []; state.pendingFaces = msg.pendingFaces || []; state.faceSystemStateKnown = true; state.faceSystemEnabled = msg.faceSystemEnabled === true; updateFaceSystemUI(); renderFaceDetections();
       } else if (msg.type === 'face-detections') { state.faceDetections = msg.detections || []; renderFaceDetections(); }
       else if (msg.type === 'pending-face-library') { state.pendingFaces = msg.faces || []; renderFaceDetections(); }
       else if (msg.type === 'face-status') { state.studentStatus = msg.attendance || []; renderFaceDetections(); }
@@ -741,6 +741,7 @@
         state.assignments = msg.assignments || [];
         state.studentStatus = msg.attendance || [];
         state.pendingFaces = msg.pendingFaces || [];
+        state.faceSystemStateKnown = !useCloud;
         state.faceSystemEnabled = msg.faceSystemEnabled === true;
         state.classroomConfigured = msg.classroomConfigured !== false;
         state.teachers = msg.teachers || { approved: [], pending: [] };
@@ -884,6 +885,7 @@
     state.studentStatus = [];
     state.faceDetections = [];
     state.pendingFaces = [];
+    state.faceSystemStateKnown = false;
     state.faceSystemEnabled = false;
     state.facePreviewOpen = false;
     state.pendingLabelFace = null;
@@ -1223,7 +1225,7 @@
     if (subjectHintEl) subjectHintEl.textContent = teacherSubjects.length ? teacherSubjects.join('、') : '等待科目授权';
     setAnimatedText(completionRateEl, recentRate === null ? '--' : `${recentRate}%`);
     if (completionHintEl) completionHintEl.textContent = recentClosedHomework.length ? `近 30 天 ${recentClosedHomework.length} 项已截止作业` : '暂无已截止作业';
-    if (attendanceHintEl) attendanceHintEl.textContent = students.length ? `${Math.max(0, students.length - presentIds.size)} 人当前未到` : '等待学生名单同步';
+    if (attendanceHintEl) attendanceHintEl.textContent = state.faceSystemStateKnown && !state.faceSystemEnabled ? '人脸识别已关闭，出勤暂停更新' : (students.length ? `${Math.max(0, students.length - presentIds.size)} 人当前未到` : '等待学生名单同步');
     if (roleBadgeEl) roleBadgeEl.textContent = isHomeroomTeacher() ? '班主任' : '任课教师';
     if (subjectTextEl) subjectTextEl.textContent = teacherSubjects.length ? teacherSubjects.join(' · ') : '暂未设置授课科目';
     if (greetingEl) greetingEl.textContent = `${period}，${state.account && state.account.name ? state.account.name : '老师'}`;
@@ -1614,7 +1616,9 @@
     setAnimatedText(attendanceAbsentCount, absentCount);
     setAnimatedText(attendancePendingCount, unknownCards.length);
     if (faceSummary) {
-      if (totalRegistered > 0) {
+      if (state.faceSystemStateKnown && !state.faceSystemEnabled) {
+        faceSummary.textContent = '人脸识别已关闭 · 数据已暂停';
+      } else if (totalRegistered > 0) {
         faceSummary.textContent = `实时更新 · ${presentCount}/${totalRegistered} 已到`;
       } else if (unknownCards.length > 0) {
         faceSummary.textContent = `${unknownCards.length} 张人脸待处理`;
@@ -2896,8 +2900,6 @@
       } catch (error) { if (status) status.textContent = error.message || '保存失败'; }
       finally { saveTeacherDirectUrl.disabled = false; }
     });
-    const generateMiniProgramQrBtn = document.getElementById('generateMiniProgramQrBtn');
-    if (generateMiniProgramQrBtn) generateMiniProgramQrBtn.addEventListener('click', handleGenerateMiniProgramQr);
     if (accountMenuBtn) accountMenuBtn.addEventListener('click', openAccountModal);
     document.getElementById('chooseAccountAvatar')?.addEventListener('click', chooseAccountAvatar);
     document.getElementById('saveAccountProfile')?.addEventListener('click', saveAccountProfile);

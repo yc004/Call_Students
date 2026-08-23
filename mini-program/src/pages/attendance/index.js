@@ -9,7 +9,7 @@ function formatTime(value) {
 }
 
 Page({
-  data: { status:'offline',statusMessage:'未连接',faceLanUnavailable:false,faceLanMessage:'',className:'',roomName:'',students:[],visibleStudents:[],liveFaces:[],pendingFaces:[],filter:'all',query:'',presentCount:0,arrivedCount:0,awayCount:0,unseenCount:0,totalCount:0,presentPercent:0,pendingFaceCount:0,isHomeroom:false,updatedText:'等待数据' },
+  data: { status:'offline',statusMessage:'未连接',faceLanUnavailable:false,faceLanMessage:'',faceSystemStateKnown:false,faceSystemEnabled:false,className:'',roomName:'',students:[],visibleStudents:[],liveFaces:[],pendingFaces:[],filter:'all',query:'',presentCount:0,arrivedCount:0,awayCount:0,unseenCount:0,totalCount:0,presentPercent:0,pendingFaceCount:0,isHomeroom:false,updatedText:'等待数据' },
   onLoad(options) {
     const session=sessionStore.load(); if(!session){ wx.reLaunch({url:'/pages/login/index'}); return; }
     const context=roomContext.activateByCode(options && options.code);if(!context){wx.showToast({title:'教室信息已失效',icon:'none'});setTimeout(()=>wx.navigateBack(),300);return;}
@@ -20,6 +20,7 @@ Page({
       if(event==='attendance') this.applyAttendance(payload.attendance || []);
       if(event==='presence') this.applyPresence(payload.detections || []);
       if(event==='pendingFaces') this.applyPendingFaces(payload.faces || []);
+      if(event==='faceSystemState') this.applyFaceSystemState(payload);
     });
     if (context.room.transport === 'cloud') this.connectFaceLan(context.room, context.session.account);
     else socket.connect(context.room,context.session.account,{force:true});
@@ -37,9 +38,11 @@ Page({
       else if (event === 'attendance') this.applyAttendance(payload.attendance || []);
       else if (event === 'presence') this.applyPresence(payload.detections || []);
       else if (event === 'pendingFaces') this.applyPendingFaces(payload.faces || []);
+      else if (event === 'faceSystemState') this.applyFaceSystemState(payload);
     });
   },
-  applySync(data){ this.rawStudents=data.students || []; this.attendance=data.attendance || []; this.presentIds=this.presentIds || new Set(); this.isHomeroom=!!(data.teacher && data.teacher.role==='班主任'); this.setData({className:data.className || '',isHomeroom:this.isHomeroom}); this.applyPendingFaces(data.pendingFaces || []); this.rebuild(); },
+  applySync(data){ this.rawStudents=data.students || []; this.attendance=data.attendance || []; this.presentIds=this.presentIds || new Set(); this.isHomeroom=!!(data.teacher && data.teacher.role==='班主任'); this.setData({className:data.className || '',isHomeroom:this.isHomeroom,faceSystemStateKnown:true,faceSystemEnabled:data.faceSystemEnabled===true}); this.applyPendingFaces(data.pendingFaces || []); this.rebuild(); },
+  applyFaceSystemState(message){ this.setData({faceSystemStateKnown:true,faceSystemEnabled:message.enabled===true}); },
   applyAttendance(attendance){ this.attendance=attendance; this.rebuild(); },
   applyPresence(detections){
     const valid=detections.filter(item=>this.validFaceImage(item.cropBase64) && (this.isHomeroom || (item.isRecognized && item.studentId)));

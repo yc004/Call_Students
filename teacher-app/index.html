@@ -176,6 +176,7 @@
         </header>
 
         <div id="faceLanWarning" class="face-lan-warning hidden"><span>!</span><div><strong>当前局域网连接失败，人脸服务不可用</strong><small>云服务仍可正常使用。请确认教师电脑与教室电脑处于同一局域网后重试。</small></div><button id="retryFaceLanBtn" class="btn btn-sm" type="button">重新连接</button></div>
+        <div id="faceSystemPausedWarning" class="face-lan-warning face-system-paused-warning hidden"><span>停</span><div><strong>教室人脸识别已关闭</strong><small>出勤状态已暂停更新，下方保留关闭前最后一次同步结果。请联系班主任重新开启。</small></div></div>
 
         <section id="faceSystemControls" class="face-system-controls hidden" data-permission="homeroom" aria-label="人脸系统控制">
           <div class="face-system-copy"><span class="workspace-kicker">班主任控制</span><strong>教室人脸系统</strong><small id="faceSystemHint">状态正在同步</small></div>
@@ -378,9 +379,9 @@
     <div id="miniScanLogin" class="account-form mini-scan-login mode-panel">
       <div class="login-divider"><span>也可以</span></div>
       <div class="mini-scan-qr-wrap"><img id="teacherLoginQrImage" alt="小程序登录教师端二维码"></div>
-      <p id="teacherLoginQrStatus" class="account-field-hint">使用已登录的小程序扫描二维码，将教师账户同步到这台电脑。</p>
+      <p id="teacherLoginQrStatus" class="account-field-hint">使用已登录的小程序扫描二维码，以小程序账户登录这台电脑。</p>
       <button id="refreshTeacherLoginQr" class="btn btn-primary account-primary" type="button">生成登录二维码</button>
-      <p class="account-switch">扫码后会同步小程序当前模式、账号、教室和组织标识；个人与组织模式均支持。</p>
+      <p class="account-switch">这是独立的登录方式。扫码后会导入用户名、头像、使用模式、组织资料和全部教室，不会与这台电脑的旧账户合并。</p>
       <details class="wechat-direct-settings">
         <summary>允许直接使用微信扫码</summary>
         <p>先在微信公众平台配置普通链接二维码规则，再填写规则对应的 HTTPS 链接前缀。</p>
@@ -457,11 +458,11 @@
       </div>
       <div class="account-profile-actions"><small id="accountProfileStatus" role="status" aria-live="polite"></small><button id="saveAccountProfile" class="btn btn-primary btn-sm" type="button">保存个人资料</button></div>
     </section>
-    <details class="wechat-direct-settings cloud-account-settings">
+    <details id="accountCloudSettings" class="wechat-direct-settings cloud-account-settings hidden">
       <summary>云服务状态</summary>
-      <p>组织模式使用服务器地址和组织账号登录；扫码登录时会自动同步同一组织会话和教室。</p>
+      <p>组织模式使用服务器地址和组织账号登录。如需改用小程序账户，请先退出当前账户，再在登录页扫码。</p>
       <div><button id="accountCloudRefreshBtn" class="btn btn-sm" type="button">刷新教室</button></div>
-      <small id="accountCloudStatus">当前为个人本地模式</small>
+      <small id="accountCloudStatus"></small>
     </details>
     <details id="accountAiSettings" class="wechat-direct-settings account-ai-settings">
       <summary>AI 学情分析服务</summary>
@@ -480,16 +481,6 @@
         </div>
       </div>
     </details>
-    <section class="mini-login-section" aria-labelledby="miniLoginTitle">
-      <div class="login-key-heading">
-        <div><strong id="miniLoginTitle">微信小程序安全配对</strong><small>通过局域网一次性传输身份和已保存教室</small></div>
-        <button id="generateMiniProgramQrBtn" class="btn btn-sm" type="button">生成二维码</button>
-      </div>
-      <div id="miniProgramQrResult" class="mini-login-result hidden">
-        <img id="miniProgramQrImage" alt="微信小程序登录二维码">
-        <div><strong>打开配套小程序扫码</strong><p id="miniProgramQrHint">二维码仅包含本机临时连接信息，不包含账户、密码或教室数据。</p></div>
-      </div>
-    </section>
     <div class="modal-actions">
       <button id="accountModalClose" class="btn">关闭</button>
       <button id="logoutBtn" class="btn btn-danger-outline">退出登录</button>
