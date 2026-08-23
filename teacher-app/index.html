@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>教师端 — 教室呼叫系统</title>
+  <title>班达-教师端</title>
   <link rel="stylesheet" href="style.css?v=2">
   <link rel="stylesheet" href="ui.css?v=10">
   <link rel="stylesheet" href="desktop.css?v=13">
@@ -14,8 +14,8 @@
 
   <aside class="sidebar">
     <div class="sidebar-header">
-      <span class="sidebar-brand-mark" aria-hidden="true">教</span>
-      <div class="sidebar-brand-copy"><h1>教室呼叫</h1><span class="brand-sub">教师端</span></div>
+      <span class="sidebar-brand-mark" aria-hidden="true">班</span>
+      <div class="sidebar-brand-copy"><h1>班达</h1><span class="brand-sub">教师端</span></div>
     </div>
 
     <div class="room-section">
@@ -113,7 +113,7 @@
           <div><span class="workspace-kicker">当前教室</span><h2 id="workspaceLauncherTitle">工作台</h2><p>选择一项功能进入操作界面</p></div>
         </div>
         <div class="workspace-tool-grid">
-          <button class="workspace-tool workspace-tool-call" type="button" data-open-tab="call" data-permission="homeroom">
+          <button class="workspace-tool workspace-tool-call" type="button" data-open-tab="call">
             <span class="workspace-tool-icon" aria-hidden="true">⌁</span><span><strong>学生呼叫</strong><small>单人或批量发送大屏呼叫</small></span><i>›</i>
           </button>
           <button class="workspace-tool workspace-tool-homework" type="button" data-open-tab="homework">
@@ -176,6 +176,15 @@
         </header>
 
         <div id="faceLanWarning" class="face-lan-warning hidden"><span>!</span><div><strong>当前局域网连接失败，人脸服务不可用</strong><small>云服务仍可正常使用。请确认教师电脑与教室电脑处于同一局域网后重试。</small></div><button id="retryFaceLanBtn" class="btn btn-sm" type="button">重新连接</button></div>
+
+        <section id="faceSystemControls" class="face-system-controls hidden" data-permission="homeroom" aria-label="人脸系统控制">
+          <div class="face-system-copy"><span class="workspace-kicker">班主任控制</span><strong>教室人脸系统</strong><small id="faceSystemHint">状态正在同步</small></div>
+          <div class="face-system-actions"><button id="faceSystemToggle" class="btn btn-sm" type="button">开启人脸系统</button><button id="faceCameraToggle" class="btn btn-primary btn-sm" type="button">查看完整画面</button></div>
+        </section>
+        <section id="faceCameraPanel" class="face-camera-panel hidden" aria-label="教室摄像头完整画面">
+          <div class="face-camera-head"><div><strong>教室摄像头</strong><small>画面经局域网实时传输，不会上传云端或保存</small></div><span id="faceCameraStatus">等待画面</span></div>
+          <div class="face-camera-stage"><img id="faceCameraImage" alt="教室摄像头实时画面"><div id="faceCameraEmpty">正在等待教室端画面…</div></div>
+        </section>
 
         <div class="attendance-overview" aria-label="出勤概览">
           <div class="attendance-stat stat-total">
@@ -269,7 +278,7 @@
             <input type="date" id="hwDateTo" class="hw-date-input" title="截止日期结束">
           </div>
           <div class="hw-toolbar-right">
-            <span id="homeworkReadOnlyNote" class="homework-readonly-note hidden">仅查看你的授课科目</span>
+            <span id="homeworkReadOnlyNote" class="homework-readonly-note hidden">仅管理你的授课科目</span>
             <button id="aiHomeworkBtn" class="btn btn-sm ai-homework-button" type="button"><span aria-hidden="true">✦</span> AI 学情分析</button>
             <button id="exportHomeworkBtn" class="btn btn-sm" type="button">导出表格</button>
             <button id="publishNoticeBtn" class="btn btn-sm" type="button">＋ 发布通知</button>
@@ -333,7 +342,7 @@
 <!-- 登录 / 首次注册 -->
 <div id="accountOverlay" class="account-overlay" role="dialog" aria-modal="true" aria-labelledby="accountTitle">
   <div class="account-card">
-    <div class="account-brand"><span>教</span></div>
+    <div class="account-brand"><span>班</span></div>
     <h2 id="accountTitle">教师登录</h2>
     <p id="accountDesc" class="account-desc">登录后才能连接教室和使用教学功能。</p>
 

@@ -1,6 +1,6 @@
 {
   "name": "classroom-app",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "教室端 —— 大屏呼叫显示",
   "main": "main.js",
   "scripts": {
@@ -25,8 +25,8 @@
   },
   "build": {
     "appId": "com.schoolcall.classroom",
-    "productName": "教室呼叫-教室端",
-    "executableName": "ClassroomCall-Classroom",
+    "productName": "班达-教室端",
+    "executableName": "Banda-Classroom",
     "afterPack": "scripts/verify-packaged-native.js",
     "directories": {
       "output": "dist"
@@ -78,7 +78,7 @@
     ],
     "win": {
       "icon": "icon.png",
-      "artifactName": "ClassroomCall-Classroom-${version}-Setup-${arch}.${ext}",
+      "artifactName": "Banda-Classroom-${version}-Setup-${arch}.${ext}",
       "target": [
         {
           "target": "nsis",
@@ -90,7 +90,7 @@
     },
     "mac": {
       "icon": "build/icon.icns",
-      "artifactName": "ClassroomCall-Classroom-${version}-macOS-${arch}.${ext}",
+      "artifactName": "Banda-Classroom-${version}-macOS-${arch}.${ext}",
       "category": "public.app-category.education",
       "hardenedRuntime": false,
       "target": [
@@ -115,7 +115,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
-      "shortcutName": "教室呼叫-教室端"
+      "shortcutName": "班达-教室端"
     }
   },
   "devDependencies": {

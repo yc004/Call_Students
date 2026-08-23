@@ -1,6 +1,6 @@
-# 教室呼叫系统
+# 班达
 
-一套用于学校教室与教师办公室之间的呼叫通知系统。教师端发起呼叫，教室端弹窗显示并语音播报。
+班达是一套用于教室与教师之间进行班级协作的工具，支持呼叫通知、作业管理和出勤统计等功能。
 
 ## 架构
 
@@ -44,8 +44,8 @@ npm start
 ## 打包
 
 ```bash
-cd classroom-app && npm run build    # 输出 dist/教室呼叫-教室端 Setup 1.0.0.exe
-cd teacher-app   && npm run build    # 输出 dist/教室呼叫-教师端 Setup 1.0.0.exe
+cd classroom-app && npm run build    # 输出 dist/Banda-Classroom-<版本号>-Setup-x64.exe
+cd teacher-app   && npm run build    # 输出 dist/Banda-Teacher-<版本号>-Setup-x64.exe
 ```
 
 ### GitHub 自动构建

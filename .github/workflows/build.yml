@@ -38,6 +38,7 @@ jobs:
       - name: Validate source
         run: |
           node .github/scripts/verify-release-metadata.js
+          node .github/scripts/verify-branding.js
           node scripts/verify-js-syntax.js classroom-app
           node scripts/verify-js-syntax.js teacher-app
           node scripts/verify-js-syntax.js mini-program/src
@@ -156,21 +157,21 @@ jobs:
 
       - name: Smoke-test unpacked app and installer
         run: |
-          $installer = (Get-ChildItem 'classroom-app/dist/ClassroomCall-Classroom-*-Setup-x64.exe' | Select-Object -First 1).FullName
+          $installer = (Get-ChildItem 'classroom-app/dist/Banda-Classroom-*-Setup-x64.exe' | Select-Object -First 1).FullName
           if (-not $installer) { throw 'Classroom installer was not generated' }
           .github/scripts/test-windows-installer.ps1 `
             -Installer $installer `
-            -UnpackedExecutable 'classroom-app/dist/win-unpacked/ClassroomCall-Classroom.exe' `
-            -InstalledExecutableName 'ClassroomCall-Classroom.exe' `
-            -InstallFolderName 'ClassroomCall-Classroom-CI'
+            -UnpackedExecutable 'classroom-app/dist/win-unpacked/Banda-Classroom.exe' `
+            -InstalledExecutableName 'Banda-Classroom.exe' `
+            -InstallFolderName 'Banda-Classroom-CI'
 
       - name: Upload classroom installer
         uses: actions/upload-artifact@v7
         with:
           name: classroom-windows-x64-${{ github.sha }}
           path: |
-            classroom-app/dist/ClassroomCall-Classroom-*-Setup-x64.exe
-            classroom-app/dist/ClassroomCall-Classroom-*-Setup-x64.exe.sha256
+            classroom-app/dist/Banda-Classroom-*-Setup-x64.exe
+            classroom-app/dist/Banda-Classroom-*-Setup-x64.exe.sha256
           if-no-files-found: error
           retention-days: 30
 
@@ -229,21 +230,21 @@ jobs:
 
       - name: Smoke-test unpacked app and installer
         run: |
-          $installer = (Get-ChildItem 'teacher-app/dist/ClassroomCall-Teacher-*-Setup-x64.exe' | Select-Object -First 1).FullName
+          $installer = (Get-ChildItem 'teacher-app/dist/Banda-Teacher-*-Setup-x64.exe' | Select-Object -First 1).FullName
           if (-not $installer) { throw 'Teacher installer was not generated' }
           .github/scripts/test-windows-installer.ps1 `
             -Installer $installer `
-            -UnpackedExecutable 'teacher-app/dist/win-unpacked/ClassroomCall-Teacher.exe' `
-            -InstalledExecutableName 'ClassroomCall-Teacher.exe' `
-            -InstallFolderName 'ClassroomCall-Teacher-CI'
+            -UnpackedExecutable 'teacher-app/dist/win-unpacked/Banda-Teacher.exe' `
+            -InstalledExecutableName 'Banda-Teacher.exe' `
+            -InstallFolderName 'Banda-Teacher-CI'
 
       - name: Upload teacher installer
         uses: actions/upload-artifact@v7
         with:
           name: teacher-windows-x64-${{ github.sha }}
           path: |
-            teacher-app/dist/ClassroomCall-Teacher-*-Setup-x64.exe
-            teacher-app/dist/ClassroomCall-Teacher-*-Setup-x64.exe.sha256
+            teacher-app/dist/Banda-Teacher-*-Setup-x64.exe
+            teacher-app/dist/Banda-Teacher-*-Setup-x64.exe.sha256
           if-no-files-found: error
           retention-days: 30
 
@@ -360,17 +361,17 @@ jobs:
       - name: Smoke-test application and DMG
         run: |
           app_path="$(find classroom-app/dist -maxdepth 2 -type d -name '*.app' -print -quit)"
-          dmg_path="$(find classroom-app/dist -maxdepth 1 -type f -name 'ClassroomCall-Classroom-*-macOS-${{ matrix.arch }}.dmg' -print -quit)"
+          dmg_path="$(find classroom-app/dist -maxdepth 1 -type f -name 'Banda-Classroom-*-macOS-${{ matrix.arch }}.dmg' -print -quit)"
           bash .github/scripts/test-macos-package.sh \
-            "$app_path" "$dmg_path" 'ClassroomCall-Classroom' '${{ matrix.machine }}'
+            "$app_path" "$dmg_path" 'Banda-Classroom' '${{ matrix.machine }}'
 
       - name: Generate package checksums
         working-directory: classroom-app
         run: |
           cd dist
           shasum -a 256 \
-            ClassroomCall-Classroom-*-macOS-${{ matrix.arch }}.dmg \
-            ClassroomCall-Classroom-*-macOS-${{ matrix.arch }}.zip \
+            Banda-Classroom-*-macOS-${{ matrix.arch }}.dmg \
+            Banda-Classroom-*-macOS-${{ matrix.arch }}.zip \
             > SHA256SUMS-classroom-macOS-${{ matrix.arch }}.txt
 
       - name: Upload classroom packages
@@ -378,8 +379,8 @@ jobs:
         with:
           name: classroom-macos-${{ matrix.arch }}-${{ github.sha }}
           path: |
-            classroom-app/dist/ClassroomCall-Classroom-*-macOS-${{ matrix.arch }}.dmg
-            classroom-app/dist/ClassroomCall-Classroom-*-macOS-${{ matrix.arch }}.zip
+            classroom-app/dist/Banda-Classroom-*-macOS-${{ matrix.arch }}.dmg
+            classroom-app/dist/Banda-Classroom-*-macOS-${{ matrix.arch }}.zip
             classroom-app/dist/SHA256SUMS-classroom-macOS-${{ matrix.arch }}.txt
           if-no-files-found: error
           retention-days: 30
@@ -468,17 +469,17 @@ jobs:
       - name: Smoke-test application and DMG
         run: |
           app_path="$(find teacher-app/dist -maxdepth 2 -type d -name '*.app' -print -quit)"
-          dmg_path="$(find teacher-app/dist -maxdepth 1 -type f -name 'ClassroomCall-Teacher-*-macOS-${{ matrix.arch }}.dmg' -print -quit)"
+          dmg_path="$(find teacher-app/dist -maxdepth 1 -type f -name 'Banda-Teacher-*-macOS-${{ matrix.arch }}.dmg' -print -quit)"
           bash .github/scripts/test-macos-package.sh \
-            "$app_path" "$dmg_path" 'ClassroomCall-Teacher' '${{ matrix.machine }}'
+            "$app_path" "$dmg_path" 'Banda-Teacher' '${{ matrix.machine }}'
 
       - name: Generate package checksums
         working-directory: teacher-app
         run: |
           cd dist
           shasum -a 256 \
-            ClassroomCall-Teacher-*-macOS-${{ matrix.arch }}.dmg \
-            ClassroomCall-Teacher-*-macOS-${{ matrix.arch }}.zip \
+            Banda-Teacher-*-macOS-${{ matrix.arch }}.dmg \
+            Banda-Teacher-*-macOS-${{ matrix.arch }}.zip \
             > SHA256SUMS-teacher-macOS-${{ matrix.arch }}.txt
 
       - name: Upload teacher packages
@@ -486,8 +487,8 @@ jobs:
         with:
           name: teacher-macos-${{ matrix.arch }}-${{ github.sha }}
           path: |
-            teacher-app/dist/ClassroomCall-Teacher-*-macOS-${{ matrix.arch }}.dmg
-            teacher-app/dist/ClassroomCall-Teacher-*-macOS-${{ matrix.arch }}.zip
+            teacher-app/dist/Banda-Teacher-*-macOS-${{ matrix.arch }}.dmg
+            teacher-app/dist/Banda-Teacher-*-macOS-${{ matrix.arch }}.zip
             teacher-app/dist/SHA256SUMS-teacher-macOS-${{ matrix.arch }}.txt
           if-no-files-found: error
           retention-days: 30

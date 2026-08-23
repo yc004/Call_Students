@@ -24,7 +24,7 @@ const report = reporter.show({
 assert.ok(modalOptions, 'should open an error modal');
 assert.match(modalOptions.content, /提交给管理员/);
 assert.strictEqual(modalOptions.confirmText, '复制信息');
-assert.match(report, /班达微信小程序错误报告/);
+assert.match(report, /班达错误报告（微信小程序）/);
 assert.match(report, /页面：pages\/home\/index/);
 assert.doesNotMatch(report, /abc123|password=secret/);
 assert.match(report, /token=\[已隐藏\]/i);

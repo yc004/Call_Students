@@ -52,6 +52,8 @@ contextBridge.exposeInMainWorld('api', {
     getGallery:      ()      => ipcRenderer.invoke('face:get-gallery'),
     saveDescriptor:  (id, name, desc) => ipcRenderer.invoke('face:save-descriptor', id, name, desc),
     reportDetections:(dets)  => ipcRenderer.invoke('face:report-detections', dets),
+    previewRequested:()      => ipcRenderer.invoke('face:preview-requested'),
+    reportPreview:   (image) => ipcRenderer.send('face:report-preview', image),
     getAttendance:   ()      => ipcRenderer.invoke('face:get-attendance'),
     getStudents:     ()      => ipcRenderer.invoke('face:get-students'),
     resetAdaptive:   (id)    => ipcRenderer.invoke('face:reset-adaptive', id),

@@ -91,6 +91,8 @@
     account: null,      // 登录后才存在：{ name, subjects, connectionId }
     cloud: null,        // 小程序扫码同步的云服务会话
     faceLanWs: null,
+    faceSystemEnabled: false,
+    facePreviewOpen: false,
     teacherStatus: null,
     classroomConfigured: false,
     teachers: { approved: [], pending: [] },
@@ -518,10 +520,67 @@
 
   function setFaceLanUnavailable(unavailable) {
     document.getElementById('faceLanWarning')?.classList.toggle('hidden', !unavailable);
+    if (unavailable) closeFacePreview(false);
+  }
+
+  function updateFaceSystemUI() {
+    const toggle = document.getElementById('faceSystemToggle');
+    const camera = document.getElementById('faceCameraToggle');
+    const hint = document.getElementById('faceSystemHint');
+    if (toggle) {
+      toggle.textContent = state.faceSystemEnabled ? '关闭人脸系统' : '开启人脸系统';
+      toggle.classList.toggle('is-danger', state.faceSystemEnabled);
+    }
+    if (camera) {
+      camera.disabled = !state.faceSystemEnabled;
+      camera.textContent = state.facePreviewOpen ? '关闭完整画面' : '查看完整画面';
+    }
+    if (hint) hint.textContent = state.faceSystemEnabled ? '当前已开启，正在后台识别' : '当前已关闭，不会采集摄像头画面';
+  }
+
+  function getFaceLanTransport() {
+    if (state.currentRoom?.transport === 'cloud') return state.faceLanWs?.readyState === WebSocket.OPEN ? state.faceLanWs : null;
+    return state.ws?.readyState === WebSocket.OPEN ? state.ws : null;
+  }
+
+  function closeFacePreview(notify = true) {
+    const transport = getFaceLanTransport();
+    if (notify && transport) transport.send(JSON.stringify({ type:'face-preview-subscribe', enabled:false }));
+    state.facePreviewOpen = false;
+    document.getElementById('faceCameraPanel')?.classList.add('hidden');
+    const image = document.getElementById('faceCameraImage');
+    if (image) { image.removeAttribute('src'); image.classList.remove('has-frame'); }
+    updateFaceSystemUI();
+  }
+
+  function handleFaceControlMessage(msg) {
+    if (msg.type === 'face-system-state') {
+      state.faceSystemEnabled = msg.enabled === true;
+      if (!state.faceSystemEnabled) closeFacePreview(false);
+      updateFaceSystemUI();
+      return true;
+    }
+    if (msg.type === 'face-preview-state') {
+      state.facePreviewOpen = msg.enabled === true;
+      document.getElementById('faceCameraPanel')?.classList.toggle('hidden', !state.facePreviewOpen);
+      updateFaceSystemUI();
+      return true;
+    }
+    if (msg.type === 'face-camera-frame') {
+      if (!state.facePreviewOpen || typeof msg.image !== 'string') return true;
+      const image = document.getElementById('faceCameraImage');
+      if (image) { image.src = msg.image; image.classList.add('has-frame'); }
+      document.getElementById('faceCameraEmpty')?.classList.add('hidden');
+      const status = document.getElementById('faceCameraStatus');
+      if (status) status.textContent = '实时画面';
+      return true;
+    }
+    return false;
   }
 
   function closeFaceLan() {
     if (!state.faceLanWs) return;
+    closeFacePreview(false);
     state.faceLanWs.onclose = null;
     state.faceLanWs.onerror = null;
     try { state.faceLanWs.close(); } catch (_error) {}
@@ -541,9 +600,10 @@
     faceWs.onmessage = event => {
       let msg;
       try { msg = JSON.parse(event.data); } catch (_error) { return; }
+      if (handleFaceControlMessage(msg)) return;
       if (msg.type === 'sync') {
         verified = true; clearTimeout(timer); setFaceLanUnavailable(false);
-        state.studentStatus = msg.attendance || []; state.pendingFaces = msg.pendingFaces || []; renderFaceDetections();
+        state.studentStatus = msg.attendance || []; state.pendingFaces = msg.pendingFaces || []; state.faceSystemEnabled = msg.faceSystemEnabled === true; updateFaceSystemUI(); renderFaceDetections();
       } else if (msg.type === 'face-detections') { state.faceDetections = msg.detections || []; renderFaceDetections(); }
       else if (msg.type === 'pending-face-library') { state.pendingFaces = msg.faces || []; renderFaceDetections(); }
       else if (msg.type === 'face-status') { state.studentStatus = msg.attendance || []; renderFaceDetections(); }
@@ -657,6 +717,7 @@
     ws.onmessage = (event) => {
       let msg;
       try { msg = JSON.parse(event.data); } catch { return; }
+      if (handleFaceControlMessage(msg)) return;
       if (verificationTimer) clearTimeout(verificationTimer);
       verificationTimer = null;
       resetConnectionFailures();
@@ -680,6 +741,7 @@
         state.assignments = msg.assignments || [];
         state.studentStatus = msg.attendance || [];
         state.pendingFaces = msg.pendingFaces || [];
+        state.faceSystemEnabled = msg.faceSystemEnabled === true;
         state.classroomConfigured = msg.classroomConfigured !== false;
         state.teachers = msg.teachers || { approved: [], pending: [] };
         selectedSubjects = [];
@@ -822,6 +884,8 @@
     state.studentStatus = [];
     state.faceDetections = [];
     state.pendingFaces = [];
+    state.faceSystemEnabled = false;
+    state.facePreviewOpen = false;
     state.pendingLabelFace = null;
     state.teacherStatus = null;
     state._faceRecvCount = 0;
@@ -850,6 +914,8 @@
     renderStudents();
     renderHomework();
     renderFaceDetections();
+    document.getElementById('faceCameraPanel')?.classList.add('hidden');
+    updateFaceSystemUI();
     applyTeacherPermissions();
   }
 
@@ -1200,24 +1266,30 @@
   }
 
   function isHomeroomTeacher() { return !!(state.teacherStatus && state.teacherStatus.role === '班主任'); }
-  function canModifySubject(_subject) { return isHomeroomTeacher(); }
+  function canModifySubject(subject) {
+    if (isHomeroomTeacher()) return true;
+    return ((state.teacherStatus && state.teacherStatus.subjects) || []).map(String).includes(String(subject || ''));
+  }
 
   function applyTeacherPermissions() {
     const homeroom = isHomeroomTeacher();
     document.getElementById('overviewTabBtn')?.classList.remove('hidden');
-    document.getElementById('callTabBtn')?.classList.toggle('hidden', !homeroom);
+    document.getElementById('callTabBtn')?.classList.remove('hidden');
     if (classroomTabBtn) classroomTabBtn.classList.toggle('hidden', !homeroom);
     document.querySelectorAll('[data-permission="homeroom"]').forEach(element => element.classList.toggle('hidden', !homeroom));
+    if (!homeroom) closeFacePreview(false);
     document.querySelector('.workspace-tool-grid')?.classList.toggle('is-teacher-view', !homeroom);
-    if (addAssignmentBtn2) addAssignmentBtn2.classList.toggle('hidden', !homeroom);
-    if (publishNoticeBtn) publishNoticeBtn.classList.toggle('hidden', !homeroom);
+    const canPublish = homeroom || (((state.teacherStatus && state.teacherStatus.subjects) || []).length > 0);
+    if (addAssignmentBtn2) addAssignmentBtn2.classList.toggle('hidden', !canPublish);
+    if (publishNoticeBtn) publishNoticeBtn.classList.toggle('hidden', !canPublish);
     document.getElementById('homeworkReadOnlyNote')?.classList.toggle('hidden', homeroom);
     const unknownFaceTab = document.querySelector('.face-subtab[data-subtab="unknown"]');
     const registeredFaceTab = document.querySelector('.face-subtab[data-subtab="registered"]');
     if (unknownFaceTab) unknownFaceTab.classList.toggle('hidden', !homeroom);
     if (!homeroom && unknownFaceTab?.classList.contains('active') && registeredFaceTab) registeredFaceTab.click();
     const activeTab = document.querySelector('.main-tab.active')?.dataset.tab;
-    if (!homeroom && !['overview', 'homework', 'attendance'].includes(activeTab)) switchMainTab('overview');
+    if (!homeroom && !['overview', 'call', 'homework', 'attendance'].includes(activeTab)) switchMainTab('overview');
+    updateFaceSystemUI();
   }
 
   function buildStudentsFromText(value) {
@@ -3042,6 +3114,22 @@
 
     bindEvents();
     document.getElementById('retryFaceLanBtn')?.addEventListener('click', () => startFaceLan(state.currentRoom));
+    document.getElementById('faceSystemToggle')?.addEventListener('click', () => {
+      const transport = getFaceLanTransport();
+      if (!transport) { setFaceLanUnavailable(true); alert('当前未建立教室局域网连接，无法控制人脸系统'); return; }
+      transport.send(JSON.stringify({ type:'set-face-system', enabled:!state.faceSystemEnabled }));
+    });
+    document.getElementById('faceCameraToggle')?.addEventListener('click', () => {
+      const transport = getFaceLanTransport();
+      if (!transport) { setFaceLanUnavailable(true); alert('当前局域网连接失败，无法查看教室摄像头画面'); return; }
+      if (state.facePreviewOpen) closeFacePreview(true);
+      else {
+        document.getElementById('faceCameraEmpty')?.classList.remove('hidden');
+        const status = document.getElementById('faceCameraStatus');
+        if (status) status.textContent = '正在连接';
+        transport.send(JSON.stringify({ type:'face-preview-subscribe', enabled:true }));
+      }
+    });
     loadFromDisk().then(data => {
       state.rooms       = data.rooms;
       state.callHistory = data.callHistory;

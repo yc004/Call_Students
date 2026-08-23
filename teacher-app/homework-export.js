@@ -131,7 +131,7 @@ function filterDescription(filters) {
 async function createHomeworkWorkbook(input) {
   const data = normalizePayload(input);
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = '教室呼叫教师端';
+  workbook.creator = '班达';
   workbook.created = data.exportedAt;
   workbook.modified = data.exportedAt;
   workbook.properties.date1904 = false;

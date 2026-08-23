@@ -813,7 +813,7 @@ function getTrayIcon() {
 function createTray() {
   const icon = getTrayIcon();
   tray = new Tray(icon);
-  tray.setToolTip('教室呼叫系统 - 运行中');
+  tray.setToolTip('班达-教室端 - 运行中');
 
   rebuildTrayMenu();
   tray.on('double-click', () => {
@@ -857,7 +857,7 @@ function rebuildTrayMenu() {
       { type: 'separator' },
       { label: '退出教室端', click: () => { if (wss) wss.close(); app.quit(); } },
     ]);
-    tray.setToolTip('教室呼叫系统 - 等待绑定班主任');
+    tray.setToolTip('班达-教室端 - 等待绑定班主任');
     tray.setContextMenu(menu);
     return;
   }
@@ -878,7 +878,7 @@ function rebuildTrayMenu() {
       { type: 'separator' },
       { label: '退出教室端', click: () => { if (wss) wss.close(); app.quit(); } },
     ]);
-    tray.setToolTip('教室呼叫系统 - 等待班主任配置教室');
+    tray.setToolTip('班达-教室端 - 等待班主任配置教室');
     tray.setContextMenu(menu);
     return;
   }
@@ -1320,6 +1320,29 @@ function broadcastFaceDetections(detections) {
   }
 }
 
+function broadcastFaceSystemState(target = null) {
+  if (!wss) return;
+  const message = JSON.stringify({ type:'face-system-state', enabled:getFaceCheckEnabled() });
+  const clients = target ? [target] : Array.from(wss.clients);
+  clients.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN && ws._teacher?.status === 'approved') ws.send(message);
+  });
+}
+
+function canManageFaceSystem(ws) {
+  return ws?._transport === 'lan'
+    && ws?._teacher?.status === 'approved'
+    && ws?._teacher?.role === '班主任';
+}
+
+function broadcastFaceCameraFrame(image) {
+  if (!wss || !getFaceCheckEnabled()) return;
+  const message = JSON.stringify({ type:'face-camera-frame', image, capturedAt:Date.now() });
+  wss.clients.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN && ws._facePreviewSubscribed && canManageFaceSystem(ws)) ws.send(message);
+  });
+}
+
 function broadcastLabelResult(faceId, studentId, name) {
   if (!wss) return;
   const msg = JSON.stringify({ type: 'face-labeled', faceId, studentId, name });
@@ -1472,6 +1495,7 @@ function startWSServer() {
 
           const loopback = /^(?:127\.0\.0\.1|::1|::ffff:127\.0\.0\.1)$/.test(String(remote || ''));
           const cloudMembership = loopback && msg._cloudBridgeSecret === cloudBridgeSecret && msg._cloudMembership && typeof msg._cloudMembership === 'object' ? msg._cloudMembership : null;
+          ws._transport = cloudMembership ? 'cloud' : 'lan';
           const connectionId = String(cloudMembership && cloudMembership.connectionId || msg.connectionId || '').trim();
           const reportedName = String(cloudMembership && cloudMembership.name || msg.name || '').trim().slice(0, 20);
           const reportedSubjects = normalizeSubjects(cloudMembership && cloudMembership.subjects || msg.subjects);
@@ -1618,7 +1642,7 @@ function startWSServer() {
         }
 
         case 'call': {
-          if (!checkTeacherPerm(ws, msg)) return;
+          if (!checkApprovedTeacher(ws)) return;
           if (!msg.callId || !msg.studentName) return;
           const normalizedCall = normalizeIncomingCall(msg);
           if (!normalizedCall) return;
@@ -1645,14 +1669,16 @@ function startWSServer() {
         }
 
         case 'update-submission': {
-          if (!checkTeacherPerm(ws, msg)) return;
+          if (!checkApprovedTeacher(ws)) return;
           if (!msg.assignmentId || !msg.studentId) return;
           const data = loadData();
           const assignment = data.assignments.find(a => a.id === msg.assignmentId);
-          if (assignment && assignment.type !== 'notice') {
+          if (assignment && assignment.type !== 'notice' && canTeacherManageSubject(ws._teacher, assignment.subject)) {
             assignment.submissions[msg.studentId] = msg.status || '未提交';
             saveData(data);
             broadcastSync(data);
+          } else if (assignment) {
+            ws.send(JSON.stringify({ type:'auth-required', message:'你只能更新本人授课科目的作业提交情况' }));
           }
           break;
         }
@@ -1662,13 +1688,12 @@ function startWSServer() {
           const data = loadData();
           const teacher = ws._teacher || {};
           if (teacher.status !== 'approved') { ws.send(JSON.stringify({ type: 'auth-required', message: '未获批准，无法发布或修改班级内容' })); return; }
-          if (teacher.role !== '班主任') { ws.send(JSON.stringify({ type: 'auth-required', message: '普通授课教师仅可查看本人授课科目的作业与出勤情况' })); return; }
           const requested = msg.assignment || {};
           const existing = requested.id ? data.assignments.find(item => item.id === requested.id) : null;
           // 任课教师只能操作教室端已授权的学科；编辑时不得借由篡改 subject 转移作业归属。
           const targetSubject = msg.action === 'add' ? requested.subject : (existing && existing.subject);
           const hasConfiguredSubjects = normalizeSubjects(teacher.subjects).length > 0;
-          const hasSubjectPermission = hasConfiguredSubjects && (teacher.role === '班主任' || (targetSubject && (teacher.subjects || []).includes(targetSubject)));
+          const hasSubjectPermission = hasConfiguredSubjects && canTeacherManageSubject(teacher, targetSubject);
           const subjectUnchanged = msg.action !== 'edit' || !existing || requested.subject === existing.subject || teacher.role === '班主任';
           if (!targetSubject || !hasSubjectPermission || !subjectUnchanged) {
             ws.send(JSON.stringify({ type: 'auth-required', message: hasConfiguredSubjects ? '你只能发布或修改自己被授权学科的作业与通知' : '请先设置至少一个授课科目，再发布作业或通知' })); return;
@@ -1824,6 +1849,25 @@ function startWSServer() {
           break;
         }
 
+        case 'set-face-system': {
+          if (!canManageFaceSystem(ws)) {
+            ws.send(JSON.stringify({ type:'auth-required', message:'仅班主任可通过局域网开启或关闭教室人脸系统' }));
+            break;
+          }
+          setFaceCheckEnabled(msg.enabled === true);
+          break;
+        }
+
+        case 'face-preview-subscribe': {
+          if (!canManageFaceSystem(ws)) {
+            ws.send(JSON.stringify({ type:'auth-required', message:'完整摄像头画面仅供班主任在教室局域网内查看' }));
+            break;
+          }
+          ws._facePreviewSubscribed = msg.enabled === true && getFaceCheckEnabled();
+          ws.send(JSON.stringify({ type:'face-preview-state', enabled:ws._facePreviewSubscribed, faceSystemEnabled:getFaceCheckEnabled() }));
+          break;
+        }
+
         case 'label-face': {
           const teacher = ws._teacher || {};
           if (teacher.status !== 'approved' || teacher.role !== '班主任') {
@@ -1876,8 +1920,8 @@ function startWSServer() {
   }, 15000);
 }
 
-// 写操作权限：仅班主任可以呼叫或修改教室数据。
-function checkTeacherPerm(ws, msg) {
+// 所有已获批准的教师都可以执行课堂呼叫等通用教学操作。
+function checkApprovedTeacher(ws) {
   if (!isSystemReady()) {
     ws.send(JSON.stringify({ type: 'approval-required', message: '教室端尚未完成初始化配置' }));
     return false;
@@ -1887,11 +1931,13 @@ function checkTeacherPerm(ws, msg) {
     ws.send(JSON.stringify({ type: 'auth-required', message: '未获批准，无法修改数据' }));
     return false;
   }
-  if (t.role !== '班主任') {
-    ws.send(JSON.stringify({ type: 'auth-required', message: '普通授课教师仅可查看本人授课科目的作业与出勤情况' }));
-    return false;
-  }
   return true;
+}
+
+function canTeacherManageSubject(teacher, subject) {
+  if (!teacher || teacher.status !== 'approved' || !subject) return false;
+  const subjects = normalizeSubjects(teacher.subjects);
+  return teacher.role === '班主任' || subjects.includes(String(subject).trim());
 }
 
 // 广播同步数据（每个连接带个性化 teacher 信息）
@@ -1936,6 +1982,7 @@ function sendTeacherSync(ws, data) {
     assignments: visibleAssignments,
     attendance: getAttendanceData(),
     pendingFaces: homeroom ? getPendingFaces() : [],
+    faceSystemEnabled: getFaceCheckEnabled(),
     classroomConfigured: isClassroomConfigured(),
     teachers: homeroom ? { approved: getApprovedTeachers(), pending: getPendingRequests() } : null,
     teacher: {
@@ -2150,6 +2197,7 @@ function setFaceCheckEnabled(enabled) {
     }
   }
   rebuildTrayMenu();
+  broadcastFaceSystemState();
 }
 
 // ═══════════════════════════════════════
@@ -2263,6 +2311,16 @@ ipcMain.handle('face:report-detections', (_, detections) => {
     console.error('[face:report-detections] error:', e.message);
     return { success: false, error: e.message };
   }
+});
+
+ipcMain.handle('face:preview-requested', () => {
+  if (!wss || !getFaceCheckEnabled()) return false;
+  return Array.from(wss.clients).some(ws => ws.readyState === WebSocket.OPEN && ws._facePreviewSubscribed && canManageFaceSystem(ws));
+});
+
+ipcMain.on('face:report-preview', (_event, image) => {
+  if (typeof image !== 'string' || image.length > 400000 || !/^data:image\/jpeg;base64,/.test(image)) return;
+  broadcastFaceCameraFrame(image);
 });
 
 // 获取考勤状态
@@ -2502,7 +2560,7 @@ app.whenReady().then(() => {
   // ── 启动日志 ──
   const line = '='.repeat(50);
   console.log(line);
-  console.log('  Classroom Call System - Classroom App');
+  console.log('  Banda - Classroom App');
   console.log(line);
   console.log(`  WS Port  : ${WS_PORT}`);
   console.log(`  Database : ${DB_FILE}`);

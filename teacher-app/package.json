@@ -1,6 +1,6 @@
 {
   "name": "teacher-app",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "教师端 —— 呼叫控制台",
   "main": "main.js",
   "scripts": {
@@ -21,8 +21,8 @@
   },
   "build": {
     "appId": "com.schoolcall.teacher",
-    "productName": "教室呼叫-教师端",
-    "executableName": "ClassroomCall-Teacher",
+    "productName": "班达-教师端",
+    "executableName": "Banda-Teacher",
     "directories": {
       "output": "dist"
     },
@@ -50,7 +50,7 @@
     ],
     "win": {
       "icon": "icon.png",
-      "artifactName": "ClassroomCall-Teacher-${version}-Setup-${arch}.${ext}",
+      "artifactName": "Banda-Teacher-${version}-Setup-${arch}.${ext}",
       "target": [
         {
           "target": "nsis",
@@ -62,7 +62,7 @@
     },
     "mac": {
       "icon": "build/icon.icns",
-      "artifactName": "ClassroomCall-Teacher-${version}-macOS-${arch}.${ext}",
+      "artifactName": "Banda-Teacher-${version}-macOS-${arch}.${ext}",
       "category": "public.app-category.education",
       "hardenedRuntime": false,
       "target": [
@@ -87,7 +87,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
-      "shortcutName": "教室呼叫-教师端"
+      "shortcutName": "班达-教师端"
     }
   },
   "devDependencies": {

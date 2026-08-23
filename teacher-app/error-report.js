@@ -28,7 +28,7 @@
     const now = new Date();
     const suggestions = Array.isArray(options.suggestions) ? options.suggestions.filter(Boolean) : [];
     return [
-      '班达教师端错误报告',
+      '班达错误报告（教师端）',
       `发生时间：${now.toLocaleString('zh-CN')} (${now.toISOString()})`,
       `错误场景：${text(options.context) || '教师端运行'}`,
       `错误标题：${text(options.title) || '操作失败'}`,

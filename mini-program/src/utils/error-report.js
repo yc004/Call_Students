@@ -40,7 +40,7 @@ function buildReport(options = {}) {
   const runtime = runtimeInfo();
   const suggestions = Array.isArray(options.suggestions) ? options.suggestions.filter(Boolean) : [];
   return [
-    '班达微信小程序错误报告',
+    '班达错误报告（微信小程序）',
     `发生时间：${now.toLocaleString()} (${now.toISOString()})`,
     `错误场景：${safeText(options.context) || runtime.route}`,
     `错误标题：${safeText(options.title) || '操作失败'}`,

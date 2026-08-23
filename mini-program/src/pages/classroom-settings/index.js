@@ -5,6 +5,7 @@ const { parseStudentNames } = require('../../utils/student-list');
 const sharedRoom = require('../../utils/shared-room');
 const errorReport = require('../../utils/error-report');
 const subjectOptions = require('../../utils/subject-options');
+const shareCard = require('../../utils/share-card');
 
 function teacherView(item, currentId) {
   const id = item.connection_id || '';
@@ -40,5 +41,5 @@ Page({
   matchFace(event){const face=this.data.pendingFaces[Number(event.currentTarget.dataset.index)];const student=this.data.students[Number(event.detail.value)];if(!face||!student)return;wx.showModal({title:'确认人脸匹配',content:`将这张人脸匹配为“${student.name}”？确认后会写入教室人脸库。`,success:result=>{if(result.confirm)socket.send({type:'label-face',faceId:face.faceId,studentId:student.id,name:student.name});}});},
   previewFace(event){const image=event.currentTarget.dataset.image;if(image)wx.previewImage({current:image,urls:[image]});},
   showCloudInviteHelp(){wx.showModal({title:'添加云端教师',content:'请由组织管理员先创建教师账号并发放默认密码，再在该教室的“成员”页面选择教师、设置身份和授课科目。教师首次登录后会被要求修改密码并完善资料。',showCancel:false,confirmText:'我知道了'});},
-  onShareAppMessage(options){const isInvite=options&&options.from==='button'&&options.target&&options.target.dataset.action==='invite-teacher';if(!isInvite||!this.room||this.room.cloudClassroomId)return{title:'班达 · 教室管理',path:'/pages/home/index'};const room={...this.room,name:this.data.className||this.room.name};return{title:`${room.name}邀请你加入教师团队`,path:sharedRoom.createPath(room)};},
+  onShareAppMessage(options){const isInvite=options&&options.from==='button'&&options.target&&options.target.dataset.action==='invite-teacher';if(!isInvite||!this.room||this.room.cloudClassroomId)return shareCard.classroomInvite('班达 · 教室管理','/pages/home/index');const room={...this.room,name:this.data.className||this.room.name};return shareCard.classroomInvite(`${room.name}邀请你加入教师团队`,sharedRoom.createPath(room));},
 });

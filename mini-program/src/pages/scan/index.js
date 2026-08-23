@@ -7,6 +7,7 @@ const scanAction = require('../../utils/scan-action');
 const errorReport = require('../../utils/error-report');
 const networkDiagnostics = require('../../utils/network-diagnostics');
 const subjectOptions = require('../../utils/subject-options');
+const shareCard = require('../../utils/share-card');
 
 Page({
   data: {
@@ -51,11 +52,8 @@ Page({
   onShareAppMessage() {
     const session = sessionStore.load();
     const room = session && session.activeRoom;
-    if (!room || !this.isCurrentRoomHomeroom(session)) return { title: '教室连接', path: '/pages/scan/index' };
-    return {
-      title: `${session.account.name} 邀请你连接“${room.name}”`,
-      path: sharedRoom.createPath(room),
-    };
+    if (!room || !this.isCurrentRoomHomeroom(session)) return shareCard.classroomInvite('班达 · 连接教室', '/pages/scan/index');
+    return shareCard.classroomInvite(`${session.account.name} 邀请你连接“${room.name}”`, sharedRoom.createPath(room));
   },
 
   chooseScanAction() {

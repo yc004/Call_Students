@@ -16,7 +16,7 @@
   function buildReport(options) {
     const now = new Date();
     const suggestions = Array.isArray(options.suggestions) ? options.suggestions.filter(Boolean) : [];
-    return ['班达教室端错误报告', `发生时间：${now.toLocaleString('zh-CN')} (${now.toISOString()})`, `错误场景：${text(options.context) || document.title || '教室端运行'}`, `错误标题：${text(options.title) || '操作失败'}`, `页面：${location.pathname}`, `系统信息：${navigator.userAgent}`, '', '详细信息：', details(options.error || options.detail), suggestions.length ? `\n建议检查：\n${suggestions.map((item,index)=>`${index+1}. ${item}`).join('\n')}` : ''].filter(Boolean).join('\n');
+    return ['班达错误报告（教室端）', `发生时间：${now.toLocaleString('zh-CN')} (${now.toISOString()})`, `错误场景：${text(options.context) || document.title || '教室端运行'}`, `错误标题：${text(options.title) || '操作失败'}`, `页面：${location.pathname}`, `系统信息：${navigator.userAgent}`, '', '详细信息：', details(options.error || options.detail), suggestions.length ? `\n建议检查：\n${suggestions.map((item,index)=>`${index+1}. ${item}`).join('\n')}` : ''].filter(Boolean).join('\n');
   }
   function ensureStyle() {
     if (document.getElementById('clientErrorReporterStyle')) return;
