@@ -5,11 +5,12 @@
   </view>
 
   <view class="lan-warning" wx:if="{{faceLanUnavailable}}"><view>!</view><view><text>当前局域网连接失败，人脸服务不可用</text><text>{{faceLanMessage}}</text></view></view>
+  <view class="face-paused-warning" wx:if="{{faceSystemStateKnown && !faceSystemEnabled}}"><view>停</view><view><text>教室人脸识别已关闭</text><text>出勤状态已暂停更新，下面保留的是关闭前最后一次同步结果。请联系班主任重新开启。</text></view></view>
 
   <view class="attendance-summary surface">
     <view class="summary-top">
       <view class="attendance-ring" style="background:conic-gradient(#07c160 {{presentPercent}}%,#ededed 0)"><view><text>{{presentCount}}</text><text>/{{totalCount}}</text></view></view>
-      <view class="summary-copy"><text>当前在教室</text><text>{{updatedText}}</text><view class="live-mark"><view></view><text>{{status === 'online' ? '摄像头实时更新' : statusMessage}}</text></view></view>
+      <view class="summary-copy"><text>当前在教室</text><text>{{updatedText}}</text><view class="live-mark {{faceSystemStateKnown && !faceSystemEnabled?'paused':''}}"><view></view><text>{{faceSystemStateKnown && !faceSystemEnabled ? '识别已暂停' : (status === 'online' ? '摄像头实时更新' : statusMessage)}}</text></view></view>
     </view>
     <view class="summary-stats"><view><text>{{arrivedCount}}</text><text>今日已到</text></view><view><text>{{awayCount}}</text><text>已离开</text></view><view><text>{{unseenCount}}</text><text>未识别</text></view></view>
   </view>

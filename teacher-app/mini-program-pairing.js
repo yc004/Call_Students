@@ -8,6 +8,8 @@ const connectionCode = require('./connection-code');
 const PAIRING_PREFIX = 'CLASSROOM-CALL-PAIR-1';
 const PAIRING_PORT = 3457;
 const DEFAULT_TTL_MS = 2 * 60 * 1000;
+const MAX_PAIRING_REQUEST_BYTES = 4 * 1024 * 1024;
+const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 
 function isPrivateIpv4(address) {
   const parts = String(address || '').replace(/^::ffff:/, '').split('.').map(Number);
@@ -107,6 +109,32 @@ function safeCloud(cloud) {
   };
 }
 
+function safeAccount(account) {
+  const name = String(account && account.name || '').trim().slice(0, 40);
+  const connectionId = String(account && account.connectionId || '').trim().slice(0, 128);
+  if (!name || !/^[a-zA-Z0-9-]{8,128}$/.test(connectionId)) {
+    throw new Error('小程序教师账户信息无效');
+  }
+  const avatarUrl = String(account && account.avatarUrl || '').trim().slice(0, 1000);
+  return {
+    name,
+    connectionId,
+    subjects: [],
+    ...(avatarUrl && /^https?:\/\//i.test(avatarUrl) ? { avatarUrl } : {}),
+  };
+}
+
+function safeAvatarPayload(avatar) {
+  if (!avatar) return null;
+  const contentType = String(avatar.contentType || '').toLowerCase();
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(contentType)) throw new Error('头像图片格式不受支持');
+  const base64 = String(avatar.base64 || '');
+  if (!base64 || !/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) throw new Error('头像图片数据无效');
+  const data = Buffer.from(base64, 'base64');
+  if (!data.length || data.length > MAX_AVATAR_BYTES) throw new Error('头像图片大小不能超过 2MB');
+  return { contentType, base64 };
+}
+
 function sendJson(socket, body) {
   socket.end(`${JSON.stringify(body)}\n`);
 }
@@ -117,12 +145,13 @@ function tokensEqual(actual, expected) {
   return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
-async function startPairingServer({ ttlMs = DEFAULT_TTL_MS, hosts = getLanAddresses(), onComplete }) {
+async function startPairingServer({ ttlMs = DEFAULT_TTL_MS, hosts = getLanAddresses(), canAccept, onComplete }) {
   if (!hosts.length) throw new Error('未检测到局域网地址，请先将电脑连接到与手机相同的 Wi-Fi');
 
   const token = crypto.randomBytes(32).toString('base64url');
   const expiresAt = Date.now() + ttlMs;
   let used = false;
+  let claimed = false;
   let timer = null;
 
   const server = net.createServer(socket => {
@@ -132,16 +161,18 @@ async function startPairingServer({ ttlMs = DEFAULT_TTL_MS, hosts = getLanAddres
       sendJson(socket, { ok: false, message: '只允许局域网设备配对' });
       return;
     }
-    if (used || Date.now() > expiresAt) {
+    if (used || claimed || Date.now() > expiresAt) {
       sendJson(socket, { ok: false, message: '二维码已使用或已过期，请在教师端重新生成' });
       return;
     }
     let input = '';
+    let receivedSize = 0;
     let processed = false;
     socket.on('data', chunk => {
       if (processed) return;
+      receivedSize += chunk.length;
       input += chunk.toString('utf8');
-      if (Buffer.byteLength(input, 'utf8') > 32768) {
+      if (receivedSize > MAX_PAIRING_REQUEST_BYTES) {
         processed = true;
         sendJson(socket, { ok: false, message: '配对请求过大' });
         return;
@@ -156,7 +187,7 @@ async function startPairingServer({ ttlMs = DEFAULT_TTL_MS, hosts = getLanAddres
         return;
       }
       processed = true;
-      if (used || Date.now() > expiresAt) {
+      if (used || claimed || Date.now() > expiresAt) {
         sendJson(socket, { ok: false, message: '二维码已使用或已过期，请在教师端重新生成' });
         return;
       }
@@ -164,22 +195,41 @@ async function startPairingServer({ ttlMs = DEFAULT_TTL_MS, hosts = getLanAddres
         sendJson(socket, { ok: false, message: '临时配对码无效' });
         return;
       }
-      const name = String(body.account && body.account.name || '').trim().slice(0, 20);
-      const connectionId = String(body.account && body.account.connectionId || '').trim().slice(0, 128);
-      if (!name || !/^[a-zA-Z0-9-]{8,128}$/.test(connectionId)) {
-        sendJson(socket, { ok: false, message: '小程序教师账户信息无效' });
+      if (typeof canAccept === 'function' && !canAccept()) {
+        sendJson(socket, { ok: false, message: '教师端已经登录，请先退出当前账户后再扫码' });
         return;
       }
-      const account = { name, connectionId, subjects: [] };
-      // 扫码登录以小程序为唯一身份与教室数据源，不混入这台电脑残留的数据。
-      const syncedRooms = safeRooms(body.rooms);
-      const cloud = safeCloud(body.cloud);
-      used = true;
-      sendJson(socket, { ok: true, account, rooms: syncedRooms, cloud });
-      if (typeof onComplete === 'function') {
-        try { onComplete({ account, rooms: syncedRooms, cloud }); } catch (_error) {}
+      let loginData;
+      try {
+        const account = safeAccount(body.account);
+        const rooms = safeRooms(body.rooms);
+        const cloud = safeCloud(body.cloud);
+        const avatar = safeAvatarPayload(body.avatar);
+        loginData = { account, rooms, cloud, avatar, usageMode:cloud ? 'tob' : 'toc' };
+      } catch (error) {
+        sendJson(socket, { ok:false, message:error.message || '小程序登录资料无效' });
+        return;
       }
-      setTimeout(() => server.close(), 100).unref?.();
+      claimed = true;
+      Promise.resolve()
+        .then(() => typeof onComplete === 'function' ? onComplete(loginData) : loginData)
+        .then(() => {
+          used = true;
+          sendJson(socket, {
+            ok:true,
+            imported:{
+              name:loginData.account.name,
+              roomCount:loginData.rooms.length,
+              usageMode:loginData.usageMode,
+              hasAvatar:!!(loginData.avatar || loginData.account.avatarUrl || loginData.cloud && loginData.cloud.avatarUrl),
+            },
+          });
+          setTimeout(() => server.close(), 100).unref?.();
+        })
+        .catch(error => {
+          claimed = false;
+          sendJson(socket, { ok:false, message:error.message || '教师端保存登录资料失败' });
+        });
     });
   });
   server.on('error', error => console.error('mini-program pairing server error:', error.message));
@@ -228,5 +278,7 @@ module.exports = {
   createPairingPayload,
   parsePairingPayload,
   safeRooms,
+  safeAccount,
+  safeAvatarPayload,
   startPairingServer,
 };

@@ -127,9 +127,10 @@ Page({
     this.completingPendingPairing = true;
     wx.showLoading({ title:'正在连接教师端', mask:true });
     try {
-      const session = await pairWithTeacher(payload, sessionStore.load());
-      sessionStore.save(session); getApp().globalData.session = session; clearPendingPairing();
-      wx.hideLoading(); wx.showToast({ title:'欢迎，' + session.account.name, icon:'success' });
+      const session = sessionStore.load();
+      await pairWithTeacher(payload, session);
+      clearPendingPairing();
+      wx.hideLoading(); wx.showToast({ title:'电脑登录成功', icon:'success' });
       setTimeout(() => wx.switchTab({ url:'/pages/home/index' }), 300);
     } catch (error) {
       wx.hideLoading(); clearPendingPairing();

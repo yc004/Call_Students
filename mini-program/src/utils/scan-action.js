@@ -47,16 +47,13 @@ async function handleTeacherLogin(value, onComplete, retry) {
   }
   wx.showLoading({ title: '正在登录教师端', mask: true });
   try {
-    const synced = await pairWithTeacher(value, current);
-    const previousCode = current.activeRoom && current.activeRoom.connectionCode;
-    const activeRoom = synced.rooms.find(item => item.connectionCode === previousCode) || synced.rooms[0] || null;
-    const updated = sessionStore.save({ ...synced, activeRoom, pairedAt: new Date().toISOString() });
+    const result = await pairWithTeacher(value, current);
     clearPendingPairing();
-    getApp().globalData.session = updated;
-    if (activeRoom) socket.connect(activeRoom, updated.account, { force: true });
     wx.hideLoading();
-    wx.showModal({ title: '教师端登录成功', content: '账户和教室连接信息已同步到电脑教师端。', showCancel: false });
-    if (onComplete) onComplete({ type: 'teacher', updated });
+    const imported = result && result.imported || {};
+    const roomText = Number.isFinite(imported.roomCount) ? `，并导入 ${imported.roomCount} 个教室` : '';
+    wx.showModal({ title: '教师端登录成功', content: `已使用“${current.account.name}”登录电脑${roomText}。小程序中的资料不会被修改。`, showCancel: false });
+    if (onComplete) onComplete({ type:'teacher', session:current });
   } catch (error) {
     wx.hideLoading();
     connectionGuide('无法登录教师端', error && error.message, retry);

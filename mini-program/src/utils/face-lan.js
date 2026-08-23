@@ -18,7 +18,7 @@ function decodeArrayBuffer(arrayBuffer) {
 function connect(room, account, listener, timeoutMs = 8000) {
   if (!room || !connectionCode.isValid(room.connectionCode)) {
     listener('unavailable', { message:'当前教室没有可用的局域网连接信息，人脸服务不可用' });
-    return { close() {} };
+    return { send() { return false; }, close() {} };
   }
   let active = null;
   let cancelled = false;
@@ -27,7 +27,10 @@ function connect(room, account, listener, timeoutMs = 8000) {
   }).catch(() => {
     if (!cancelled) listener('unavailable', { message:'局域网连接码无效，人脸服务不可用' });
   });
-  return { close() { cancelled = true; if (active) active.close(); } };
+  return {
+    send(data) { return !!(active && active.send(data)); },
+    close() { cancelled = true; if (active) active.close(); },
+  };
 }
 
 function connectResolved(host, room, account, listener, timeoutMs) {
@@ -51,12 +54,24 @@ function connectResolved(host, room, account, listener, timeoutMs) {
     } else if (message.type === 'face-status') listener('attendance', message);
     else if (message.type === 'face-detections') listener('presence', message);
     else if (message.type === 'pending-face-library') listener('pendingFaces', message);
-    else if (['approval-required','login-required','auth-required','subject-required'].includes(message.type)) fail(message.message || '局域网身份验证失败，人脸服务不可用');
+    else if (message.type === 'face-system-state') listener('faceSystemState', message);
+    else if (message.type === 'face-preview-state') listener('facePreviewState', message);
+    else if (message.type === 'face-camera-frame') listener('faceCameraFrame', message);
+    else if (['approval-required','login-required','auth-required','subject-required'].includes(message.type)) {
+      if (ready) listener('error', message);
+      else fail(message.message || '局域网身份验证失败，人脸服务不可用');
+    }
   });
   task.onError(() => fail('当前局域网连接失败，人脸服务不可用。请确认手机与教室电脑连接同一 Wi-Fi。'));
   task.onClose(() => { if (!closed && !ready) fail('当前局域网连接失败，人脸服务不可用'); else if (!closed) listener('unavailable', { message:'局域网连接已断开，人脸服务暂时不可用' }); });
   task.onOpen(() => task.send({ data:JSON.stringify({ type:'connect', purpose:'face', connectionId:account.connectionId, name:account.name, subjects:room.subjects || [] }) }));
-  return { close() { closed = true; clearTimeout(timer); try { task.close({ code:1000, reason:'leave attendance' }); } catch (_error) {} } };
+  return {
+    send(data) {
+      if (!ready || closed) return false;
+      try { task.send({ data:JSON.stringify(data) }); return true; } catch (_error) { return false; }
+    },
+    close() { closed = true; clearTimeout(timer); try { task.close({ code:1000, reason:'leave attendance' }); } catch (_error) {} },
+  };
 }
 
 module.exports = { connect };
