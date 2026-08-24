@@ -169,9 +169,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: classroom-windows-x64-${{ github.sha }}
-          path: |
-            classroom-app/dist/Banda-Classroom-*-Setup-x64.exe
-            classroom-app/dist/Banda-Classroom-*-Setup-x64.exe.sha256
+          path: classroom-app/dist/Banda-Classroom-*-Setup-x64.exe
           if-no-files-found: error
           retention-days: 30
 
@@ -242,9 +240,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: teacher-windows-x64-${{ github.sha }}
-          path: |
-            teacher-app/dist/Banda-Teacher-*-Setup-x64.exe
-            teacher-app/dist/Banda-Teacher-*-Setup-x64.exe.sha256
+          path: teacher-app/dist/Banda-Teacher-*-Setup-x64.exe
           if-no-files-found: error
           retention-days: 30
 
@@ -343,7 +339,7 @@ jobs:
             echo '[signing] no certificate configured; building unsigned packages'
           fi
 
-      - name: Build DMG and ZIP packages
+      - name: Build DMG installer
         working-directory: classroom-app
         run: |
           if [[ "$MACOS_SIGNING_ENABLED" == "true" ]]; then
@@ -365,23 +361,11 @@ jobs:
           bash .github/scripts/test-macos-package.sh \
             "$app_path" "$dmg_path" 'Banda-Classroom' '${{ matrix.machine }}'
 
-      - name: Generate package checksums
-        working-directory: classroom-app
-        run: |
-          cd dist
-          shasum -a 256 \
-            Banda-Classroom-*-macOS-${{ matrix.arch }}.dmg \
-            Banda-Classroom-*-macOS-${{ matrix.arch }}.zip \
-            > SHA256SUMS-classroom-macOS-${{ matrix.arch }}.txt
-
-      - name: Upload classroom packages
+      - name: Upload classroom installer
         uses: actions/upload-artifact@v7
         with:
           name: classroom-macos-${{ matrix.arch }}-${{ github.sha }}
-          path: |
-            classroom-app/dist/Banda-Classroom-*-macOS-${{ matrix.arch }}.dmg
-            classroom-app/dist/Banda-Classroom-*-macOS-${{ matrix.arch }}.zip
-            classroom-app/dist/SHA256SUMS-classroom-macOS-${{ matrix.arch }}.txt
+          path: classroom-app/dist/Banda-Classroom-*-macOS-${{ matrix.arch }}.dmg
           if-no-files-found: error
           retention-days: 30
 
@@ -455,7 +439,7 @@ jobs:
             echo '[signing] no certificate configured; building unsigned packages'
           fi
 
-      - name: Build DMG and ZIP packages
+      - name: Build DMG installer
         working-directory: teacher-app
         run: |
           if [[ "$MACOS_SIGNING_ENABLED" == "true" ]]; then
@@ -473,23 +457,11 @@ jobs:
           bash .github/scripts/test-macos-package.sh \
             "$app_path" "$dmg_path" 'Banda-Teacher' '${{ matrix.machine }}'
 
-      - name: Generate package checksums
-        working-directory: teacher-app
-        run: |
-          cd dist
-          shasum -a 256 \
-            Banda-Teacher-*-macOS-${{ matrix.arch }}.dmg \
-            Banda-Teacher-*-macOS-${{ matrix.arch }}.zip \
-            > SHA256SUMS-teacher-macOS-${{ matrix.arch }}.txt
-
-      - name: Upload teacher packages
+      - name: Upload teacher installer
         uses: actions/upload-artifact@v7
         with:
           name: teacher-macos-${{ matrix.arch }}-${{ github.sha }}
-          path: |
-            teacher-app/dist/Banda-Teacher-*-macOS-${{ matrix.arch }}.dmg
-            teacher-app/dist/Banda-Teacher-*-macOS-${{ matrix.arch }}.zip
-            teacher-app/dist/SHA256SUMS-teacher-macOS-${{ matrix.arch }}.txt
+          path: teacher-app/dist/Banda-Teacher-*-macOS-${{ matrix.arch }}.dmg
           if-no-files-found: error
           retention-days: 30
 
@@ -512,17 +484,33 @@ jobs:
           path: release
           merge-multiple: true
 
+      - name: Generate download guide
+        run: node .github/scripts/generate-release-notes.js release-notes.md
+
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
+          mapfile -t installers < <(find release -maxdepth 1 -type f \( -name '*.exe' -o -name '*.dmg' \) -print | sort)
+          if [[ "${#installers[@]}" -ne 6 ]]; then
+            echo "Expected 6 installers, found ${#installers[@]}" >&2
+            printf '%s\n' "${installers[@]}" >&2
+            exit 1
+          fi
           if gh release view "$GITHUB_REF_NAME" --repo "$GH_REPO" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" release/* --clobber --repo "$GH_REPO"
+            while IFS= read -r asset; do
+              case "$asset" in
+                *.exe|*.dmg) ;;
+                *) gh release delete-asset "$GITHUB_REF_NAME" "$asset" --yes --repo "$GH_REPO" ;;
+              esac
+            done < <(gh release view "$GITHUB_REF_NAME" --repo "$GH_REPO" --json assets --jq '.assets[].name')
+            gh release upload "$GITHUB_REF_NAME" "${installers[@]}" --clobber --repo "$GH_REPO"
+            gh release edit "$GITHUB_REF_NAME" --repo "$GH_REPO" --title "$GITHUB_REF_NAME" --notes-file release-notes.md
           else
-            gh release create "$GITHUB_REF_NAME" release/* \
+            gh release create "$GITHUB_REF_NAME" "${installers[@]}" \
               --repo "$GH_REPO" \
               --verify-tag \
-              --generate-notes \
+              --notes-file release-notes.md \
               --title "$GITHUB_REF_NAME"
           fi

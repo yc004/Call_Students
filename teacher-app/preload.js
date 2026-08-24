@@ -24,6 +24,12 @@ contextBridge.exposeInMainWorld('api', {
   getHomeworkAiSettings: () => ipcRenderer.invoke('get-homework-ai-settings'),
   setHomeworkAiSettings: (data) => ipcRenderer.invoke('set-homework-ai-settings', data),
   analyzeHomework: (data) => ipcRenderer.invoke('analyze-homework', data),
+  onHomeworkAiActivity: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, activity) => callback(activity);
+    ipcRenderer.on('homework-ai-activity', listener);
+    return () => ipcRenderer.removeListener('homework-ai-activity', listener);
+  },
   getCloudSettings: () => ipcRenderer.invoke('get-cloud-settings'),
   setCloudSettings: (value) => ipcRenderer.invoke('set-cloud-settings', value),
   refreshCloudClassrooms: () => ipcRenderer.invoke('refresh-cloud-classrooms'),

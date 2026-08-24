@@ -19,6 +19,14 @@ test('admin classroom form keeps a stable form reference across await', () => {
   assert.doesNotMatch(adminSource, /event\.currentTarget\.reset/);
 });
 
+test('cloud homework mutations preserve seeded submission records for authorized teachers', () => {
+  const serverSource = readFileSync(new URL('../src/server.ts', import.meta.url), 'utf8');
+  assert.doesNotMatch(serverSource, /if \(!isHomeroom\) return false;\s*if \(message\.type === 'update-classroom'/);
+  assert.match(serverSource, /item\.submissions && typeof item\.submissions === 'object'/);
+  assert.match(serverSource, /INSERT INTO submissions \(assignment_id,student_id,status,updated_by\)/);
+  assert.doesNotMatch(serverSource, /\['call','update-classroom','update-assignments','update-submission','label-face','manage-teacher'\]/);
+});
+
 test('admin exposes scoped detail, update, and deletion operations for classrooms and teachers', () => {
   const serverSource = readFileSync(new URL('../src/server.ts', import.meta.url), 'utf8');
 

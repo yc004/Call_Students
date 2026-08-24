@@ -460,10 +460,13 @@ ipcMain.handle('set-homework-ai-settings', (_, input) => {
     return { ok:false, message:error.message || '保存 AI 设置失败' };
   }
 });
-ipcMain.handle('analyze-homework', async (_, input) => {
+ipcMain.handle('analyze-homework', async (event, input) => {
   try {
     const ai = loadAllData().settings.ai || {};
-    const result = await analyzeHomework(ai, input);
+    const runId = String(input && input.runId || '').slice(0, 100);
+    const result = await analyzeHomework(ai, input, fetch, activity => {
+      if (!event.sender.isDestroyed()) event.sender.send('homework-ai-activity', { runId, ...activity });
+    });
     return { ok:true, ...result };
   } catch (error) {
     console.error('analyze-homework error:', error.message);

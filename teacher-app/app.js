@@ -9,6 +9,7 @@
   const api = window.api || {};
   const connectionCode = window.ConnectionCode;
   const homeworkView = window.HomeworkView;
+  const homeworkTestData = window.HomeworkTestData;
   const SUBJECT_OPTIONS = Object.freeze(['语文','数学','英语','物理','化学','生物','道德与法治','历史','地理','科学','信息科技','通用技术','体育与健康','音乐','美术','劳动','综合实践活动','心理健康','班会','日语','俄语']);
 
   function reportClientError(title, error, options = {}) {
@@ -40,7 +41,10 @@
   let hwContent;
   let hwModal, hwModalTitleLabel, hwModalSubject, hwModalTitle, hwModalDate, hwModalDeadline, hwModalCancel, hwModalConfirm;
   let aiHomeworkModal, aiHomeworkClose, aiSubject, aiStage, aiDateFrom, aiDateTo, aiFocus, aiAnonymize;
-  let aiProviderStatus, openAiSettingsBtn, aiAnalysisStatus, aiAnalyzeBtn, aiReportEmpty, aiReportLoading, aiReportContent;
+  let aiProviderStatus, openAiSettingsBtn, aiAnalysisStatus, aiAnalyzeBtn, aiReportEmpty, aiReportLoading, aiReportContent, aiAgentTimeline;
+  let aiAgentHeading, aiAgentSubheading, aiAgentElapsed, aiAgentViewReport;
+  let aiAgentProgressive, aiAgentInsightStream, aiAgentProgressiveCharts, aiAgentResultCount;
+  let aiTestClassroomName, aiTestDataHint, seedAiTestDataBtn, clearAiTestDataBtn;
   let accountAiSettings, accountAiEndpoint, accountAiModel, accountAiApiKey, accountAiStatus, saveAccountAiSettings;
   let lastAiAnalysis = null;
   let publishTypeHomework, publishTypeNotice, publishContentLabel, publishDeadlineLabel, publishHint;
@@ -65,6 +69,13 @@
   let editingTeacherId = '';
   let miniLoginPollTimer = null;
   let teacherLoginMode = 'toc';
+  let activeAiRunId = '';
+  let currentAiActivities = [];
+  let aiAgentStartedAt = 0;
+  let aiAgentClockTimer = null;
+  let aiAgentProgressiveCount = 0;
+  let aiReportRenderToken = 0;
+  const aiAgentRenderedCharts = new Set();
 
   // ── 状态 ──
   const state = {
@@ -101,6 +112,7 @@
     connectingRoomCode: '',
     pendingConnectSubjects: [],
     leavingRoomCode: '',
+    roomRemovalDialogOpen: false,
     pendingLeave: null,
   };
   const MAX_HISTORY = 500;
@@ -1021,7 +1033,7 @@
         `<span class="room-avatar" aria-hidden="true">${esc(avatar)}</span>` +
         `<span class="room-copy"><strong class="room-name">${esc(room.name)}</strong><small class="room-ip">${room.transport === 'cloud' ? '组织教室' : `连接码 ${esc(room.connectionCode)}`}</small></span>` +
         `<span class="room-presence"><i class="dot ${cls}"></i><small>${statusText}</small></span>` +
-        `<button class="room-del" data-code="${esc(room.connectionCode)}" type="button" aria-label="退出${esc(room.name)}" title="退出教室">×</button>`;
+        `<button class="room-del" data-code="${esc(room.connectionCode)}" type="button" aria-label="退出或从本机移除${esc(room.name)}" title="退出或从本机移除教室">×</button>`;
 
       li.addEventListener('click', (e) => {
         if (e.target.classList.contains('room-del')) return;
@@ -1099,28 +1111,102 @@
     });
   }
 
+  function chooseRoomRemovalMode(room) {
+    return new Promise(resolve => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal room-removal-modal';
+      overlay.setAttribute('role', 'dialog');
+      overlay.setAttribute('aria-modal', 'true');
+      overlay.setAttribute('aria-labelledby', 'roomRemovalTitle');
+
+      const card = document.createElement('section');
+      card.className = 'modal-card room-removal-card';
+      const mark = document.createElement('span');
+      mark.className = 'room-removal-mark';
+      mark.textContent = '教';
+      const title = document.createElement('h3');
+      title.id = 'roomRemovalTitle';
+      title.textContent = `移除“${room.name || '教室'}”`;
+      const description = document.createElement('p');
+      description.className = 'room-removal-description';
+      description.textContent = '请选择移除方式。教室已重置、卸载或无法连接时，可以只清理这台教师电脑保存的记录。';
+
+      const choices = document.createElement('div');
+      choices.className = 'room-removal-choices';
+      const syncChoice = document.createElement('div');
+      syncChoice.innerHTML = '<strong>退出并同步教室端</strong><small>先通知教室端删除你的教师记录，再从本机移除。适用于教室仍可连接的情况。</small>';
+      const localChoice = document.createElement('div');
+      localChoice.innerHTML = '<strong>仅从本机移除</strong><small>无需连接教室端，立即删除本机记录；不会修改教室端或云端保存的成员关系。</small>';
+      choices.append(syncChoice, localChoice);
+
+      if (state.currentRoom && state.currentRoom.id === room.id && isHomeroomTeacher()) {
+        const warning = document.createElement('p');
+        warning.className = 'room-removal-warning';
+        warning.textContent = '你当前是该教室的班主任。仅从本机移除不会解除教室端的班主任身份；退出并同步会让教室端重新进入班主任绑定流程。';
+        card.append(mark, title, description, choices, warning);
+      } else {
+        card.append(mark, title, description, choices);
+      }
+
+      const actions = document.createElement('div');
+      actions.className = 'modal-actions room-removal-actions';
+      const cancel = document.createElement('button');
+      cancel.type = 'button'; cancel.className = 'btn'; cancel.textContent = '取消';
+      const local = document.createElement('button');
+      local.type = 'button'; local.className = 'btn btn-danger-outline'; local.textContent = '仅从本机移除';
+      const sync = document.createElement('button');
+      sync.type = 'button'; sync.className = 'btn btn-primary'; sync.textContent = '退出并同步';
+      actions.append(cancel, local, sync); card.append(actions); overlay.append(card); document.body.append(overlay);
+
+      let finished = false;
+      function finish(mode) {
+        if (finished) return;
+        finished = true;
+        document.removeEventListener('keydown', onKeyDown);
+        overlay.remove();
+        resolve(mode);
+      }
+      function onKeyDown(event) { if (event.key === 'Escape') finish(''); }
+      cancel.addEventListener('click', () => finish(''));
+      local.addEventListener('click', () => finish('local'));
+      sync.addEventListener('click', () => finish('sync'));
+      overlay.addEventListener('click', event => { if (event.target === overlay) finish(''); });
+      document.addEventListener('keydown', onKeyDown);
+      sync.focus();
+    });
+  }
+
+  async function removeRoomFromLocalState(room) {
+    if (state.currentRoom && state.currentRoom.id === room.id) disconnect();
+    state.rooms = state.rooms.filter(item => item.id !== room.id);
+    renderRooms();
+    await saveToDisk();
+  }
+
   async function removeRoom(roomInput) {
-    if (state.leavingRoomCode) return;
+    if (state.leavingRoomCode || state.roomRemovalDialogOpen) return;
     const room = roomInput && typeof roomInput === 'object' ? roomInput : state.rooms.find(item => item.connectionCode === roomInput);
     if (!room || !state.account) return;
     const code = room.transport === 'cloud' ? room.cloudClassroomId : room.connectionCode;
-    const homeroomWarning = state.currentRoom && state.currentRoom.id === room.id && isHomeroomTeacher()
-      ? '\n\n你是该教室的班主任。退出后教室端会重新进入班主任绑定引导，但班级资料不会被删除。'
-      : '';
-    if (!confirm(`确定退出“${room.name}”吗？\n\n教室端会同时删除你的教师记录；以后需要重新扫码或输入连接码加入。${homeroomWarning}`)) return;
+    state.roomRemovalDialogOpen = true;
+    let removalMode = '';
+    try { removalMode = await chooseRoomRemovalMode(room); }
+    finally { state.roomRemovalDialogOpen = false; }
+    if (!removalMode) return;
+    if (removalMode === 'local') {
+      await removeRoomFromLocalState(room);
+      return;
+    }
     state.leavingRoomCode = code;
     try {
       await requestClassroomLeave(room);
     } catch (error) {
-      reportClientError('无法退出教室', error, { context:'退出教室', message:'无法通知教室端，本次没有删除本地教室，以避免两端记录不一致。', suggestions:[room.transport === 'cloud' ? '检查云服务连接后重试' : '确认教室端已启动，且两台电脑位于同一局域网'] });
+      reportClientError('无法同步退出教室', error, { context:'退出教室', message:'无法通知教室端，本次仍保留本地记录。若教室已经重置或删除，请重新点击移除按钮并选择“仅从本机移除”。', suggestions:[room.transport === 'cloud' ? '检查云服务连接，或让组织管理员确认该教师的教室成员关系' : '确认教室端已启动且位于同一局域网；若教室已不存在，可使用仅从本机移除'] });
       return;
     } finally {
       state.leavingRoomCode = '';
     }
-    if (state.currentRoom && state.currentRoom.id === room.id) disconnect();
-    state.rooms = state.rooms.filter(r => r.id !== room.id);
-    renderRooms();
-    await saveToDisk();
+    await removeRoomFromLocalState(room);
   }
 
   // ═══════════════════════════════════
@@ -2245,6 +2331,169 @@
     return students && students.length ? `<div class="ai-student-chips">${students.map(name => `<span>${esc(name)}</span>`).join('')}</div>` : '';
   }
 
+  function agentActivityIcon(activity) {
+    if (activity.status === 'error') return '!';
+    if (activity.status === 'completed') return '✓';
+    if (activity.kind === 'tool') return '⌘';
+    if (activity.kind === 'validation') return '审';
+    return '·';
+  }
+
+  function agentActivityHtml(activity) {
+    const time = activity.at ? new Date(activity.at).toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false }) : '';
+    return `<div class="ai-agent-step is-${esc(activity.status || 'running')}" data-agent-step="${esc(activity.id || '')}"><span class="ai-agent-step-icon" aria-hidden="true">${agentActivityIcon(activity)}</span><div><strong>${esc(activity.title || '处理中')}</strong><p>${esc(activity.detail || '')}</p></div><time>${esc(time)}</time></div>`;
+  }
+
+  function resetAiAgentTimeline() {
+    currentAiActivities = [];
+    if (aiAgentTimeline) aiAgentTimeline.innerHTML = '';
+    aiAgentProgressiveCount = 0;
+    aiAgentRenderedCharts.clear();
+    if (aiAgentInsightStream) aiAgentInsightStream.innerHTML = '';
+    if (aiAgentProgressiveCharts) aiAgentProgressiveCharts.innerHTML = '';
+    if (aiAgentProgressive) aiAgentProgressive.classList.add('hidden');
+    if (aiAgentResultCount) aiAgentResultCount.textContent = '0 项';
+  }
+
+  function showAiAgentSkeletons() {
+    if (!aiAgentProgressive || !aiAgentInsightStream || !aiAgentProgressiveCharts) return;
+    aiAgentInsightStream.innerHTML = Array.from({ length:2 }, () => `<div class="ai-result-skeleton ai-insight-skeleton" aria-hidden="true"><span></span><div><i></i><i></i></div></div>`).join('');
+    aiAgentProgressiveCharts.innerHTML = Array.from({ length:2 }, () => `<div class="ai-result-skeleton ai-chart-skeleton" aria-hidden="true"><div class="ai-skeleton-title"><i></i><i></i></div><div class="ai-skeleton-plot"><i></i><i></i><i></i><i></i></div></div>`).join('');
+    aiAgentProgressive.classList.remove('hidden');
+    aiAgentProgressive.classList.add('is-loading');
+    if (aiAgentResultCount) aiAgentResultCount.textContent = '生成中';
+  }
+
+  function replaceAiSkeleton(container, node) {
+    if (!container || !node) return;
+    const skeleton = container.querySelector('.ai-result-skeleton');
+    if (!skeleton) { container.appendChild(node); return; }
+    skeleton.replaceWith(node);
+  }
+
+  function clearRemainingAiSkeletons() {
+    if (!aiAgentProgressive) return;
+    const skeletons = aiAgentProgressive.querySelectorAll('.ai-result-skeleton');
+    skeletons.forEach((skeleton, index) => setTimeout(() => {
+      skeleton.classList.add('is-resolving');
+      setTimeout(() => skeleton.remove(), 260);
+    }, index * 45));
+    aiAgentProgressive.classList.remove('is-loading');
+  }
+
+  function updateAiAgentElapsed(completed = false) {
+    if (!aiAgentElapsed || !aiAgentStartedAt) return;
+    const seconds = Math.max(0, Math.round((Date.now() - aiAgentStartedAt) / 1000));
+    aiAgentElapsed.textContent = completed ? `已完成 · ${seconds} 秒` : `${seconds} 秒`;
+  }
+
+  function stopAiAgentClock(completed = false) {
+    if (aiAgentClockTimer) { clearInterval(aiAgentClockTimer); aiAgentClockTimer = null; }
+    updateAiAgentElapsed(completed);
+  }
+
+  function startAiAgentWorkspace() {
+    stopAiAgentClock(false);
+    aiAgentStartedAt = Date.now();
+    if (aiReportLoading) aiReportLoading.classList.remove('is-complete');
+    if (aiAgentHeading) aiAgentHeading.textContent = '分析 Agent 正在工作';
+    if (aiAgentSubheading) aiAgentSubheading.textContent = '实时展示数据检查、统计工具与报告生成进度。';
+    if (aiAgentViewReport) aiAgentViewReport.classList.add('hidden');
+    if (aiAgentElapsed) aiAgentElapsed.textContent = '0 秒';
+    showAiAgentSkeletons();
+    aiAgentClockTimer = setInterval(() => updateAiAgentElapsed(false), 1000);
+  }
+
+  function completeAiAgentWorkspace() {
+    stopAiAgentClock(true);
+    if (aiReportLoading) aiReportLoading.classList.add('is-complete');
+    if (aiAgentTimeline) aiAgentTimeline.querySelectorAll('.ai-agent-step.is-running').forEach(step => {
+      step.classList.remove('is-running');
+      step.classList.add('is-completed');
+      const icon = step.querySelector('.ai-agent-step-icon');
+      if (icon) icon.textContent = '✓';
+    });
+    if (aiAgentHeading) aiAgentHeading.textContent = '分析 Agent 已完成';
+    if (aiAgentSubheading) aiAgentSubheading.textContent = `已完成 ${currentAiActivities.length} 条工作记录，报告已生成在下方。`;
+    if (aiAgentViewReport) aiAgentViewReport.classList.remove('hidden');
+    clearRemainingAiSkeletons();
+  }
+
+  function handleAiAgentActivity(activity) {
+    if (!activity || !activeAiRunId || activity.runId !== activeAiRunId) return;
+    currentAiActivities.push(activity);
+    if (aiAgentTimeline) {
+      const previous = Array.from(aiAgentTimeline.children);
+      aiAgentTimeline.insertAdjacentHTML('beforeend', agentActivityHtml(activity));
+      const current = aiAgentTimeline.lastElementChild;
+      if (current) {
+        current.classList.add('is-entering');
+        requestAnimationFrame(() => requestAnimationFrame(() => current.classList.remove('is-entering')));
+      }
+      previous.forEach(step => step.classList.add('is-leaving'));
+      setTimeout(() => previous.forEach(step => step.remove()), 330);
+    }
+    revealAiAgentPreview(activity.preview);
+  }
+
+  function updateAiAgentResultCount() {
+    if (aiAgentResultCount) aiAgentResultCount.textContent = `${aiAgentProgressiveCount} 项`;
+  }
+
+  function revealAiAgentPreview(preview) {
+    if (!preview || !aiAgentProgressive) return;
+    let changed = false;
+    const insight = String(preview.insight || '').trim();
+    if (insight && aiAgentInsightStream) {
+      const item = document.createElement('div');
+      item.className = 'ai-agent-insight is-entering';
+      item.innerHTML = `<span>✓</span><p>${esc(insight)}</p>`;
+      replaceAiSkeleton(aiAgentInsightStream, item);
+      requestAnimationFrame(() => requestAnimationFrame(() => item.classList.remove('is-entering')));
+      aiAgentProgressiveCount += 1;
+      changed = true;
+    }
+    (preview.charts || []).forEach(chart => {
+      if (!chart || aiAgentRenderedCharts.has(chart.id) || !aiAgentProgressiveCharts) return;
+      aiAgentRenderedCharts.add(chart.id);
+      const wrapper = document.createElement('div');
+      wrapper.className = 'ai-progressive-chart is-entering';
+      wrapper.style.transitionDelay = `${120 + aiAgentRenderedCharts.size * 45}ms`;
+      wrapper.innerHTML = renderAiChart(chart);
+      replaceAiSkeleton(aiAgentProgressiveCharts, wrapper);
+      requestAnimationFrame(() => requestAnimationFrame(() => wrapper.classList.remove('is-entering')));
+      aiAgentProgressiveCount += 1;
+      changed = true;
+    });
+    if (changed) {
+      aiAgentProgressive.classList.remove('hidden');
+      aiAgentProgressive.classList.remove('is-loading');
+      updateAiAgentResultCount();
+    }
+  }
+
+  function donutGradient(items) {
+    const colors = ['#34c759','#ff9f0a','#ff3b30','#8e8e93','#5e5ce6'];
+    const total = Math.max(1, items.reduce((sum, item) => sum + Number(item.value || 0), 0));
+    let cursor = 0;
+    return items.map((item, index) => {
+      const start = cursor;
+      cursor += Number(item.value || 0) / total * 100;
+      return `${colors[index % colors.length]} ${start.toFixed(2)}% ${cursor.toFixed(2)}%`;
+    }).join(',');
+  }
+
+  function renderAiChart(chart) {
+    const items = Array.isArray(chart.items) ? chart.items : [];
+    if (!items.length) return '';
+    if (chart.type === 'donut') {
+      const total = items.reduce((sum, item) => sum + Number(item.value || 0), 0);
+      return `<section class="ai-chart-card"><header><strong>${esc(chart.title)}</strong><small>${esc(chart.unit || '')}</small></header><div class="ai-donut-layout"><div class="ai-donut" style="--donut:${donutGradient(items)}"><span><b>${total}</b><small>总计</small></span></div><div class="ai-chart-legend">${items.map((item, index) => `<span class="is-${index % 5}"><i></i><em>${esc(item.label)}</em><b>${Number(item.value || 0)}</b></span>`).join('')}</div></div></section>`;
+    }
+    const maximum = Number(chart.max) || Math.max(1, ...items.map(item => Number(item.value || 0)));
+    return `<section class="ai-chart-card"><header><strong>${esc(chart.title)}</strong><small>${esc(chart.unit || '')}</small></header><div class="ai-bar-chart">${items.map(item => { const value = Number(item.value || 0); const width = Math.max(0, Math.min(100, value / maximum * 100)); return `<div class="ai-bar-row" title="${esc(item.label)}：${value}${esc(chart.unit || '')}"><span>${esc(item.label)}</span><div><i style="width:${width.toFixed(2)}%"></i></div><b>${value}${chart.unit === '%' ? '%' : ''}</b></div>`; }).join('')}</div></section>`;
+  }
+
   function renderAiReport(result) {
     const report = result.report || {};
     const metadata = result.metadata || {};
@@ -2256,11 +2505,32 @@
     const limitations = (report.limitations || []).length ? `<ul class="ai-limitations">${report.limitations.map(item => `<li>${esc(item)}</li>`).join('')}</ul>` : '';
     const scope = metadata.scope || {};
     const scopeText = `${scope.subject || '全部授权学科'} · ${scope.dateFrom || '不限日期'} 至 ${scope.dateTo || '不限日期'} · ${metadata.assignmentCount || 0} 项作业 / ${metadata.studentCount || 0} 名学生`;
-    aiReportContent.innerHTML = `<div class="ai-report-toolbar"><div><h4>学情分析报告</h4><p>${esc(scopeText)} · ${metadata.anonymized ? '已匿名传输' : '包含学生姓名'}</p></div><button id="copyAiReportBtn" class="btn btn-sm" type="button">复制报告</button></div><div class="ai-report-summary">${esc(report.summary)}</div>${evidence ? reportSection('关键数据证据', `<div class="ai-evidence-grid">${evidence}</div>`, 'ai-evidence-section') : ''}${issues ? reportSection('需要关注的问题', `<div class="ai-report-list">${issues}</div>`) : ''}${groups ? reportSection('学生分层支持', `<div class="ai-report-list">${groups}</div>`) : ''}${suggestions ? reportSection('教学建议', `<div class="ai-report-list">${suggestions}</div>`) : ''}${followUp ? reportSection('后续行动计划', `<div class="ai-report-list">${followUp}</div>`) : ''}${limitations ? reportSection('数据限制', limitations) : ''}`;
+    revealAiAgentPreview({ charts:result.charts || [] });
+    aiReportRenderToken += 1;
+    const renderToken = aiReportRenderToken;
+    aiReportContent.innerHTML = `<div class="ai-report-toolbar ai-report-reveal"><div><h4>学情分析报告</h4><p>${esc(scopeText)} · ${metadata.anonymized ? '已匿名传输' : '包含学生姓名'}</p></div><button id="copyAiReportBtn" class="btn btn-sm" type="button">复制报告</button></div>`;
+    const reportParts = [
+      `<div class="ai-report-summary">${esc(report.summary)}</div>`,
+      evidence ? reportSection('关键数据证据', `<div class="ai-evidence-grid">${evidence}</div>`, 'ai-evidence-section') : '',
+      issues ? reportSection('需要关注的问题', `<div class="ai-report-list">${issues}</div>`) : '',
+      groups ? reportSection('学生分层支持', `<div class="ai-report-list">${groups}</div>`) : '',
+      suggestions ? reportSection('教学建议', `<div class="ai-report-list">${suggestions}</div>`) : '',
+      followUp ? reportSection('后续行动计划', `<div class="ai-report-list">${followUp}</div>`) : '',
+      limitations ? reportSection('数据限制', limitations) : '',
+    ].filter(Boolean);
     aiReportEmpty.classList.add('hidden');
-    aiReportLoading.classList.add('hidden');
+    aiReportLoading.classList.remove('hidden');
     aiReportContent.classList.remove('hidden');
+    completeAiAgentWorkspace();
     document.getElementById('copyAiReportBtn')?.addEventListener('click', copyAiReport);
+    reportParts.forEach((html, index) => setTimeout(() => {
+      if (renderToken !== aiReportRenderToken || !aiReportContent) return;
+      const wrapper = document.createElement('div');
+      wrapper.className = 'ai-report-reveal is-entering';
+      wrapper.innerHTML = html;
+      aiReportContent.appendChild(wrapper);
+      requestAnimationFrame(() => requestAnimationFrame(() => wrapper.classList.remove('is-entering')));
+    }, 120 + index * 140));
   }
 
   function aiReportAsText() {
@@ -2272,6 +2542,12 @@
       lines.push('', title); items.forEach((item, index) => lines.push(`${index + 1}. ${formatter(item)}`));
     };
     appendObjects('关键数据证据', report.evidence, item => `${item.metric}：${item.value}。${item.interpretation}`);
+    if (lastAiAnalysis.charts?.length) {
+      lines.push('', '数据图表');
+      lastAiAnalysis.charts.forEach((chart, index) => {
+        lines.push(`${index + 1}. ${chart.title}：${(chart.items || []).map(item => `${item.label} ${item.value}${chart.unit === '%' ? '%' : chart.unit ? ` ${chart.unit}` : ''}`).join('；')}`);
+      });
+    }
     appendObjects('需要关注的问题', report.learningIssues, item => `${item.title}（${item.severity}）：${item.evidence}${item.affectedStudents?.length ? `；涉及：${item.affectedStudents.join('、')}` : ''}`);
     appendObjects('学生分层支持', report.studentGroups, item => `${item.group}：${item.basis}；建议：${item.action}${item.students?.length ? `；学生：${item.students.join('、')}` : ''}`);
     appendObjects('教学建议', report.teachingSuggestions, item => `[${item.priority}] ${item.title}：${item.action}（${item.reason}）`);
@@ -2299,12 +2575,80 @@
     aiDateFrom.value = hwDateFrom ? hwDateFrom.value : '';
     aiDateTo.value = hwDateTo ? hwDateTo.value : '';
     setAiStatus('');
+    activeAiRunId = '';
+    resetAiAgentTimeline();
+    updateAiTestDataUI();
     aiHomeworkModal.classList.remove('hidden');
     const settings = await loadHomeworkAiSettings();
     if (settings && !(settings.endpoint && settings.model)) setAiStatus('请先在教师端设置中配置 AI 服务');
   }
 
   function closeAiHomeworkAnalysis() { aiHomeworkModal?.classList.add('hidden'); }
+
+  function authorizedTestSubjects() {
+    return Array.from(new Set(((state.teacherStatus && state.teacherStatus.subjects) || [])
+      .map(subject => String(subject || '').trim()).filter(Boolean)));
+  }
+
+  function updateAiTestDataUI(message = '') {
+    const connected = !!(state.currentRoom && state.ws && state.ws.readyState === WebSocket.OPEN);
+    const testCount = homeworkTestData ? state.assignments.filter(homeworkTestData.isTestAssignment).length : 0;
+    if (aiTestClassroomName) aiTestClassroomName.textContent = connected ? (state.className || state.currentRoom.name || '当前班级') : '尚未连接班级';
+    if (aiTestDataHint) aiTestDataHint.textContent = message || (testCount ? `当前已有 ${testCount} 项 AI 测试作业；再次生成会覆盖旧测试数据` : '将生成 12 项跨日期作业和差异化提交记录');
+    if (seedAiTestDataBtn) seedAiTestDataBtn.disabled = !connected || !homeworkTestData;
+    if (clearAiTestDataBtn) clearAiTestDataBtn.disabled = !connected || !testCount;
+  }
+
+  function sendAssignmentMutation(action, assignment) {
+    if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return false;
+    state.ws.send(JSON.stringify({ type:'update-assignments', action, assignment }));
+    return true;
+  }
+
+  function seedAiHomeworkTestData() {
+    try {
+      if (!homeworkTestData) throw new Error('当前版本未加载测试数据生成器');
+      if (!state.currentRoom || !state.ws || state.ws.readyState !== WebSocket.OPEN) throw new Error('请先在左侧选择并连接要测试的班级');
+      if (state.students.length < 2) throw new Error('当前班级至少需要 2 名学生，才能生成有差异的分析样本');
+      const assignments = homeworkTestData.build({
+        students:state.students,
+        subjects:authorizedTestSubjects(),
+        roomKey:state.currentRoom.cloudClassroomId || state.currentRoom.connectionCode || state.className,
+      });
+      const oldTests = state.assignments.filter(homeworkTestData.isTestAssignment);
+      oldTests.forEach(item => sendAssignmentMutation('delete', { id:item.id }));
+      assignments.forEach(item => sendAssignmentMutation('add', item));
+      state.assignments = state.assignments.filter(item => !homeworkTestData.isTestAssignment(item)).concat(assignments);
+      homeworkContentType = 'homework';
+      homeworkStage = 'closed';
+      selectedSubjects = [];
+      selectedAssigns = [];
+      if (aiSubject) aiSubject.value = '';
+      if (aiStage) aiStage.value = 'all';
+      if (aiDateFrom) aiDateFrom.value = assignments[0].date;
+      if (aiDateTo) aiDateTo.value = assignments[assignments.length - 1].deadline.slice(0,10);
+      renderHomework();
+      renderOverview();
+      updateAiTestDataUI(`已写入 ${assignments.length} 项测试作业，覆盖不同日期与提交表现`);
+      setAiStatus(`测试数据已写入“${state.className || state.currentRoom.name}”，现在可以直接开始分析。`, true);
+    } catch (error) {
+      updateAiTestDataUI(error.message || '生成测试数据失败');
+      reportClientError('无法生成 AI 测试数据', error, { context:'AI 作业分析－测试数据', suggestions:['确认已连接目标班级', '确认班级至少有 2 名学生', '确认当前教师已设置授课科目'] });
+    }
+  }
+
+  function clearAiHomeworkTestData() {
+    if (!homeworkTestData) return;
+    const tests = state.assignments.filter(homeworkTestData.isTestAssignment);
+    if (!tests.length) { updateAiTestDataUI(); return; }
+    if (!confirm(`确定从“${state.className || state.currentRoom?.name || '当前班级'}”删除 ${tests.length} 项 AI 测试作业吗？真实作业不会受到影响。`)) return;
+    tests.forEach(item => sendAssignmentMutation('delete', { id:item.id }));
+    state.assignments = state.assignments.filter(item => !homeworkTestData.isTestAssignment(item));
+    renderHomework();
+    renderOverview();
+    updateAiTestDataUI('测试数据已清理，真实作业未受影响');
+    setAiStatus('AI 测试数据已清理。', true);
+  }
 
   async function runAiHomeworkAnalysis() {
     if (aiDateFrom.value && aiDateTo.value && aiDateFrom.value > aiDateTo.value) { setAiStatus('开始日期不能晚于结束日期'); return; }
@@ -2317,8 +2661,14 @@
     aiReportEmpty.classList.add('hidden');
     aiReportContent.classList.add('hidden');
     aiReportLoading.classList.remove('hidden');
+    lastAiAnalysis = null;
+    aiReportRenderToken += 1;
+    activeAiRunId = `ai-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    resetAiAgentTimeline();
+    startAiAgentWorkspace();
     setAiStatus(`正在分析 ${assignments.length} 项作业…`, true);
     const payload = {
+      runId:activeAiRunId,
       className:state.className || state.currentRoom?.name || '教室',
       teacherName:state.account?.name || '教师',
       scope:{ subject:aiSubject.value || '全部授权学科', stage:aiStage.value, dateFrom:aiDateFrom.value, dateTo:aiDateTo.value },
@@ -2339,6 +2689,8 @@
       setAiStatus(error.message || 'AI 学情分析失败');
       reportClientError('AI 学情分析失败', error, { context:'AI 作业分析', suggestions:['检查 API 地址、模型名称和密钥', '确认网络可以访问所配置的 AI 服务', '如果使用本地模型，请确认模型服务已经启动'] });
     } finally {
+      stopAiAgentClock(!!lastAiAnalysis);
+      activeAiRunId = '';
       aiAnalyzeBtn.disabled = false;
       aiAnalyzeBtn.innerHTML = '<span aria-hidden="true">✦</span> 开始分析';
     }
@@ -2803,6 +3155,8 @@
     if (aiHomeworkBtn) aiHomeworkBtn.addEventListener('click', openAiHomeworkAnalysis);
     if (aiHomeworkClose) aiHomeworkClose.addEventListener('click', closeAiHomeworkAnalysis);
     if (aiAnalyzeBtn) aiAnalyzeBtn.addEventListener('click', runAiHomeworkAnalysis);
+    if (seedAiTestDataBtn) seedAiTestDataBtn.addEventListener('click', seedAiHomeworkTestData);
+    if (clearAiTestDataBtn) clearAiTestDataBtn.addEventListener('click', clearAiHomeworkTestData);
     if (openAiSettingsBtn) openAiSettingsBtn.addEventListener('click', openGlobalAiSettings);
     if (aiHomeworkModal) aiHomeworkModal.addEventListener('click', event => { if (event.target === aiHomeworkModal) closeAiHomeworkAnalysis(); });
     if (addAssignmentBtn2) addAssignmentBtn2.addEventListener('click', () => openAddHw('homework'));
@@ -3064,6 +3418,19 @@
     aiReportEmpty        = document.getElementById('aiReportEmpty');
     aiReportLoading      = document.getElementById('aiReportLoading');
     aiReportContent      = document.getElementById('aiReportContent');
+    aiAgentTimeline      = document.getElementById('aiAgentTimeline');
+    aiAgentProgressive   = document.getElementById('aiAgentProgressive');
+    aiAgentInsightStream = document.getElementById('aiAgentInsightStream');
+    aiAgentProgressiveCharts = document.getElementById('aiAgentProgressiveCharts');
+    aiAgentResultCount   = document.getElementById('aiAgentResultCount');
+    aiAgentHeading       = document.getElementById('aiAgentHeading');
+    aiAgentSubheading    = document.getElementById('aiAgentSubheading');
+    aiAgentElapsed       = document.getElementById('aiAgentElapsed');
+    aiAgentViewReport    = document.getElementById('aiAgentViewReport');
+    aiTestClassroomName  = document.getElementById('aiTestClassroomName');
+    aiTestDataHint       = document.getElementById('aiTestDataHint');
+    seedAiTestDataBtn    = document.getElementById('seedAiTestDataBtn');
+    clearAiTestDataBtn   = document.getElementById('clearAiTestDataBtn');
     hwContent            = document.getElementById('hwContent');
     hwModal               = document.getElementById('hwModal');
     hwModalTitleLabel     = document.getElementById('hwModalTitleLabel');
@@ -3115,6 +3482,8 @@
     labelConfirm      = document.getElementById('labelConfirm');
 
     bindEvents();
+    if (api.onHomeworkAiActivity) api.onHomeworkAiActivity(handleAiAgentActivity);
+    if (aiAgentViewReport) aiAgentViewReport.addEventListener('click', () => aiReportContent?.scrollIntoView({ behavior:'smooth', block:'start' }));
     document.getElementById('retryFaceLanBtn')?.addEventListener('click', () => startFaceLan(state.currentRoom));
     document.getElementById('faceSystemToggle')?.addEventListener('click', () => {
       const transport = getFaceLanTransport();

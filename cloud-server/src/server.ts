@@ -349,7 +349,6 @@ export async function buildServer(dependencies:ServerDependencies) {
     const member = memberResult.rows[0];
     const isHomeroom = member.role === 'homeroom';
     const subjects = Array.isArray(member.subjects_json) ? member.subjects_json.map(String) : [];
-    if (!isHomeroom) return false;
     if (message.type === 'update-classroom') {
       if (!isHomeroom) return false;
       const input = message.classroom && typeof message.classroom === 'object' ? message.classroom as Record<string, unknown> : {};
@@ -377,6 +376,13 @@ export async function buildServer(dependencies:ServerDependencies) {
         const deadlineDate=item.deadline ? new Date(String(item.deadline)) : null; const deadline=deadlineDate && !Number.isNaN(deadlineDate.getTime()) ? deadlineDate : null;
         const publishDate=/^\d{4}-\d{2}-\d{2}$/.test(String(item.date || '')) ? new Date(`${item.date}T00:00:00.000Z`) : new Date();
         await database.query(`INSERT INTO assignments (id,classroom_id,creator_user_id,subject,type,title,publish_at,deadline,source,status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'active') ON CONFLICT (id) DO UPDATE SET subject=EXCLUDED.subject,type=EXCLUDED.type,title=EXCLUDED.title,publish_at=EXCLUDED.publish_at,deadline=EXCLUDED.deadline,status='active',updated_at=now() WHERE assignments.classroom_id=$2 AND ($10 OR assignments.creator_user_id=$3 OR assignments.creator_user_id IS NULL)`, [id,classroomId,subject.subjectId,subjectName,item.type==='notice'?'notice':'homework',String(item.title).trim().slice(0,1000),publishDate,deadline,item.source==='student'?'student':'teacher',isHomeroom]);
+        if (item.type !== 'notice' && item.submissions && typeof item.submissions === 'object') {
+          const entries = Object.entries(item.submissions as Record<string, unknown>).slice(0, 2000);
+          for (const [studentId, rawStatus] of entries) {
+            const status=String(rawStatus || '未提交').trim().slice(0,20) || '未提交';
+            await database.query(`INSERT INTO submissions (assignment_id,student_id,status,updated_by) SELECT $1,s.id,$3,$4 FROM students s WHERE s.id=$2 AND s.classroom_id=$5 AND s.status='active' ON CONFLICT (assignment_id,student_id) DO UPDATE SET status=EXCLUDED.status,updated_by=EXCLUDED.updated_by,updated_at=now()`, [id,String(studentId).slice(0,128),status,subject.subjectId,classroomId]);
+          }
+        }
       } else return false;
       return true;
     }
@@ -1277,7 +1283,7 @@ export async function buildServer(dependencies:ServerDependencies) {
         const liveMembership = await database.query("SELECT m.role,m.subjects_json,u.name,u.legacy_connection_id,u.status AS user_status,m.status AS member_status FROM classroom_members m JOIN users u ON u.id=m.user_id WHERE m.classroom_id=$1 AND m.user_id=$2", [subscribedClassroom, subject.subjectId]);
         if (!liveMembership.rowCount || liveMembership.rows[0].user_status !== 'active' || liveMembership.rows[0].member_status !== 'approved') { socket.close(4403, 'membership revoked'); return; }
         cloudMembership = { userId:subject.subjectId, name:liveMembership.rows[0].name, connectionId:liveMembership.rows[0].legacy_connection_id || `cloud-${subject.subjectId}`, role:liveMembership.rows[0].role, subjects:liveMembership.rows[0].subjects_json || [] };
-        if (cloudMembership.role !== 'homeroom' && ['call','update-classroom','update-assignments','update-submission','label-face','manage-teacher'].includes(String(message.type || ''))) {
+        if (cloudMembership.role !== 'homeroom' && ['call','update-classroom','label-face','manage-teacher'].includes(String(message.type || ''))) {
           socket.send(JSON.stringify({ type:'auth-required', message:'普通授课教师仅可查看本人授课科目的作业与出勤情况' }));
           return;
         }

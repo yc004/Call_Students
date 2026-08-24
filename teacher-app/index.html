@@ -6,7 +6,7 @@
   <title>班达-教师端</title>
   <link rel="stylesheet" href="style.css?v=2">
   <link rel="stylesheet" href="ui.css?v=10">
-  <link rel="stylesheet" href="desktop.css?v=13">
+  <link rel="stylesheet" href="desktop.css?v=14">
 </head>
 <body>
 
@@ -517,12 +517,27 @@
             <button id="openAiSettingsBtn" class="btn btn-sm" type="button">打开设置</button>
           </div>
         </section>
+        <section class="ai-control-section ai-test-data-section">
+          <div class="ai-section-title"><span>测</span><div><strong>快速准备测试数据</strong><small>写入当前选中的班级，可随时清理</small></div></div>
+          <div class="ai-test-data-card">
+            <div><strong id="aiTestClassroomName">尚未选择班级</strong><small id="aiTestDataHint">将生成 12 项跨日期作业和差异化提交记录</small></div>
+            <div><button id="seedAiTestDataBtn" class="btn btn-sm" type="button">一键生成测试数据</button><button id="clearAiTestDataBtn" class="btn btn-sm btn-danger-outline" type="button">清理</button></div>
+          </div>
+        </section>
         <p id="aiAnalysisStatus" class="ai-analysis-status" role="status" aria-live="polite"></p>
         <button id="aiAnalyzeBtn" class="btn btn-primary ai-analyze-submit" type="button"><span aria-hidden="true">✦</span> 开始分析</button>
       </aside>
       <main class="ai-report-panel">
         <div id="aiReportEmpty" class="ai-report-empty"><span>✦</span><strong>从作业统计中发现教学线索</strong><p>选择学科与日期范围后，AI 会生成有数据依据的分析报告。作业提交情况不等同于知识掌握程度，报告会明确标注这一限制。</p></div>
-        <div id="aiReportLoading" class="ai-report-loading hidden"><span></span><strong>正在分析作业数据</strong><p>模型正在整理完成趋势、关注对象和教学建议，请稍候。</p></div>
+        <div id="aiReportLoading" class="ai-agent-workspace hidden">
+          <div class="ai-agent-running"><span class="ai-agent-spinner" aria-hidden="true"></span><div><strong id="aiAgentHeading">分析 Agent 正在工作</strong><p id="aiAgentSubheading">实时展示数据检查、统计工具与报告生成进度。</p></div><em id="aiAgentElapsed">0 秒</em><button id="aiAgentViewReport" class="btn btn-sm hidden" type="button">查看报告</button></div>
+          <div id="aiAgentTimeline" class="ai-agent-timeline" role="log" aria-live="polite" aria-relevant="additions text"></div>
+          <section id="aiAgentProgressive" class="ai-agent-progressive hidden" aria-label="实时分析结果">
+            <header><div><strong>实时分析结果</strong></div><span id="aiAgentResultCount">0 项</span></header>
+            <div id="aiAgentInsightStream" class="ai-agent-insight-stream"></div>
+            <div id="aiAgentProgressiveCharts" class="ai-chart-grid"></div>
+          </section>
+        </div>
         <article id="aiReportContent" class="ai-report-content hidden"></article>
       </main>
     </div>
@@ -555,6 +570,7 @@
 
   <script src="connection-code.js"></script>
   <script src="homework-view.js"></script>
+  <script src="homework-test-data.js"></script>
   <script src="cloud-client.js"></script>
   <script src="error-report.js"></script>
   <script src="app.js?v=25"></script>
