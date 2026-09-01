@@ -47,7 +47,7 @@ Page({
   },
 
   async chooseSubjects() {
-    const selectedSubjects = await subjectOptions.choose(this.data.selectedSubjects, '选择授课科目');
+    const selectedSubjects = await subjectOptions.choose(this.data.selectedSubjects, '选择授课科目',this.room&&this.room.transport==='cloud'?this.room.subjects:undefined);
     if (!selectedSubjects) return;
     this.subjectDraftDirty = true;
     this.setData({ selectedSubjects, subjectText: selectedSubjects.join('、') });

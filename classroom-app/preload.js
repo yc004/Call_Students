@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-contextBridge.exposeInMainWorld('api', {
+const api = {
   // ── 窗口控制（所有页面通用） ──
   winMinimize:  () => ipcRenderer.send('win-minimize'),
   winMaximize:  () => ipcRenderer.send('win-maximize'),
@@ -74,4 +74,29 @@ contextBridge.exposeInMainWorld('api', {
 
   // ── 人脸注册窗口事件 ──
   onSetStudent: (cb) => ipcRenderer.on('set-student', (_e, studentId, name) => cb(studentId, name)),
-});
+};
+
+const role=process.argv.find(value=>value.startsWith('--banda-window-role='))?.slice('--banda-window-role='.length)||'unknown';
+const common=['winMinimize','winMaximize','winClose','copyText','showClientError'];
+const capabilities={
+  onboarding:['getOnboardingStatus','getClassroomQr','setNetworkInterface','bindHomeroomTeacher','finishOnboarding','onOnboardingChanged','onNetworkInterfaceChanged'],
+  connection:['getClassroomQr','getWechatDirectLinkSettings','setWechatDirectLinkSettings','setNetworkInterface','onNetworkInterfaceChanged'],
+  'cloud-settings':['getCloudConfig','enrollCloud','disconnectCloud'],
+  'homework-float':['openHomeworkWidget','openHomeworkBoard','setHomeworkFloatExpanded','moveHomeworkFloat','getHomeworkUnread','onHomeworkUnreadChanged'],
+  'homework-widget':['getData','hideHomeworkWidget','onDataChanged'],
+  popup:['onShowCall','callAck','closePopup'],
+  'homework-board':['getData','saveData','createStudentAssignment','closeBoard','onDataChanged','boardLog'],
+  'face-check':['faceAPI'],
+  'face-register':['getData','faceAPI','onSetStudent'],
+};
+const allowed=new Set([...common,...(capabilities[role]||[])]);
+for(const key of Object.keys(api))if(!allowed.has(key))delete api[key];
+if(role==='face-check'){
+  const allowedFace=new Set(['getGallery','reportDetections','previewRequested','reportPreview','diagLog','getNativeStatus','nativeDetect']);
+  for(const key of Object.keys(api.faceAPI))if(!allowedFace.has(key))delete api.faceAPI[key];
+}
+if(role==='face-register'){
+  const allowedFace=new Set(['saveDescriptor','getStudents','getNativeStatus','nativeExtractDescriptor']);
+  for(const key of Object.keys(api.faceAPI))if(!allowedFace.has(key))delete api.faceAPI[key];
+}
+contextBridge.exposeInMainWorld('api',Object.freeze(api));

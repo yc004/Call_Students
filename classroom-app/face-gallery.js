@@ -20,9 +20,11 @@ const DEFAULT_CONFIG = {
 };
 
 class AdaptiveGalleryManager {
-  constructor(filePath, embeddingModel = LEGACY_EMBEDDING_MODEL) {
+  constructor(filePath, embeddingModel = LEGACY_EMBEDDING_MODEL, security = {}) {
     this.filePath = filePath || GALLERY_FILE;
     this.embeddingModel = embeddingModel;
+    this.encrypt = typeof security.encrypt === 'function' ? security.encrypt : null;
+    this.decrypt = typeof security.decrypt === 'function' ? security.decrypt : null;
     this.migration = null;
     this.students = new Map();  // studentId → StudentRecord
     this.config = {
@@ -40,10 +42,13 @@ class AdaptiveGalleryManager {
   load() {
     try {
       if (fs.existsSync(this.filePath)) {
-        const raw = JSON.parse(fs.readFileSync(this.filePath, 'utf-8'));
+        const stored = JSON.parse(fs.readFileSync(this.filePath, 'utf-8'));
+        const encrypted = stored && stored.encryptedVersion === 1;
+        if (encrypted && !this.decrypt) throw new Error('人脸底库已加密，但系统安全存储不可用');
+        const raw = encrypted ? JSON.parse(this.decrypt(stored.ciphertext)) : stored;
         const storedModel = raw.embeddingModel || LEGACY_EMBEDDING_MODEL;
         if (storedModel !== this.embeddingModel) {
-          const backupPath = this._backupForModelChange(storedModel);
+          const backupPath = this._backupForModelChange(storedModel,raw);
           this.migration = {
             required: true,
             from: storedModel,
@@ -73,6 +78,7 @@ class AdaptiveGalleryManager {
           Object.assign(this.config, raw.config);
         }
         this.migration = raw.migration || null;
+        if(!encrypted&&this.encrypt)this._doSave();
         console.log(`[gallery] loaded ${this.students.size} students from ${this.filePath}`);
       } else {
         console.log('[gallery] no gallery file found, starting fresh');
@@ -82,8 +88,7 @@ class AdaptiveGalleryManager {
     }
   }
 
-  _backupForModelChange(storedModel) {
-    const raw = JSON.parse(fs.readFileSync(this.filePath, 'utf-8'));
+  _backupForModelChange(storedModel,raw) {
     if (!Array.isArray(raw.students) || raw.students.length === 0) return null;
     const safeModel = storedModel.replace(/[^a-zA-Z0-9._-]/g, '_');
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -91,7 +96,11 @@ class AdaptiveGalleryManager {
       path.dirname(this.filePath),
       `${path.basename(this.filePath, path.extname(this.filePath))}.${safeModel}.${stamp}.bak.json`
     );
-    fs.copyFileSync(this.filePath, backupPath, fs.constants.COPYFILE_EXCL);
+    if(this.encrypt)fs.writeFileSync(backupPath,JSON.stringify({encryptedVersion:1,ciphertext:this.encrypt(JSON.stringify(raw))}),{encoding:'utf-8',flag:'wx',mode:0o600});
+    else fs.copyFileSync(this.filePath, backupPath, fs.constants.COPYFILE_EXCL);
+    const prefix=`${path.basename(this.filePath,path.extname(this.filePath))}.`;
+    const backups=fs.readdirSync(path.dirname(this.filePath)).filter(name=>name.startsWith(prefix)&&name.endsWith('.bak.json')).sort().reverse();
+    backups.slice(2).forEach(name=>{try{fs.unlinkSync(path.join(path.dirname(this.filePath),name));}catch(_error){}});
     return backupPath;
   }
 
@@ -133,15 +142,16 @@ class AdaptiveGalleryManager {
           lastUpdated: s.lastUpdated,
         });
       }
-      const payload = JSON.stringify({
+      const plaintext = JSON.stringify({
         schemaVersion: 2,
         embeddingModel: this.embeddingModel,
         students,
         config: this.config,
         migration: this.migration,
       }, null, 2);
+      const payload=this.encrypt?JSON.stringify({encryptedVersion:1,ciphertext:this.encrypt(plaintext)}):plaintext;
       const tempPath = `${this.filePath}.tmp`;
-      fs.writeFileSync(tempPath, payload, 'utf-8');
+      fs.writeFileSync(tempPath, payload, {encoding:'utf-8',mode:0o600});
       fs.renameSync(tempPath, this.filePath);
       console.log(`[gallery] saved ${students.length} students`);
     } catch (e) {

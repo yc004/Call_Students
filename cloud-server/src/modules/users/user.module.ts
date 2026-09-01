@@ -1,0 +1,1 @@
+import{Module}from'@nestjs/common';import{RealtimeModule}from'../realtime/realtime.module.js';import{UserController}from'./user.controller.js';import{UserRepository}from'./user.repository.js';import{UserService}from'./user.service.js';@Module({imports:[RealtimeModule],controllers:[UserController],providers:[UserRepository,UserService]})export class UserModule{}

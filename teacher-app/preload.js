@@ -33,6 +33,5 @@ contextBridge.exposeInMainWorld('api', {
   getCloudSettings: () => ipcRenderer.invoke('get-cloud-settings'),
   setCloudSettings: (value) => ipcRenderer.invoke('set-cloud-settings', value),
   refreshCloudClassrooms: () => ipcRenderer.invoke('refresh-cloud-classrooms'),
-  enrollTeacherCloud: (input) => ipcRenderer.invoke('enroll-teacher-cloud', input),
   clearTeacherSession: () => ipcRenderer.invoke('clear-teacher-session'),
 });

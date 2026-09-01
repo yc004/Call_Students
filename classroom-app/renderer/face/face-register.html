@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https: wss: ws:; object-src 'none'; base-uri 'none'; form-action 'none'">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>人脸注册</title>
@@ -13,12 +14,12 @@
   <h2>学生人脸注册</h2>
 
   <div class="fr-video-wrap">
-    <video id="video" autoplay playsinline></video>
-    <canvas id="canvas" width="320" height="240"></canvas>
+    <video id="video" autoplay playsinline aria-label="摄像头实时画面"></video>
+    <canvas id="canvas" width="320" height="240" aria-label="待确认的人脸照片"></canvas>
     <div id="noCamera" class="fr-no-camera hidden">
       <p>未检测到摄像头</p>
       <p class="fr-hint">请检查摄像头连接后刷新页面</p>
-      <button id="retryCameraBtn" class="btn btn-primary">重试</button>
+      <button id="retryCameraBtn" class="btn btn-primary" type="button">重试</button>
     </div>
   </div>
 
@@ -31,8 +32,10 @@
     </div>
 
     <div class="fr-actions">
-      <button id="captureBtn" class="btn btn-primary" disabled>拍照并录入</button>
-      <button id="closeBtn" class="btn">关闭</button>
+      <button id="captureBtn" class="btn btn-primary" type="button" disabled>拍照预览</button>
+      <button id="retakeBtn" class="btn hidden" type="button">重新拍摄</button>
+      <button id="confirmBtn" class="btn btn-primary hidden" type="button">确认录入</button>
+      <button id="closeBtn" class="btn" type="button">关闭</button>
     </div>
 
     <div id="statusMsg" class="fr-status" aria-live="polite"></div>

@@ -1,5 +1,6 @@
 node_modules
-dist
+# Compiled output remains in the context for the offline overlay image.
+# The regular multi-stage Dockerfile continues to rebuild from source.
 .env
 test
 *.log

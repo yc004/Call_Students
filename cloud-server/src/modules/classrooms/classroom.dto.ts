@@ -1,0 +1,7 @@
+import{ApiProperty,ApiPropertyOptional,PartialType}from'@nestjs/swagger';import{Type}from'class-transformer';import{ArrayMaxSize,ArrayUnique,IsArray,IsIn,IsOptional,IsString,IsUUID,Length,ValidateNested}from'class-validator';
+export class CreateClassroomDto{@ApiProperty()@IsString()@Length(1,120)name!:string;@ApiProperty()@IsUUID()campusId!:string;@ApiPropertyOptional()@IsOptional()@IsString()@Length(3,80)loginName?:string;}
+export class UpdateClassroomDto extends PartialType(CreateClassroomDto){@ApiPropertyOptional({enum:['active','disabled','archived']})@IsOptional()@IsIn(['active','disabled','archived'])status?:string;}
+export class BatchCreateClassroomsDto{@ApiProperty({type:[CreateClassroomDto]})@IsArray()@ArrayMaxSize(500)@ValidateNested({each:true})@Type(()=>CreateClassroomDto)items!:CreateClassroomDto[];}
+export class StudentInputDto{@ApiPropertyOptional()@IsOptional()@IsString()@Length(1,128)id?:string;@ApiProperty()@IsString()@Length(1,80)name!:string;}
+export class ReplaceStudentsDto{@ApiProperty({type:[StudentInputDto]})@IsArray()@ArrayMaxSize(5000)@ValidateNested({each:true})@Type(()=>StudentInputDto)students!:StudentInputDto[];}
+export class MemberDto{@ApiProperty()@IsUUID()userId!:string;@ApiProperty({enum:['teacher','homeroom']})@IsIn(['teacher','homeroom'])role!:'teacher'|'homeroom';@ApiProperty({type:[String]})@IsArray()@ArrayUnique()@ArrayMaxSize(30)@IsString({each:true})@Length(1,80,{each:true})subjects!:string[];}

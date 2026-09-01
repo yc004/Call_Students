@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https: wss: ws:; object-src 'none'; base-uri 'none'; form-action 'none'">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>作业上报</title>
@@ -68,10 +69,10 @@
 
   <div id="boardToast" class="board-toast" role="status" aria-live="polite"></div>
 
-  <div id="createAssignmentModal" class="create-modal" hidden>
+  <div id="createAssignmentModal" class="create-modal" role="dialog" aria-modal="true" aria-labelledby="createAssignmentTitle" aria-describedby="createAssignmentTip" hidden>
     <form id="createAssignmentForm" class="create-card">
-      <div class="create-head"><div><span>课代表补录</span><h2>添加作业</h2></div><button id="closeCreateBtn" type="button" aria-label="关闭">×</button></div>
-      <p class="create-tip">仅用于老师已经口头布置、但忘记录入系统的作业。创建后会标记为“学生补录”。</p>
+      <div class="create-head"><div><span>课代表补录</span><h2 id="createAssignmentTitle">添加作业</h2></div><button id="closeCreateBtn" type="button" aria-label="关闭添加作业弹窗">×</button></div>
+      <p id="createAssignmentTip" class="create-tip">仅用于老师已经口头布置、但忘记录入系统的作业。创建后会标记为“学生补录”。</p>
       <label for="createSubject">科目</label><select id="createSubject" required></select>
       <label for="createTitle">作业内容</label><textarea id="createTitle" maxlength="200" rows="4" required placeholder="例如：完成练习册第 12页 1—6 题"></textarea>
       <div class="create-date"><span>上报日期</span><strong id="createDateText"></strong></div>

@@ -2,4 +2,6 @@ packages:
   - .
 
 allowBuilds:
+  '@scarf/scarf': false
   esbuild: true
+  msgpackr-extract: false

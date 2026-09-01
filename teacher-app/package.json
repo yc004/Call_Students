@@ -1,6 +1,6 @@
 {
   "name": "teacher-app",
-  "version": "1.0.7",
+  "version": "2.0.0",
   "description": "教师端 —— 呼叫控制台",
   "main": "main.js",
   "scripts": {
@@ -15,7 +15,7 @@
     "build": "electron-builder --win",
     "build:win:ci": "electron-builder --win nsis --x64 --publish never",
     "prepare:mac-icon": "bash ../scripts/prepare-macos-icon.sh .",
-    "build:mac": "npm run prepare:mac-icon && electron-builder --mac dmg zip --config.mac.identity=- --config.mac.hardenedRuntime=false",
+    "build:mac": "npm run prepare:mac-icon && electron-builder --mac dmg zip --config.mac.identity=- --config.mac.hardenedRuntime=true",
     "build:mac:ci": "npm run prepare:mac-icon && electron-builder --mac dmg --publish never",
     "build:portable": "electron-builder --win portable"
   },
@@ -65,7 +65,7 @@
       "icon": "build/icon.icns",
       "artifactName": "Banda-Teacher-${version}-macOS-${arch}.${ext}",
       "category": "public.app-category.education",
-      "hardenedRuntime": false,
+      "hardenedRuntime": true,
       "target": [
         {
           "target": "dmg",

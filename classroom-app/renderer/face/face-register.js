@@ -34,8 +34,8 @@
   const faceapi = window.faceapi;
 
   // ── DOM ──
-  let video, canvas, noCamera, retryCameraBtn;
-  let studentSelect, captureBtn, closeBtn, statusMsg;
+  let video, canvas, videoWrap, noCamera, retryCameraBtn;
+  let studentSelect, captureBtn, retakeBtn, confirmBtn, closeBtn, statusMsg;
   let resultPanel, resultContent;
 
   // ── 状态 ──
@@ -44,6 +44,8 @@
   let galleryStudents = [];
   let useNative = false;
   let galleryMigration = null;
+  let pendingRegistration = null;
+  let captureBusy = false;
 
   async function checkNativeCapability() {
     try {
@@ -72,7 +74,18 @@
       });
       video.srcObject = stream;
       await video.play();
+      stream.getVideoTracks().forEach(track => {
+        track.addEventListener('ended', () => {
+          if (stream && stream.getTracks().includes(track)) {
+            stream = null;
+            if (noCamera) noCamera.classList.remove('hidden');
+            setStatus('error', '摄像头连接已断开，请检查设备后重试');
+            updateCaptureBtn();
+          }
+        }, { once: true });
+      });
       if (noCamera) noCamera.classList.add('hidden');
+      updateCaptureBtn();
       return true;
     } catch (e) {
       console.error('Camera error:', e.message);
@@ -132,20 +145,45 @@
       }
     } catch (e) {
       console.error('loadStudentList error:', e.message);
+      setStatus('error', '学生名单加载失败，请关闭窗口后重试');
     }
   }
 
   function updateCaptureBtn() {
     if (!captureBtn) return;
     const hasStudent = studentSelect && studentSelect.value;
-    captureBtn.disabled = !(modelsLoaded && hasStudent && stream);
+    captureBtn.disabled = captureBusy || !!pendingRegistration || !(modelsLoaded && hasStudent && stream);
   }
 
   // ═══════════════════════════════
   //  拍照 & 提取特征
   // ═══════════════════════════════
 
-  async function captureAndRegister() {
+  function setBusy(busy) {
+    captureBusy = busy;
+    if (studentSelect) studentSelect.disabled = busy || !!pendingRegistration;
+    if (confirmBtn) confirmBtn.disabled = busy;
+    if (retakeBtn) retakeBtn.disabled = busy;
+    updateCaptureBtn();
+  }
+
+  function showPreview(show) {
+    if (videoWrap) videoWrap.classList.toggle('previewing', show);
+    if (captureBtn) captureBtn.classList.toggle('hidden', show);
+    if (retakeBtn) retakeBtn.classList.toggle('hidden', !show);
+    if (confirmBtn) confirmBtn.classList.toggle('hidden', !show);
+    if (studentSelect) studentSelect.disabled = show || captureBusy;
+  }
+
+  function resetPreview(options) {
+    pendingRegistration = null;
+    showPreview(false);
+    updateCaptureBtn();
+    if (!options || !options.silent) setStatus('info', '已取消本次照片，请重新拍摄');
+    if (captureBtn && (!options || !options.keepFocus)) captureBtn.focus();
+  }
+
+  async function captureAndPreview() {
     if (!studentSelect || !studentSelect.value) {
       setStatus('error', '请先选择一个学生');
       return;
@@ -163,6 +201,7 @@
     const studentName = studentSelect.options[studentSelect.selectedIndex].textContent;
 
     setStatus('info', '正在检测人脸…');
+    setBusy(true);
 
     try {
       // 从视频捕获一帧
@@ -197,21 +236,46 @@
         descriptor = Array.from(detection.descriptor);
       }
 
-      // 保存到底库
-      if (api.faceAPI && api.faceAPI.saveDescriptor) {
-        const result = await api.faceAPI.saveDescriptor(studentId, studentName, descriptor);
-        if (result.success) {
-          setStatus('ok', `✓ ${studentName} 人脸注册成功！`);
-          showResult();
-        } else {
-          setStatus('error', '保存失败: ' + (result.error || '未知错误'));
-        }
-      } else {
-        setStatus('error', 'IPC 接口不可用');
-      }
+      pendingRegistration = { studentId, studentName, descriptor };
+      showPreview(true);
+      setStatus('info', `请确认这是 ${studentName} 的清晰正脸照片，再点击“确认录入”`);
+      if (confirmBtn) confirmBtn.focus();
     } catch (e) {
       console.error('Capture error:', e.message);
       setStatus('error', '识别出错: ' + e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmRegistration() {
+    if (!pendingRegistration || captureBusy) return;
+    if (!(api.faceAPI && api.faceAPI.saveDescriptor)) {
+      setStatus('error', 'IPC 接口不可用');
+      return;
+    }
+    setBusy(true);
+    setStatus('info', '正在保存人脸特征…');
+    try {
+      const current = pendingRegistration;
+      const result = await api.faceAPI.saveDescriptor(
+        current.studentId,
+        current.studentName,
+        current.descriptor
+      );
+      if (!result || !result.success) {
+        setStatus('error', '保存失败: ' + ((result && result.error) || '未知错误'));
+        return;
+      }
+      const savedName = current.studentName;
+      resetPreview({ silent: true });
+      setStatus('ok', `✓ ${savedName} 人脸注册成功！`);
+      await showResult();
+    } catch (e) {
+      console.error('Save error:', e.message);
+      setStatus('error', '保存失败: ' + e.message);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -267,11 +331,16 @@
 
   function bindEvents() {
     if (retryCameraBtn) retryCameraBtn.addEventListener('click', startCamera);
-    if (captureBtn) captureBtn.addEventListener('click', captureAndRegister);
+    if (captureBtn) captureBtn.addEventListener('click', captureAndPreview);
+    if (retakeBtn) retakeBtn.addEventListener('click', () => resetPreview());
+    if (confirmBtn) confirmBtn.addEventListener('click', confirmRegistration);
     if (closeBtn) closeBtn.addEventListener('click', () => window.close());
 
     if (studentSelect) {
-      studentSelect.addEventListener('change', updateCaptureBtn);
+      studentSelect.addEventListener('change', () => {
+        if (pendingRegistration) resetPreview({ silent: true, keepFocus: true });
+        updateCaptureBtn();
+      });
     }
   }
 
@@ -310,10 +379,13 @@
   async function onReady() {
     video        = document.getElementById('video');
     canvas       = document.getElementById('canvas');
+    videoWrap    = document.querySelector('.fr-video-wrap');
     noCamera     = document.getElementById('noCamera');
     retryCameraBtn = document.getElementById('retryCameraBtn');
     studentSelect= document.getElementById('studentSelect');
     captureBtn   = document.getElementById('captureBtn');
+    retakeBtn    = document.getElementById('retakeBtn');
+    confirmBtn   = document.getElementById('confirmBtn');
     closeBtn     = document.getElementById('closeBtn');
     statusMsg    = document.getElementById('statusMsg');
     resultPanel  = document.getElementById('resultPanel');
@@ -356,4 +428,6 @@
   } else {
     onReady();
   }
+
+  window.addEventListener('beforeunload', stopCamera);
 })();

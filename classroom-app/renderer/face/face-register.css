@@ -53,7 +53,13 @@ h2 { font-size: 20px; font-weight: 700; margin-bottom: 20px; }
 
 .fr-video-wrap canvas {
   display: none;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
+
+.fr-video-wrap.previewing video { display: none; }
+.fr-video-wrap.previewing canvas { display: block; }
 
 .fr-no-camera {
   position: absolute;
@@ -105,8 +111,11 @@ h2 { font-size: 20px; font-weight: 700; margin-bottom: 20px; }
 
 .fr-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
 }
+
+.hidden { display: none !important; }
 
 .fr-status {
   font-size: 13px;
@@ -177,6 +186,11 @@ h2 { font-size: 20px; font-weight: 700; margin-bottom: 20px; }
 
 .btn:hover { background: #F1F5F9; }
 
+.btn:focus-visible {
+  outline: 3px solid rgba(79, 110, 247, 0.35);
+  outline-offset: 2px;
+}
+
 .btn-primary {
   background: var(--primary);
   color: #fff;
@@ -200,3 +214,12 @@ h2 { font-size: 20px; font-weight: 700; margin-bottom: 20px; }
 }
 
 .btn-sm { padding: 4px 12px; font-size: 13px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

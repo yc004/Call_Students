@@ -1,0 +1,11 @@
+FROM cloud-server-cloud-server:latest
+
+USER root
+WORKDIR /app
+
+COPY --chown=node:node dist ./dist
+COPY --chown=node:node migrations ./migrations
+COPY --chown=node:node admin-web/apps/web-antd/dist ./admin-web
+
+USER node
+CMD ["node", "dist/main.js"]

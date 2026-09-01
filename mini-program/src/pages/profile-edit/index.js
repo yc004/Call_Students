@@ -11,7 +11,9 @@ Page({
     usageMode:'toc',
     organizationColor:'#2563EB',
     organizationName:'',
+    wechatBound:false,
     profileAvatar:'',
+    avatarLoadFailed:false,
     initial:'教',
     editName:'',
     profileBusy:false,
@@ -46,7 +48,9 @@ Page({
       usageMode:cloud ? 'tob' : 'toc',
       organizationColor:organization.primaryColor || '#2563EB',
       organizationName:organization.shortName || organization.name || '',
+      wechatBound:!!(cloud && cloud.wechatBound),
       profileAvatar:cloud && cloud.avatarUrl || session.account.avatarUrl || '',
+      avatarLoadFailed:false,
       initial:String(name || '教').slice(0, 1),
       editName:name,
       storageTitle:cloud ? '同步到组织云端' : '仅保存在当前设备',
@@ -59,10 +63,32 @@ Page({
     this.setData({ editName:String(event.detail.value || '').trimStart().slice(0, 40) });
   },
 
+  openPasswordEditor() {
+    wx.navigateTo({ url:'/pages/profile-password/index' });
+  },
+
+  bindWechat() {
+    if(this.data.profileBusy||this.data.usageMode!=='tob')return;
+    const session=sessionStore.load();
+    if(!session||!session.cloud)return;
+    this.setData({profileBusy:true});wx.showLoading({title:'正在绑定微信',mask:true});
+    wx.login({timeout:10000,success:async result=>{
+      try{
+        if(!result.code)throw new Error('微信未返回登录凭证');
+        const cloud=await cloudApi.bindWechat(session.cloud,result.code);
+        const updated=sessionStore.save({...session,cloud});
+        getApp().globalData.session=updated;
+        wx.hideLoading();this.setData({profileBusy:false,wechatBound:true});wx.showToast({title:'微信绑定成功',icon:'success'});
+      }catch(error){wx.hideLoading();this.setData({profileBusy:false});errorReport.show({title:'微信绑定失败',error,context:'个人信息－绑定微信',suggestions:['确认服务器已配置微信小程序登录','如果当前微信已绑定其他账户，请联系管理员']});}
+    },fail:error=>{wx.hideLoading();this.setData({profileBusy:false});errorReport.show({title:'微信绑定失败',error,context:'个人信息－绑定微信'});}});
+  },
+
   onChooseAvatar(event) {
     const profileAvatar = event.detail && event.detail.avatarUrl || '';
-    if (profileAvatar) this.setData({ profileAvatar });
+    if (profileAvatar) this.setData({ profileAvatar, avatarLoadFailed:false });
   },
+
+  onAvatarError() { this.setData({ avatarLoadFailed:true }); },
 
   persistLocalAvatar(filePath) {
     if (!filePath || isRemoteAvatar(filePath) || (wx.env && filePath.startsWith(wx.env.USER_DATA_PATH))) return Promise.resolve(filePath || '');
@@ -80,6 +106,12 @@ Page({
       let avatarUrl = this.data.profileAvatar || '';
       let cloud = session.cloud;
       if (cloud) {
+        const accessExpiresAt = new Date(cloud.accessExpiresAt || 0).getTime();
+        if (!Number.isFinite(accessExpiresAt) || accessExpiresAt <= Date.now() + 60000) {
+          cloud = await cloudApi.refreshSession(cloud);
+          const refreshed = sessionStore.updateCloud(cloud);
+          if (refreshed) getApp().globalData.session = refreshed;
+        }
         if (avatarUrl && !isRemoteAvatar(avatarUrl)) {
           const uploaded = await cloudApi.uploadAvatar(cloud, avatarUrl);
           avatarUrl = uploaded.url || cloud.avatarUrl || '';
@@ -94,7 +126,7 @@ Page({
       const updated = sessionStore.save({ ...session, account, cloud:cloud || null });
       getApp().globalData.session = updated;
       wx.hideLoading();
-      this.setData({ profileBusy:false, profileAvatar:avatarUrl, initial:name.slice(0, 1) });
+      this.setData({ profileBusy:false, profileAvatar:avatarUrl, avatarLoadFailed:false, initial:name.slice(0, 1) });
       wx.showToast({ title:'个人信息已保存', icon:'success' });
       setTimeout(() => wx.navigateBack(), 450);
     } catch (error) {

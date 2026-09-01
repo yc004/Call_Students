@@ -11,8 +11,8 @@ function normalize(values = []) {
   return Array.from(new Set((values || []).map(value => String(value || '').trim()).filter(Boolean)));
 }
 
-function merge(values = []) {
-  return Array.from(new Set([...OPTIONS, ...normalize(values)]));
+function merge(values = [], available) {
+  return Array.from(new Set([...(Array.isArray(available) ? normalize(available) : OPTIONS), ...normalize(values)]));
 }
 
 function createPickerId() {
@@ -22,7 +22,7 @@ function createPickerId() {
 
 function getPicker(id) {
   const picker = pendingPickers.get(String(id || ''));
-  return picker ? { title:picker.title, selected:[...picker.selected] } : null;
+  return picker ? { title:picker.title, selected:[...picker.selected], options:[...picker.options] } : null;
 }
 
 function finishPicker(id, values) {
@@ -34,10 +34,10 @@ function finishPicker(id, values) {
   return true;
 }
 
-function choose(selected = [], title = '选择授课科目') {
+function choose(selected = [], title = '选择授课科目', available) {
   return new Promise((resolve, reject) => {
     const pickerId = createPickerId();
-    pendingPickers.set(pickerId, { resolve, reject, title, selected:normalize(selected) });
+    pendingPickers.set(pickerId, { resolve, reject, title, selected:normalize(selected), options:merge(selected,available) });
     wx.navigateTo({
       url: `/pages/subject-select/index?pickerId=${encodeURIComponent(pickerId)}`,
       events: {
@@ -49,7 +49,7 @@ function choose(selected = [], title = '选择授课科目') {
         },
       },
       success(result) {
-        result.eventChannel.emit('subjectPickerInit', { title, selected: normalize(selected) });
+        result.eventChannel.emit('subjectPickerInit', { title, selected: normalize(selected), options:merge(selected,available) });
       },
       fail(error) {
         pendingPickers.delete(pickerId);

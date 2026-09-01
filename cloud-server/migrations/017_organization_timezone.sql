@@ -1,0 +1,2 @@
+ALTER TABLE organizations
+  ADD COLUMN IF NOT EXISTS timezone VARCHAR(64) NOT NULL DEFAULT 'Asia/Shanghai';

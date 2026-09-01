@@ -11,6 +11,7 @@
     "pages/attendance/index",
     "pages/classroom-settings/index",
     "pages/profile-edit/index",
+    "pages/profile-password/index",
     "pages/profile/index"
   ],
   "window": {

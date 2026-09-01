@@ -67,6 +67,10 @@ html, body {
   transition: all 0.15s; z-index: 3;
 }
 .close-btn:hover { background: rgba(255,59,48,0.1); color: #FF3B30; }
+.close-btn:focus-visible, .pause-btn:focus-visible {
+  outline: 3px solid rgba(0, 122, 255, 0.32);
+  outline-offset: 2px;
+}
 
 .call-class {
   font-size: 20px; color: #AEAEB2; font-weight: 500;
@@ -99,7 +103,38 @@ html, body {
   animation: shrink 8s linear forwards;
 }
 
+.timer-controls {
+  min-height: 32px;
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: #6E6E73;
+  font-size: 13px;
+  position: relative;
+  z-index: 3;
+}
+
+.pause-btn {
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  color: #007AFF;
+  background: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  font: inherit;
+}
+
+.pause-btn:hover { background: rgba(0, 122, 255, 0.08); }
+
 @keyframes shrink {
   from { width: 100%; }
   to   { width: 0%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .call-card { animation: none; }
+  .timer-bar { animation: none !important; }
 }

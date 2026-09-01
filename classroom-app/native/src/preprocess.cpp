@@ -123,9 +123,10 @@ std::vector<uint8_t> cropAndResize(
     int cy = std::max(0, static_cast<int>(box.y - marginY));
     int cw = std::min(srcWidth - cx, static_cast<int>(box.width + 2 * marginX));
     int ch = std::min(srcHeight - cy, static_cast<int>(box.height + 2 * marginY));
+    if (cw <= 0 || ch <= 0 || targetWidth <= 0 || targetHeight <= 0) return {};
 
     // Crop
-    std::vector<uint8_t> crop(cw * ch * 4);
+    std::vector<uint8_t> crop(static_cast<size_t>(cw) * static_cast<size_t>(ch) * 4);
     for (int y = 0; y < ch; ++y) {
         for (int x = 0; x < cw; ++x) {
             int srcIdx = ((cy + y) * srcWidth + (cx + x)) * 4;
@@ -138,7 +139,7 @@ std::vector<uint8_t> cropAndResize(
     }
 
     // Resize
-    std::vector<uint8_t> result(targetWidth * targetHeight * 4);
+    std::vector<uint8_t> result(static_cast<size_t>(targetWidth) * static_cast<size_t>(targetHeight) * 4);
     bilinearResize(crop.data(), cw, ch, 4, result.data(), targetWidth, targetHeight);
     return result;
 }

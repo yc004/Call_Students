@@ -1,0 +1,17 @@
+<view class="password-page mode-tob" style="--mode-color:{{organizationColor}}">
+  <view class="password-heading">
+    <text class="password-title">修改登录密码</text>
+    <text class="password-note">修改后，请在其他客户端使用新密码重新登录。</text>
+  </view>
+
+  <view class="password-form">
+    <text class="field-label compact-label">当前密码</text>
+    <input class="password-input" aria-label="当前密码" password maxlength="200" value="{{currentPassword}}" bindinput="onCurrentPasswordInput" placeholder="请输入当前密码"/>
+    <text class="field-label">新密码</text>
+    <input class="password-input" aria-label="新密码" password maxlength="200" value="{{newPassword}}" bindinput="onNewPasswordInput" placeholder="至少 10 位"/>
+    <text class="field-label">确认新密码</text>
+    <input class="password-input" aria-label="确认新密码" password maxlength="200" value="{{confirmPassword}}" bindinput="onConfirmPasswordInput" placeholder="再次输入新密码"/>
+  </view>
+
+  <button class="save-button" loading="{{busy}}" disabled="{{busy}}" bindtap="changePassword">确认修改</button>
+</view>

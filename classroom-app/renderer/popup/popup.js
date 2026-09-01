@@ -8,10 +8,14 @@
   const api = window.api || {};
 
   // ── DOM ──
-  let callClass, callStudent, callMessage, closeBtn, timerBar;
+  let callClass, callStudent, callMessage, closeBtn, timerBar, timerText, pauseBtn;
 
   const MIN_DISPLAY_DURATION = 8000;
   let dismissTimer = null;
+  let countdownTimer = null;
+  let dismissDeadline = 0;
+  let remainingDuration = 0;
+  let countdownPaused = false;
 
   // ═══════════════════════════════════
   //  语音合成（选最优系统中文语音）
@@ -78,9 +82,17 @@
     const speechText = call.message || `${studentNames.join('、') || call.studentName || ''}同学，请到办公室`;
     const displayDuration = estimateDisplayDuration(speechText);
 
+    countdownPaused = false;
+    remainingDuration = displayDuration;
+    if (pauseBtn) {
+      pauseBtn.textContent = '暂停自动关闭';
+      pauseBtn.setAttribute('aria-pressed', 'false');
+    }
+
     // 倒计时条
     if (timerBar) {
       timerBar.style.animation = 'none';
+      timerBar.style.animationPlayState = 'running';
       void timerBar.offsetWidth;
       timerBar.style.animation = `shrink ${displayDuration}ms linear forwards`;
     }
@@ -94,14 +106,59 @@
     }
 
     // 自动关闭
+    startDismissCountdown(displayDuration);
+  }
+
+  function updateTimerText() {
+    if (!timerText) return;
+    if (countdownPaused) {
+      timerText.textContent = '自动关闭已暂停';
+      return;
+    }
+    const seconds = Math.max(0, Math.ceil((dismissDeadline - Date.now()) / 1000));
+    timerText.textContent = `将在 ${seconds} 秒后关闭`;
+  }
+
+  function startDismissCountdown(duration) {
     clearTimeout(dismissTimer);
+    clearInterval(countdownTimer);
+    remainingDuration = Math.max(0, duration);
+    dismissDeadline = Date.now() + remainingDuration;
+    updateTimerText();
+    countdownTimer = setInterval(updateTimerText, 250);
     dismissTimer = setTimeout(() => {
+      clearInterval(countdownTimer);
       if (api.closePopup) api.closePopup();
-    }, displayDuration);
+    }, remainingDuration);
+  }
+
+  function toggleCountdown() {
+    if (!dismissDeadline) return;
+    if (!countdownPaused) {
+      remainingDuration = Math.max(0, dismissDeadline - Date.now());
+      clearTimeout(dismissTimer);
+      clearInterval(countdownTimer);
+      countdownPaused = true;
+      if (timerBar) timerBar.style.animationPlayState = 'paused';
+      if (pauseBtn) {
+        pauseBtn.textContent = '继续自动关闭';
+        pauseBtn.setAttribute('aria-pressed', 'true');
+      }
+      updateTimerText();
+      return;
+    }
+    countdownPaused = false;
+    if (timerBar) timerBar.style.animationPlayState = 'running';
+    if (pauseBtn) {
+      pauseBtn.textContent = '暂停自动关闭';
+      pauseBtn.setAttribute('aria-pressed', 'false');
+    }
+    startDismissCountdown(remainingDuration);
   }
 
   function close() {
     clearTimeout(dismissTimer);
+    clearInterval(countdownTimer);
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
     if (api.closePopup) api.closePopup();
   }
@@ -114,6 +171,7 @@
     if (api.onShowCall) api.onShowCall(showCall);
 
     if (closeBtn) closeBtn.addEventListener('click', close);
+    if (pauseBtn) pauseBtn.addEventListener('click', toggleCountdown);
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') close();
@@ -137,6 +195,8 @@
     callMessage = document.getElementById('callMessage');
     closeBtn    = document.getElementById('closeBtn');
     timerBar    = document.getElementById('timerBar');
+    timerText   = document.getElementById('timerText');
+    pauseBtn    = document.getElementById('pauseBtn');
     bindEvents();
   }
 

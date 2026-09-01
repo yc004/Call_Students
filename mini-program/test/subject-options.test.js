@@ -25,7 +25,7 @@ test('科目选择可通过请求编号稳定返回，不依赖 EventChannel 时
   try {
     const resultPromise = subjects.choose(['语文'], '设置授课科目');
     const pickerId = decodeURIComponent(navigateOptions.url.split('pickerId=')[1]);
-    assert.deepEqual(subjects.getPicker(pickerId), { title:'设置授课科目', selected:['语文'] });
+    assert.deepEqual(subjects.getPicker(pickerId), { title:'设置授课科目', selected:['语文'], options:[...subjects.OPTIONS] });
     assert.equal(subjects.finishPicker(pickerId, ['数学', '物理']), true);
     assert.deepEqual(await resultPromise, ['数学', '物理']);
     assert.equal(subjects.getPicker(pickerId), null);

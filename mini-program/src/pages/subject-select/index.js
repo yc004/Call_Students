@@ -12,7 +12,7 @@ Page({
       const selected = subjects.normalize(payload && payload.selected);
       const selectedSet = new Set(selected);
       const title = payload && payload.title || '选择授课科目';
-      this.setData({ title, selected, selectedCount:selected.length, options:subjects.merge(selected).map(name => ({ name, checked:selectedSet.has(name) })) });
+      this.setData({ title, selected, selectedCount:selected.length, options:subjects.merge(selected,payload&&payload.options).map(name => ({ name, checked:selectedSet.has(name) })) });
       wx.setNavigationBarTitle({ title });
     };
     const pending = subjects.getPicker(this.pickerId);

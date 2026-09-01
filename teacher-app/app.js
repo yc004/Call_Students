@@ -12,6 +12,11 @@
   const homeworkTestData = window.HomeworkTestData;
   const SUBJECT_OPTIONS = Object.freeze(['语文','数学','英语','物理','化学','生物','道德与法治','历史','地理','科学','信息科技','通用技术','体育与健康','音乐','美术','劳动','综合实践活动','心理健康','班会','日语','俄语']);
 
+  function localDateKey(value) {
+    const date=value instanceof Date?value:new Date(value||Date.now());
+    return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+  }
+
   function reportClientError(title, error, options = {}) {
     const reporter = window.clientErrors;
     if (reporter && typeof reporter.show === 'function') {
@@ -24,7 +29,7 @@
   // ── DOM ──
   let connectionCodeInput, connectBtn, roomList, noRooms, connDot, connLabel;
   let roomHeader, roomTitle, studentCount, msgRow, callMessageInp, callFlow;
-  let studentGrid, emptyState, historyTbody, noHistory, multiCallToggle, callBatchBar, callBatchCount, clearCallSelection, sendBatchCall, callSelectionHint;
+  let studentGrid, emptyState, emptyStateTitle, emptyStateNote, emptyAddRoomBtn, emptyConnectionActions, emptyRetryRoomBtn, emptyCancelConnectBtn, historyTbody, noHistory, multiCallToggle, callBatchBar, callBatchCount, clearCallSelection, sendBatchCall, callSelectionHint;
   let searchInput, searchRow, searchResult;
   let msgEditor;
   let mainTabs, mainTabBtns, mainTabContents;
@@ -47,6 +52,8 @@
   let aiTestClassroomName, aiTestDataHint, seedAiTestDataBtn, clearAiTestDataBtn;
   let accountAiSettings, accountAiEndpoint, accountAiModel, accountAiApiKey, accountAiStatus, saveAccountAiSettings;
   let lastAiAnalysis = null;
+  let connectionUiStatus = 'offline';
+  let accountReturnFocus = null;
   let publishTypeHomework, publishTypeNotice, publishContentLabel, publishDeadlineLabel, publishHint;
   // 人脸识别 DOM
   let faceSection, faceRoomName, faceSummary;
@@ -181,12 +188,13 @@
     const profileFields = document.getElementById('organizationProfileFields');
     const serverUrl = document.getElementById('organizationServer')?.value || '';
     const useHttps = !!document.getElementById('organizationUseHttps')?.checked;
+    const organizationSlug = document.getElementById('organizationSlug')?.value || '';
     const loginName = document.getElementById('organizationLoginName')?.value || '';
     const password = document.getElementById('organizationPassword')?.value || '';
     if (button) { button.disabled = true; button.textContent = '登录中…'; }
     if (status) status.textContent = '正在连接组织服务器…';
     try {
-      const result = await api.loginTeacherCloud?.({ serverUrl, useHttps, loginName, password });
+      const result = await api.loginTeacherCloud?.({ serverUrl, useHttps, organizationSlug, loginName, password });
       if (!result || !result.ok) throw Object.assign(new Error(result?.message || '组织登录失败'), { code:result?.code });
       if (result.cloud?.mustChangePassword) {
         profileFields?.classList.remove('hidden');
@@ -330,9 +338,18 @@
     renderAccountAvatar(document.getElementById('accountProfileAvatar'), state.account, state.cloud?.avatarUrl || '');
     const profileStatus = document.getElementById('accountProfileStatus');
     if (profileStatus) profileStatus.textContent = state.cloud ? '组织模式可以同时修改登录密码' : '个人模式资料不会上传到云端';
+    accountReturnFocus = document.activeElement;
     accountModal.classList.remove('hidden');
+    setTimeout(() => document.getElementById('accountModalTopClose')?.focus(), 0);
     renderCloudAccountSettings();
     loadHomeworkAiSettings();
+  }
+
+  function closeAccountModal() {
+    if (!accountModal || accountModal.classList.contains('hidden')) return;
+    accountModal.classList.add('hidden');
+    if (accountReturnFocus && accountReturnFocus.focus) accountReturnFocus.focus();
+    accountReturnFocus = null;
   }
 
   async function chooseAccountAvatar() {
@@ -450,18 +467,6 @@
     if (status) status.textContent = `已连接 ${state.cloud.organization?.name ? `${state.cloud.organization.name} · ` : ''}${state.cloud.serverUrl}`;
   }
 
-  async function enrollTeacherCloud() {
-    if (!api.enrollTeacherCloud) return;
-    const button = document.getElementById('accountCloudConnectBtn');
-    const status = document.getElementById('accountCloudStatus');
-    button.disabled = true; status.textContent = '正在连接云服务…';
-    const result = await api.enrollTeacherCloud({ serverUrl:document.getElementById('accountCloudServer').value, key:document.getElementById('accountCloudKey').value });
-    button.disabled = false;
-    if (!result.ok) { status.textContent = result.message || '连接失败'; return; }
-    state.cloud = result.cloud; state.rooms = [...state.rooms.filter(room => room.transport !== 'cloud'), ...(result.rooms || [])];
-    document.getElementById('accountCloudKey').value = ''; renderRooms(); renderCloudAccountSettings();
-    status.textContent = `教师云账号已接入 ${result.cloud.serverUrl}`;
-  }
 
   async function refreshCloudRooms(options={}) {
     if (!api.refreshCloudClassrooms) return;
@@ -630,9 +635,11 @@
     const explicitRoom = codeValue && typeof codeValue === 'object' ? codeValue : null;
     const cloudRoom = explicitRoom && explicitRoom.transport === 'cloud' ? explicitRoom : null;
     const formattedCode = cloudRoom ? String(cloudRoom.cloudClassroomId) : connectionCode.format(explicitRoom ? explicitRoom.connectionCode : codeValue);
+    const cloudLanCode = cloudRoom && connectionCode.isValid(cloudRoom.connectionCode) ? connectionCode.format(cloudRoom.connectionCode) : '';
+    const preferCloudRelay = !!(cloudRoom && (options.forceCloud || !cloudLanCode));
     let ip = '';
-    if (!cloudRoom) {
-      try { ip = connectionCode.decode(formattedCode); }
+    if (!cloudRoom || !preferCloudRelay) {
+      try { ip = connectionCode.decode(cloudRoom ? cloudLanCode : formattedCode); }
       catch (error) {
         setStatus('offline', '连接码有误');
         openConnectRoomModal();
@@ -682,10 +689,11 @@
     state.connectingRoomCode = formattedCode;
     state.currentRoom = cloudRoom || state.rooms.find(room => room.connectionCode === formattedCode) || null;
     renderRooms();
+    renderEmptyState();
 
     setStatus('connecting', '连接中…');
     setConnectRoomState('正在查找教室…', false, true);
-    const useCloud = savedRoom && savedRoom.transport === 'cloud' && state.cloud && state.cloud.accessToken;
+    const useCloud = savedRoom && savedRoom.transport === 'cloud' && state.cloud && state.cloud.accessToken && preferCloudRelay;
     const url = `ws://${ip}:3456`;
     let ws;
     try {
@@ -709,6 +717,11 @@
       ws.onclose = null;
       ws.onerror = null;
       try { ws.close(); } catch (_error) {}
+      if (cloudRoom && !useCloud && !options.forceCloud) {
+        setConnectRoomState('局域网不可用，正在切换云端连接…', false, true);
+        connect(savedRoom, { ...options, isRetry:true, forceCloud:true });
+        return;
+      }
       resetRoomWorkspace(true);
       renderRooms();
       setConnectRoomState(error.message || '无法建立教室连接', true, false);
@@ -755,7 +768,7 @@
         state.pendingFaces = msg.pendingFaces || [];
         state.faceSystemStateKnown = !useCloud;
         state.faceSystemEnabled = msg.faceSystemEnabled === true;
-        state.classroomConfigured = msg.classroomConfigured !== false;
+        state.classroomConfigured = cloudRoom ? true : msg.classroomConfigured !== false;
         state.teachers = msg.teachers || { approved: [], pending: [] };
         selectedSubjects = [];
         selectedAssigns  = [];
@@ -792,7 +805,7 @@
         renderClassroomManagement();
         if (useCloud) startFaceLan(savedRoom);
         else setFaceLanUnavailable(false);
-        if (isHomeroomTeacher() && !state.classroomConfigured) showClassroomSetup();
+        if (!cloudRoom && isHomeroomTeacher() && !state.classroomConfigured) showClassroomSetup();
         else hideClassroomSetup();
       } else if (msg.type === 'approval-required') {
         const name = msg.className || (cloudRoom ? cloudRoom.name : `教室 ${formattedCode}`);
@@ -990,8 +1003,10 @@
   }
 
   function setStatus(cls, text) {
+    connectionUiStatus = cls;
     if (connDot)   connDot.className   = `dot ${cls}`;
     if (connLabel) connLabel.textContent = text;
+    renderEmptyState();
   }
 
   // ═══════════════════════════════════
@@ -1015,6 +1030,7 @@
 
     if (state.rooms.length === 0) {
       noRooms.style.display = 'flex';
+      renderEmptyState();
       return;
     }
     noRooms.style.display = 'none';
@@ -1048,6 +1064,7 @@
 
       roomList.appendChild(li);
     });
+    renderEmptyState();
   }
 
   function sendLeaveRequest(ws, code) {
@@ -1219,7 +1236,10 @@
     if (msgRow)     msgRow.classList.remove('hidden');
     if (searchRow)  searchRow.classList.remove('hidden');
     if (callFlow)   callFlow.classList.remove('hidden');
-    if (emptyState) emptyState.style.display = 'none';
+    if (emptyState) {
+      emptyState.style.display = 'none';
+      emptyState.setAttribute('aria-hidden', 'true');
+    }
     if (roomTitle)  roomTitle.textContent = name;
     setConnectRoomState('', false, false);
     closeConnectRoomModal();
@@ -1469,14 +1489,50 @@
     updateCallBatchUI();
     // 离线状态始终回到概览，不能停留在上一教室的作业/出勤页面。
     switchMainTab('overview');
+    // switchMainTab 会展示概览；离线/连接中必须再次隐藏全部工作区，
+    // 否则内容会堆在空状态下方，并被屏幕阅读器误读为可用功能。
+    mainTabContents?.forEach(content => {
+      content.classList.add('hidden');
+      content.setAttribute('aria-hidden', 'true');
+    });
     if (mainTabs)   mainTabs.classList.add('hidden');
     if (roomHeader) roomHeader.classList.add('hidden');
     if (msgRow)     msgRow.classList.add('hidden');
     if (searchRow)  searchRow.classList.add('hidden');
     if (callFlow)   callFlow.classList.add('hidden');
-    if (emptyState) emptyState.style.display = '';
+    if (emptyState) {
+      emptyState.style.display = '';
+      emptyState.setAttribute('aria-hidden', 'false');
+    }
+    renderEmptyState();
     if (roomTitle)  roomTitle.textContent = '';
     renderOverview();
+  }
+
+  function renderEmptyState() {
+    if (!emptyStateTitle || !emptyStateNote || !emptyAddRoomBtn || !emptyConnectionActions) return;
+    const room = state.currentRoom;
+    const isConnecting = !!(room && state.connectingRoomCode);
+    if (isConnecting) {
+      const failed = connectionUiStatus === 'offline';
+      emptyStateTitle.textContent = failed ? `暂时无法连接“${room.name || '当前教室'}”` : `正在连接“${room.name || '当前教室'}”`;
+      emptyStateNote.textContent = failed ? '系统会按计划自动重试。你也可以立即重试、取消连接，或检查教室端和局域网状态。' : '正在查找教室并验证教师身份，通常只需几秒钟。';
+      emptyAddRoomBtn.classList.add('hidden');
+      emptyConnectionActions.classList.remove('hidden');
+      emptyRetryRoomBtn?.classList.toggle('hidden', !failed);
+      return;
+    }
+    emptyConnectionActions.classList.add('hidden');
+    emptyAddRoomBtn.classList.remove('hidden');
+    if (state.rooms.length) {
+      emptyStateTitle.textContent = '选择一间教室开始工作';
+      emptyStateNote.textContent = '从左侧教室列表选择已有教室，或加入一间新教室。';
+      emptyAddRoomBtn.textContent = '加入其他教室';
+    } else {
+      emptyStateTitle.textContent = '连接你的第一间教室';
+      emptyStateNote.textContent = '输入教室大屏显示的 9 位连接码，即可使用学生呼叫、作业、通知和出勤功能。';
+      emptyAddRoomBtn.textContent = '加入教室';
+    }
   }
 
   function renderStudents() {
@@ -1884,8 +1940,13 @@
       const selected = b.dataset.tab === name;
       b.classList.toggle('active', selected);
       b.setAttribute('aria-selected', selected ? 'true' : 'false');
+      b.tabIndex = selected ? 0 : -1;
     });
-    mainTabContents.forEach(c => c.classList.toggle('hidden', c.id !== 'tab-' + name));
+    mainTabContents.forEach(c => {
+      const selected = c.id === 'tab-' + name;
+      c.classList.toggle('hidden', !selected);
+      c.setAttribute('aria-hidden', selected ? 'false' : 'true');
+    });
     if (mainTabs) {
       mainTabs.classList.toggle('is-overview', name === 'overview');
       mainTabs.classList.toggle('is-detail', name !== 'overview');
@@ -1896,7 +1957,7 @@
   function handleTabKeydown(event, buttons) {
     if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
     event.preventDefault();
-    const buttonList = Array.from(buttons).filter(button => !button.classList.contains('hidden'));
+    const buttonList = Array.from(buttons).filter(button => !button.classList.contains('hidden') && !button.disabled);
     const current = buttonList.indexOf(event.currentTarget);
     const offset = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1;
     const next = buttonList[(current + offset + buttonList.length) % buttonList.length];
@@ -1911,25 +1972,31 @@
   function initMultiSelects() {
     // 点击外部关闭
     document.addEventListener('click', (e) => {
-      if (hwSubjectDrop && !hwSubjectMs.contains(e.target)) hwSubjectDrop.classList.add('hidden');
-      if (hwAssignDrop && !hwAssignMs.contains(e.target)) hwAssignDrop.classList.add('hidden');
+      if (hwSubjectDrop && !hwSubjectMs.contains(e.target)) setMultiSelectExpanded(hwSubjectBtn, hwSubjectDrop, false);
+      if (hwAssignDrop && !hwAssignMs.contains(e.target)) setMultiSelectExpanded(hwAssignBtn, hwAssignDrop, false);
       if (connectSubjectDrop && !document.getElementById('connectSubjectPicker')?.contains(e.target)) closeSubjectPicker(document.getElementById('connectSubjectInput'), connectSubjectDrop);
       if (teacherEditSubjectDrop && !document.getElementById('teacherEditSubjectPicker')?.contains(e.target)) closeSubjectPicker(teacherEditSubjects, teacherEditSubjectDrop);
     });
     // 学科按钮
     if (hwSubjectBtn) hwSubjectBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      hwSubjectDrop.classList.toggle('hidden');
-      if (hwAssignDrop) hwAssignDrop.classList.add('hidden');
+      setMultiSelectExpanded(hwSubjectBtn, hwSubjectDrop, hwSubjectDrop.classList.contains('hidden'));
+      if (hwAssignDrop) setMultiSelectExpanded(hwAssignBtn, hwAssignDrop, false);
     });
     // 作业按钮
     if (hwAssignBtn) hwAssignBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      hwAssignDrop.classList.toggle('hidden');
-      if (hwSubjectDrop) hwSubjectDrop.classList.add('hidden');
+      setMultiSelectExpanded(hwAssignBtn, hwAssignDrop, hwAssignDrop.classList.contains('hidden'));
+      if (hwSubjectDrop) setMultiSelectExpanded(hwSubjectBtn, hwSubjectDrop, false);
     });
     bindSubjectPicker(document.getElementById('connectSubjectInput'), connectSubjectDrop, () => connectSubjectSelection, value => { connectSubjectSelection = value; setConnectRoomState('', false, false); });
     bindSubjectPicker(teacherEditSubjects, teacherEditSubjectDrop, () => teacherEditSubjectSelection, value => { teacherEditSubjectSelection = value; });
+  }
+
+  function setMultiSelectExpanded(button, drop, expanded) {
+    if (!drop) return;
+    drop.classList.toggle('hidden', !expanded);
+    if (button) button.setAttribute('aria-expanded', String(expanded));
   }
 
   function subjectOptionsWith(selected = []) { return Array.from(new Set([...SUBJECT_OPTIONS, ...selected.filter(Boolean)])); }
@@ -1977,7 +2044,7 @@
       const chk = selectedSubjects.length === 0 || selectedSubjects.includes(sub) ? 'checked' : '';
       html += `<label><input type="checkbox" value="${esc(sub)}" ${chk}> ${esc(sub)}</label>`;
     });
-    html += '<div class="ms-actions"><button data-ms-action="all">全选</button><button data-ms-action="none">清除</button></div>';
+    html += '<div class="ms-actions"><button type="button" data-ms-action="all">全选</button><button type="button" data-ms-action="none">清除</button></div>';
     hwSubjectDrop.innerHTML = html;
     // 事件
     hwSubjectDrop.querySelectorAll('input[type="checkbox"]').forEach(cb => {
@@ -2023,7 +2090,7 @@
       const chk = selectedAssigns.length === 0 || selectedAssigns.includes(a.id) ? 'checked' : '';
       html += `<label><input type="checkbox" value="${a.id}" ${chk}> ${esc(a.subject)} - ${esc(a.title)}</label>`;
     });
-    html += '<div class="ms-actions"><button data-ms-action="all">全选</button><button data-ms-action="none">清除</button></div>';
+    html += '<div class="ms-actions"><button type="button" data-ms-action="all">全选</button><button type="button" data-ms-action="none">清除</button></div>';
     hwAssignDrop.innerHTML = html;
     hwAssignDrop.querySelectorAll('input[type="checkbox"]').forEach(cb => {
       cb.addEventListener('change', () => {
@@ -2101,13 +2168,19 @@
       const active = stage === homeworkStage;
       button.classList.toggle('active', active);
       button.setAttribute('aria-selected', String(active));
+      button.tabIndex = active ? 0 : -1;
     });
     if (hwPendingLabel) hwPendingLabel.textContent = homeworkContentType === 'notice' ? '生效中通知' : '待提交作业';
     if (hwClosedLabel) hwClosedLabel.textContent = homeworkContentType === 'notice' ? '历史通知' : '提交统计';
     if (hwPendingHint) hwPendingHint.textContent = homeworkContentType === 'notice' ? '尚未到结束时间' : '尚未到截止时间';
     if (hwClosedHint) hwClosedHint.textContent = homeworkContentType === 'notice' ? '已到结束时间' : '已到截止时间';
     [[hwContentHomework, 'homework'], [hwContentNotice, 'notice']].forEach(([button, type]) => {
-      if (button) button.classList.toggle('active', type === homeworkContentType);
+      if (button) {
+        const active = type === homeworkContentType;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', String(active));
+        button.tabIndex = active ? 0 : -1;
+      }
     });
     if (hwStatusFilter) hwStatusFilter.classList.toggle('hidden', homeworkContentType === 'notice');
     if (exportHomeworkBtn) exportHomeworkBtn.classList.toggle('hidden', homeworkContentType === 'notice');
@@ -2875,7 +2948,13 @@
       type = homeworkView.typeOf(editing);
     }
     publishType = type === 'notice' ? 'notice' : 'homework';
-    [[publishTypeHomework, 'homework'], [publishTypeNotice, 'notice']].forEach(([button, value]) => { if (button) button.classList.toggle('active', value === publishType); });
+    [[publishTypeHomework, 'homework'], [publishTypeNotice, 'notice']].forEach(([button, value]) => {
+      if (!button) return;
+      const active = value === publishType;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', String(active));
+      button.tabIndex = active ? 0 : -1;
+    });
     if (publishTypeHomework) publishTypeHomework.disabled = !!state.editingAssignmentId;
     if (publishTypeNotice) publishTypeNotice.disabled = !!state.editingAssignmentId;
     if (hwModalTitleLabel) hwModalTitleLabel.textContent = state.editingAssignmentId ? (publishType === 'notice' ? '编辑通知' : '编辑作业') : (publishType === 'notice' ? '发布通知' : '布置作业');
@@ -2892,7 +2971,7 @@
     if (publishTypeNotice) publishTypeNotice.disabled = false;
     updatePublishType(type);
     if (hwModalTitle) hwModalTitle.value = '';
-    if (hwModalDate) hwModalDate.value = new Date().toISOString().slice(0, 10);
+    if (hwModalDate) hwModalDate.value = localDateKey(new Date());
     if (hwModalDeadline) {
       const later = new Date(Date.now() + 60 * 60 * 1000);
       later.setMinutes(0, 0, 0);
@@ -2929,7 +3008,7 @@
     if (!subject) { alert('请选择学科'); return; }
     const title = hwModalTitle.value.trim();
     if (!title) { hwModalTitle.focus(); return; }
-    const date = hwModalDate.value || new Date().toISOString().slice(0, 10);
+    const date = hwModalDate.value || localDateKey(new Date());
     const deadline = hwModalDeadline && hwModalDeadline.value ? hwModalDeadline.value : '';
     if (!deadline) { alert(publishType === 'notice' ? '请设置通知结束时间' : '请设置提交截止时间'); return; }
 
@@ -3068,7 +3147,9 @@
   function bindEvents() {
     if (connectBtn) connectBtn.addEventListener('click', () => connect(connectionCodeInput ? connectionCodeInput.value : ''));
     document.getElementById('openConnectModalBtn')?.addEventListener('click', openConnectRoomModal);
-    document.getElementById('emptyAddRoomBtn')?.addEventListener('click', openConnectRoomModal);
+    emptyAddRoomBtn?.addEventListener('click', openConnectRoomModal);
+    emptyRetryRoomBtn?.addEventListener('click', () => { if (state.currentRoom) connect(state.currentRoom); });
+    emptyCancelConnectBtn?.addEventListener('click', disconnect);
     document.getElementById('closeConnectModalBtn')?.addEventListener('click', closeConnectRoomModal);
     const connectRoomModal = document.getElementById('connectRoomModal');
     if (connectRoomModal) connectRoomModal.addEventListener('click', event => { if (event.target === connectRoomModal) closeConnectRoomModal(); });
@@ -3124,8 +3205,25 @@
       applyFilters();
     });
     document.addEventListener('keydown', event => {
-      if (event.key === 'Escape' && connectRoomModal && !connectRoomModal.classList.contains('hidden')) closeConnectRoomModal();
-      if (event.key === 'Escape' && aiHomeworkModal && !aiHomeworkModal.classList.contains('hidden')) closeAiHomeworkAnalysis();
+      if (event.key === 'Escape') {
+        if (hwSubjectDrop && !hwSubjectDrop.classList.contains('hidden')) { setMultiSelectExpanded(hwSubjectBtn, hwSubjectDrop, false); hwSubjectBtn?.focus(); return; }
+        if (hwAssignDrop && !hwAssignDrop.classList.contains('hidden')) { setMultiSelectExpanded(hwAssignBtn, hwAssignDrop, false); hwAssignBtn?.focus(); return; }
+        if (connectSubjectDrop && !connectSubjectDrop.classList.contains('hidden')) { closeSubjectPicker(document.getElementById('connectSubjectInput'), connectSubjectDrop); document.getElementById('connectSubjectInput')?.focus(); return; }
+        if (teacherEditSubjectDrop && !teacherEditSubjectDrop.classList.contains('hidden')) { closeSubjectPicker(teacherEditSubjects, teacherEditSubjectDrop); teacherEditSubjects?.focus(); return; }
+        if (connectRoomModal && !connectRoomModal.classList.contains('hidden')) { closeConnectRoomModal(); return; }
+        if (aiHomeworkModal && !aiHomeworkModal.classList.contains('hidden')) { closeAiHomeworkAnalysis(); return; }
+        if (accountModal && !accountModal.classList.contains('hidden')) { closeAccountModal(); return; }
+        if (teacherEditModal && !teacherEditModal.classList.contains('hidden')) { teacherEditModal.classList.add('hidden'); return; }
+        if (hwModal && !hwModal.classList.contains('hidden')) { hwModal.classList.add('hidden'); return; }
+        if (labelModal && !labelModal.classList.contains('hidden')) { labelModal.classList.add('hidden'); return; }
+      }
+      const activeModal = Array.from(document.querySelectorAll('.modal:not(.hidden)')).at(-1);
+      if (event.key !== 'Tab' || !activeModal) return;
+      const focusable = Array.from(activeModal.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),summary,[tabindex]:not([tabindex="-1"])')).filter(item => item.offsetParent !== null);
+      if (!focusable.length) return;
+      const first = focusable[0], last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     });
 
     // 多选组件初始化
@@ -3140,6 +3238,8 @@
     if (hwStageClosed) hwStageClosed.addEventListener('click', () => setHomeworkStage('closed'));
     if (hwContentHomework) hwContentHomework.addEventListener('click', () => setHomeworkContentType('homework'));
     if (hwContentNotice) hwContentNotice.addEventListener('click', () => setHomeworkContentType('notice'));
+    [hwStagePending, hwStageClosed].filter(Boolean).forEach(button => button.addEventListener('keydown', event => handleTabKeydown(event, [hwStagePending, hwStageClosed])));
+    [hwContentHomework, hwContentNotice].filter(Boolean).forEach(button => button.addEventListener('keydown', event => handleTabKeydown(event, [hwContentHomework, hwContentNotice])));
 
     // 日期筛选
     const onDateChange = () => {
@@ -3208,6 +3308,7 @@
     if (hwModalConfirm) hwModalConfirm.addEventListener('click', confirmHw);
     if (publishTypeHomework) publishTypeHomework.addEventListener('click', () => updatePublishType('homework'));
     if (publishTypeNotice) publishTypeNotice.addEventListener('click', () => updatePublishType('notice'));
+    [publishTypeHomework, publishTypeNotice].filter(Boolean).forEach(button => button.addEventListener('keydown', event => handleTabKeydown(event, [publishTypeHomework, publishTypeNotice])));
     if (hwModalTitle) {
       hwModalTitle.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') hwModal && hwModal.classList.add('hidden');
@@ -3258,14 +3359,15 @@
     document.getElementById('chooseAccountAvatar')?.addEventListener('click', chooseAccountAvatar);
     document.getElementById('saveAccountProfile')?.addEventListener('click', saveAccountProfile);
     const accountModalClose = document.getElementById('accountModalClose');
+    const accountModalTopClose = document.getElementById('accountModalTopClose');
     const logoutBtn = document.getElementById('logoutBtn');
-    if (accountModalClose) accountModalClose.addEventListener('click', () => accountModal && accountModal.classList.add('hidden'));
-    document.getElementById('accountCloudConnectBtn')?.addEventListener('click', enrollTeacherCloud);
+    if (accountModalClose) accountModalClose.addEventListener('click', closeAccountModal);
+    if (accountModalTopClose) accountModalTopClose.addEventListener('click', closeAccountModal);
     document.getElementById('accountCloudRefreshBtn')?.addEventListener('click', refreshCloudRooms);
     if (saveAccountAiSettings) saveAccountAiSettings.addEventListener('click', saveHomeworkAiSettings);
     if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
     if (accountModal) accountModal.addEventListener('click', event => {
-      if (event.target === accountModal) accountModal.classList.add('hidden');
+      if (event.target === accountModal) closeAccountModal();
     });
     const approvalRetryBtn = document.getElementById('approvalRetryBtn');
     const approvalCancelBtn = document.getElementById('approvalCancelBtn');
@@ -3291,20 +3393,26 @@
         faceSubtabs.forEach(t => {
           t.classList.remove('active');
           t.setAttribute('aria-selected', 'false');
+          t.tabIndex = -1;
         });
         tab.classList.add('active');
         tab.setAttribute('aria-selected', 'true');
+        tab.tabIndex = 0;
         const target = tab.dataset.subtab;
         faceSubtabActive = target;
 
         if (target === 'unknown') {
           if (faceGridUnknownEl) faceGridUnknownEl.classList.remove('hidden');
           if (faceGridRegisteredEl) faceGridRegisteredEl.classList.add('hidden');
+          faceGridUnknownEl?.setAttribute('aria-hidden', 'false');
+          faceGridRegisteredEl?.setAttribute('aria-hidden', 'true');
           if (faceHintUnknown) faceHintUnknown.classList.remove('hidden');
           if (faceHintRegistered) faceHintRegistered.classList.add('hidden');
         } else {
           if (faceGridUnknownEl) faceGridUnknownEl.classList.add('hidden');
           if (faceGridRegisteredEl) faceGridRegisteredEl.classList.remove('hidden');
+          faceGridUnknownEl?.setAttribute('aria-hidden', 'true');
+          faceGridRegisteredEl?.setAttribute('aria-hidden', 'false');
           if (faceHintUnknown) faceHintUnknown.classList.add('hidden');
           if (faceHintRegistered) faceHintRegistered.classList.remove('hidden');
         }
@@ -3344,6 +3452,12 @@
     msgEditor      = document.getElementById('msgEditor');
     studentGrid    = document.getElementById('studentGrid');
     emptyState     = document.getElementById('emptyState');
+    emptyStateTitle = document.getElementById('emptyStateTitle');
+    emptyStateNote = document.getElementById('emptyStateNote');
+    emptyAddRoomBtn = document.getElementById('emptyAddRoomBtn');
+    emptyConnectionActions = document.getElementById('emptyConnectionActions');
+    emptyRetryRoomBtn = document.getElementById('emptyRetryRoomBtn');
+    emptyCancelConnectBtn = document.getElementById('emptyCancelConnectBtn');
     searchInput    = document.getElementById('searchInput');
     searchRow      = document.getElementById('searchRow');
     searchResult   = document.getElementById('searchResult');

@@ -9,14 +9,17 @@
   function renderUnread(unread) {
     unreadDot.hidden = !unread;
     toggle.classList.toggle('has-unread', !!unread);
+    toggle.dataset.unread = unread ? 'true' : 'false';
+    updateToggleLabel();
   }
+  function updateToggleLabel() { toggle.setAttribute('aria-label', (expanded ? '收起今日安排菜单' : '展开今日安排菜单') + (toggle.dataset.unread === 'true' ? '，有新内容' : '')); }
   if (api.getHomeworkUnread) api.getHomeworkUnread().then(renderUnread).catch(function () {});
   if (api.onHomeworkUnreadChanged) api.onHomeworkUnreadChanged(renderUnread);
   function setExpanded(next) {
     clearTimeout(closeTimer);
     expanded = next;
     toggle.setAttribute('aria-expanded', String(next));
-    toggle.setAttribute('aria-label', next ? '收起作业菜单' : '展开作业菜单');
+    updateToggleLabel();
     if (next) {
       // 先扩大透明窗口，再在下一帧播放两个子球的弹出动画。
       if (api.setHomeworkFloatExpanded) api.setHomeworkFloatExpanded(true);

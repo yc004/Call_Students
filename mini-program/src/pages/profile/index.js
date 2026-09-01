@@ -1,28 +1,20 @@
 const socket = require('../../utils/socket');
 const { sessionStore } = require('../../utils/session');
 const cloudApi = require('../../utils/cloud');
-const errorReport = require('../../utils/error-report');
 
 Page({
   data: {
     account: { name:'教师', subjects:[] },
     initial:'教',
     roleText:'教师账户',
-    subjectTags:[],
-    cloudConnected:false,
-    cloudServerUrl:'',
-    cloudUserId:'',
     cloudNickname:'',
     profileAvatar:'',
-    profileBusy:false,
-    currentPassword:'',
-    newPassword:'',
-    confirmPassword:'',
-    cloudBusy:false,
+    avatarLoadFailed:false,
     usageMode:'toc',
-    organizationName:'',
-    organizationShortName:'',
     organizationColor:'#2563EB',
+    organizationName:'',
+    connectionId:'',
+    versionText:'开发版本',
   },
   onLoad() {
     this.applyNavigationTheme();
@@ -31,6 +23,7 @@ Page({
     this.loadSession();
   },
   onShow() { this.loadSession(); if (this.getTabBar) this.getTabBar().refresh('profile'); },
+  onCloudSessionUpdated() { this.loadSession(); },
   onUnload() { if (this.themeHandler && wx.offThemeChange) wx.offThemeChange(this.themeHandler); },
   applyNavigationTheme(theme) {
     const app = getApp();
@@ -49,71 +42,27 @@ Page({
     if (!session) { wx.reLaunch({ url:'/pages/login/index' }); return; }
     const cloud = session.cloud || null;
     const organization=cloud&&cloud.organization||{};
+    let versionText='开发版本';
+    try { const info=wx.getAccountInfoSync&&wx.getAccountInfoSync();versionText=info&&info.miniProgram&&(info.miniProgram.version||info.miniProgram.envVersion)||versionText; } catch (_error) {}
     this.setData({
       account: { ...session.account, subjects: [] },
       initial: String((cloud && cloud.nickname) || session.account.name || '教').slice(0, 1),
       roleText: cloud ? '组织教师账户' : '个人免费账户',
-      subjectTags: [],
-      cloudConnected: !!cloud,
-      cloudServerUrl: cloud && cloud.serverUrl || '',
-      cloudUserId: cloud && cloud.userId || '',
       cloudNickname: cloud && (cloud.nickname || cloud.userName) || '',
       profileAvatar: (cloud && cloud.avatarUrl) || session.account.avatarUrl || '',
+      avatarLoadFailed:false,
       usageMode:cloud?'tob':'toc',
-      organizationName:organization.name||'',
-      organizationShortName:organization.shortName||organization.name||'',
       organizationColor:organization.primaryColor||'#2563EB',
+      organizationName:organization.name||'',
+      connectionId:session.account.connectionId||'',
+      versionText,
     });
     this.applyNavigationTheme();
   },
+  onAvatarError() { this.setData({ avatarLoadFailed:true }); },
   openProfileEditor() { wx.navigateTo({ url:'/pages/profile-edit/index' }); },
-  onCurrentPasswordInput(event) { this.setData({ currentPassword:String(event.detail.value || '') }); },
-  onNewPasswordInput(event) { this.setData({ newPassword:String(event.detail.value || '') }); },
-  onConfirmPasswordInput(event) { this.setData({ confirmPassword:String(event.detail.value || '') }); },
-  async changePassword() {
-    if (this.data.profileBusy || !this.data.cloudConnected) return;
-    const session = sessionStore.load();
-    const currentPassword = this.data.currentPassword;
-    const newPassword = this.data.newPassword;
-    if (!currentPassword) { wx.showToast({ title:'请输入当前密码', icon:'none' }); return; }
-    if (newPassword.length < 10) { wx.showToast({ title:'新密码至少 10 位', icon:'none' }); return; }
-    if (newPassword !== this.data.confirmPassword) { wx.showToast({ title:'两次新密码输入不一致', icon:'none' }); return; }
-    this.setData({ profileBusy:true }); wx.showLoading({ title:'正在修改密码', mask:true });
-    try {
-      const cloud = await cloudApi.updateTeacherProfile(session.cloud, { currentPassword, newPassword });
-      const updated = sessionStore.save({ ...session, cloud });
-      getApp().globalData.session = updated;
-      wx.hideLoading(); this.setData({ profileBusy:false,currentPassword:'',newPassword:'',confirmPassword:'' });
-      wx.showToast({ title:'密码已修改', icon:'success' });
-    } catch (error) {
-      wx.hideLoading(); this.setData({ profileBusy:false });
-      errorReport.show({ title:'密码修改失败', error, context:'我的－账户安全', suggestions:['确认当前密码输入正确', '新密码至少需要 10 位且不要与旧密码相同'] });
-    }
-  },
-  async refreshCloud() {
-    if (this.data.cloudBusy) return;
-    const current = sessionStore.load();
-    if (!current || !current.cloud) return;
-    this.setData({ cloudBusy:true });
-    wx.showLoading({ title:'正在同步', mask:true });
-    try {
-      let cloud = current.cloud;
-      const expires = new Date(cloud.accessExpiresAt || 0).getTime();
-      if (!Number.isFinite(expires) || expires <= Date.now() + 60000) cloud = await cloudApi.refreshSession(cloud);
-      cloud = await cloudApi.getTeacherProfile(cloud);
-      const rooms = await cloudApi.listClassrooms(cloud);
-      const session = sessionStore.updateCloud(cloud, rooms);
-      getApp().globalData.session = session;
-      wx.hideLoading();
-      this.setData({ cloudBusy:false });
-      this.loadSession();
-      wx.showToast({ title:'已同步 ' + rooms.length + ' 个教室', icon:'none' });
-    } catch (error) {
-      wx.hideLoading();
-      this.setData({ cloudBusy:false });
-      errorReport.show({ title:'云端数据同步失败', error, context:'我的－同步组织数据', suggestions:['检查当前网络和组织服务器状态', '确认登录没有过期，必要时重新登录组织'] });
-    }
-  },
+  showPrivacy(){wx.showModal({title:'隐私与数据边界',content:'个人模式资料保存在当前微信设备；教室连接信息仅用于局域网通信。人脸图片、特征和识别结果只保存在教室电脑，不上传到组织云端。',showCancel:false,confirmText:'知道了'});},
+  showHelp(){wx.showModal({title:'使用帮助',content:'连接教室遇到问题时，请确认手机与教室电脑位于同一局域网，并允许微信访问本地网络。组织账号问题请联系学校或机构管理员。',showCancel:false,confirmText:'知道了'});},
   logout() {
     wx.showModal({
       title: '确认退出登录？',

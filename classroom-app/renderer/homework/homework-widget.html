@@ -1,11 +1,17 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https: wss: ws:; object-src 'none'; base-uri 'none'; form-action 'none'">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>今日安排</title>
   <link rel="stylesheet" href="homework-widget.css">
   <style>.notice-list{display:flex;flex-direction:column;gap:10px;margin-bottom:16px}.notice-heading{display:flex;align-items:center;justify-content:space-between;color:#41516b;font-size:14px}.notice-heading span{color:var(--muted);font-size:12px}.notice-item{padding:14px 16px;border:1px solid #f0d9a8;border-radius:15px;background:#fffaf0}.notice-item h2{margin:8px 0 5px;font-size:18px;line-height:1.45;word-break:break-word}.notice-item small{color:#8a6a2c;font-size:12px}.notice-subject{display:inline-block;padding:3px 8px;border-radius:8px;color:#8b5c00;background:#ffedc7;font-size:12px;font-weight:800}</style>
+  <style>
+    button:focus-visible{outline:3px solid #fff;outline-offset:2px;box-shadow:0 0 0 5px rgba(37,99,235,.45)}
+    @media(prefers-color-scheme:dark){:root{--ink:#f4f7fb;--muted:#aeb8c8;--line:#354052;--surface:#202733}body{color:var(--ink);background:#161b23}.widget-header{background:linear-gradient(118deg,#14284a,#24569b)}.date-label,.subject-group,footer{border-color:var(--line);background:#202733}.subject-group-head{background:#252f3f}.subject{color:#9bc1ff;background:#253b61}.assignment-item{border-color:var(--line)}.notice-heading{color:#d4dbea}.notice-item{border-color:#6c552b;background:#2e291f}.notice-item small{color:#e4bf76}.notice-subject{color:#ffd58a;background:#55411d}.empty-state h2{color:#e4e9f1}.empty-state div{color:#71d59e;background:#183a2a}footer button{color:#b7d2ff;border-color:#53637a;background:#283243}}
+    @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+  </style>
 </head>
 <body>
   <header class="widget-header">

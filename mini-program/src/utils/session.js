@@ -24,6 +24,7 @@ function sanitizeCloud(cloud) {
   const avatarUrl = String(cloud.avatarUrl || '').trim().slice(0, 500);
   if (avatarUrl) result.avatarUrl = avatarUrl;
   result.mustChangePassword = !!cloud.mustChangePassword;
+  result.wechatBound = !!cloud.wechatBound;
   const organization = cloud.organization && typeof cloud.organization === 'object' ? cloud.organization : {};
   result.organization = {
     id:String(organization.id || ''),
@@ -55,11 +56,13 @@ function sanitizeSession(session) {
   if (!account) return null;
   const rooms = (session.rooms || []).map(migrateRoom).filter(Boolean);
   const activeRoom = migrateRoom(session.activeRoom) || rooms[0] || null;
+  const cloud = sanitizeCloud(session.cloud);
+  if (cloud && cloud.userId) account.connectionId = `cloud-${cloud.userId}`;
   return {
     account,
     rooms,
     activeRoom,
-    cloud: sanitizeCloud(session.cloud),
+    cloud,
     usageMode:session.cloud ? 'tob' : 'toc',
     pairedAt: session.pairedAt || session.pairingAt || new Date().toISOString(),
   };

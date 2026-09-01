@@ -11,7 +11,7 @@ function genConnectionId() {
 
 Page({
   data: {
-    screen:'choice', localName:'', cloudServerUrl:'', cloudUseHttps:false, cloudLoginName:'', cloudPassword:'',
+    screen:'choice', localName:'', cloudServerUrl:'', cloudUseHttps:false, cloudOrganizationSlug:'', cloudLoginName:'', cloudPassword:'',
     profileNickname:'', profilePassword:'', profileConfirmPassword:'', profileAvatar:'',
     organizationName:'组织空间', organizationShortName:'组织', organizationMark:'组', organizationColor:'#2563EB', busy:false,
   },
@@ -19,7 +19,8 @@ Page({
   onLoad(options) {
     this.fromRoomShare = !!(options && options.from === 'roomShare');
     this.fromCloud = !!(options && options.from === 'cloud');
-    if (this.fromCloud) this.setData({ screen:'organization' });
+    const remembered=cloudApi.loadRememberedCloudServer();
+    this.setData({cloudServerUrl:remembered.serverUrl,cloudUseHttps:remembered.useHttps,...(this.fromCloud?{screen:'organization'}:{})});
   },
 
   onShow() {
@@ -41,11 +42,16 @@ Page({
   onLocalNameInput(event) { this.setData({ localName:String(event.detail.value || '').trimStart().slice(0, 20) }); },
   onCloudServerInput(event) { this.setData({ cloudServerUrl:String(event.detail.value || '').replace(/^https?:\/\//i, '').trim().slice(0, 500) }); },
   onCloudHttpsChange(event) { this.setData({ cloudUseHttps:!!(event.detail.value && event.detail.value.length) }); },
+  onCloudOrganizationSlugInput(event) { this.setData({ cloudOrganizationSlug:String(event.detail.value || '').trim().slice(0, 80) }); },
   onCloudLoginNameInput(event) { this.setData({ cloudLoginName:String(event.detail.value || '').trim().slice(0, 80) }); },
   onCloudPasswordInput(event) { this.setData({ cloudPassword:String(event.detail.value || '') }); },
   onProfileNicknameInput(event) { this.setData({ profileNickname:String(event.detail.value || '').trimStart().slice(0, 40) }); },
   onProfilePasswordInput(event) { this.setData({ profilePassword:String(event.detail.value || '') }); },
   onProfileConfirmInput(event) { this.setData({ profileConfirmPassword:String(event.detail.value || '') }); },
+
+  getWechatCode() {
+    return new Promise((resolve,reject)=>wx.login({timeout:10000,success:result=>result&&result.code?resolve(result.code):reject(new Error('微信未返回登录凭证')),fail:error=>reject(new Error(error&&error.errMsg||'无法获取微信登录凭证'))}));
+  },
 
   enterPersonal() {
     const name = this.data.localName.trim();
@@ -58,15 +64,17 @@ Page({
 
   async loginOrganization() {
     if (this.data.busy) return;
-    const { cloudServerUrl:serverUrl, cloudLoginName:loginName, cloudPassword:password } = this.data;
-    if (!serverUrl || !loginName || !password) { wx.showToast({ title:'请填写服务器、账号和密码', icon:'none' }); return; }
+    const { cloudServerUrl:serverUrl, cloudOrganizationSlug:organizationSlug, cloudLoginName:loginName, cloudPassword:password } = this.data;
+    if (!serverUrl || !organizationSlug || !loginName || !password) { wx.showToast({ title:'请填写服务器、组织标识、用户名和密码', icon:'none' }); return; }
     this.setData({ busy:true });
     wx.showLoading({ title:'正在进入组织', mask:true });
     try {
-      const cloud = await cloudApi.loginMiniProgramAccount({ serverUrl, useHttps:this.data.cloudUseHttps, loginName, password, deviceName:'微信小程序' });
+      const cloud = await cloudApi.loginMiniProgramAccount({ serverUrl, useHttps:this.data.cloudUseHttps, organizationSlug, loginName, password, deviceName:'微信小程序' });
+      cloudApi.rememberCloudServer(serverUrl,this.data.cloudUseHttps);
       const rooms = cloud.mustChangePassword ? [] : await cloudApi.listClassrooms(cloud);
+      if(!cloud.mustChangePassword)cloud.availableSubjects=await cloudApi.listSubjects(cloud);
       const existing = sessionStore.load();
-      const account = { name:cloud.nickname || cloud.userName || loginName, loginName, avatarUrl:cloud.avatarUrl || '', connectionId:existing && existing.account && existing.account.connectionId || genConnectionId(), subjects:[] };
+      const account = { name:cloud.nickname || cloud.userName || loginName, loginName, avatarUrl:cloud.avatarUrl || '', connectionId:`cloud-${cloud.userId}`, subjects:[] };
       const session = sessionStore.save({ account, rooms, activeRoom:rooms[0] || null, cloud, usageMode:'tob', pairedAt:new Date().toISOString() });
       getApp().globalData.session = session;
       wx.hideLoading(); this.setData({ busy:false });
@@ -75,6 +83,27 @@ Page({
     } catch (error) {
       wx.hideLoading(); this.setData({ busy:false });
       errorReport.show({ title:'无法登录组织', error, context:'组织模式登录', suggestions:['检查服务器地址和 HTTP/HTTPS 选项', '确认账号密码正确且组织服务器已经启动'] });
+    }
+  },
+
+  async loginWechatOrganization() {
+    if(this.data.busy)return;
+    const serverUrl=this.data.cloudServerUrl;
+    if(!serverUrl){wx.showToast({title:'请先填写服务器地址',icon:'none'});return;}
+    this.setData({busy:true});wx.showLoading({title:'微信一键登录',mask:true});
+    try{
+      const code=await this.getWechatCode();
+      const cloud=await cloudApi.loginWechatAccount({serverUrl,useHttps:this.data.cloudUseHttps,code,deviceName:'微信小程序'});
+      cloudApi.rememberCloudServer(serverUrl,this.data.cloudUseHttps);
+      const rooms=await cloudApi.listClassrooms(cloud);
+      cloud.availableSubjects=await cloudApi.listSubjects(cloud);
+      const account={name:cloud.nickname||cloud.userName||'教师',loginName:cloud.userName,avatarUrl:cloud.avatarUrl||'',connectionId:`cloud-${cloud.userId}`,subjects:[]};
+      const session=sessionStore.save({account,rooms,activeRoom:rooms[0]||null,cloud,usageMode:'tob',pairedAt:new Date().toISOString()});
+      getApp().globalData.session=session;
+      wx.hideLoading();this.setData({busy:false});this.afterLogin('微信登录成功');
+    }catch(error){
+      wx.hideLoading();this.setData({busy:false});
+      errorReport.show({title:'微信登录失败',error,context:'组织模式微信登录',suggestions:['首次使用请先通过用户名和初始密码登录并完成绑定','检查服务器是否已配置微信小程序 AppID 和 AppSecret']});
     }
   },
 
@@ -103,15 +132,36 @@ Page({
       let cloud = session.cloud;
       cloud = await cloudApi.completeTeacherProfile(cloud, { name, nickname, newPassword:password });
       const rooms = await cloudApi.listClassrooms(cloud);
+      cloud.availableSubjects=await cloudApi.listSubjects(cloud);
       const account = { ...session.account, name:nickname || name, avatarUrl:cloud.avatarUrl || '', loginName:this.data.cloudLoginName || session.account.loginName };
       const updated = sessionStore.save({ ...session, account, rooms, activeRoom:rooms[0] || null, cloud, usageMode:'tob' });
       getApp().globalData.session = updated;
       this.pendingCloudSession = null;
       wx.hideLoading(); this.setData({ busy:false });
-      this.afterLogin('资料设置完成');
+      this.offerWechatBinding(updated);
     } catch (error) {
       wx.hideLoading(); this.setData({ busy:false });
       errorReport.show({ title:'资料保存失败', error, context:'首次登录资料设置', suggestions:['检查网络连接后重试', '确认用户名有效且新密码至少为 10 位'] });
+    }
+  },
+
+  offerWechatBinding(session) {
+    if(!session||!session.cloud||session.cloud.wechatBound){this.afterLogin('资料设置完成');return;}
+    wx.showModal({title:'绑定当前微信',content:'绑定后，下次只需点击“微信一键登录”，无需再次输入用户名和密码。不会读取微信昵称、头像或手机号。',confirmText:'一键绑定',cancelText:'以后再说',confirmColor:'#07C160',success:result=>{if(result.confirm)this.bindCurrentWechat(session);else this.afterLogin('资料设置完成');},fail:()=>this.afterLogin('资料设置完成')});
+  },
+
+  async bindCurrentWechat(session) {
+    this.setData({busy:true});wx.showLoading({title:'正在绑定微信',mask:true});
+    try{
+      const code=await this.getWechatCode();
+      const cloud=await cloudApi.bindWechat(session.cloud,code);
+      const updated=sessionStore.save({...session,cloud});
+      getApp().globalData.session=updated;
+      wx.hideLoading();this.setData({busy:false});this.afterLogin('微信绑定成功');
+    }catch(error){
+      wx.hideLoading();this.setData({busy:false});
+      errorReport.show({title:'微信绑定失败',error,context:'首次登录微信绑定',suggestions:['可稍后在“我的－个人信息”中再次绑定','请管理员检查服务器微信小程序配置']});
+      this.afterLogin();
     }
   },
 

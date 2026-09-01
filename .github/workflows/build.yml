@@ -25,6 +25,28 @@ jobs:
     name: Validate source and release metadata
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: banda
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d banda"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      PUBLIC_URL: http://127.0.0.1:8080
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/banda
+      ACCESS_TOKEN_SECRET: ci-access-token-secret-000000000000000000000000
+      KEY_PEPPER: ci-key-pepper-000000000000000000000000000000
+      SETUP_TOKEN: ci-setup-token-000000000000
+      MACOS_SIGNING_READY: ${{ secrets.MACOS_CSC_LINK != '' && secrets.MACOS_CSC_KEY_PASSWORD != '' && secrets.MACOS_APPLE_ID != '' && secrets.MACOS_APPLE_APP_SPECIFIC_PASSWORD != '' && secrets.MACOS_APPLE_TEAM_ID != '' }}
+      WINDOWS_SIGNING_READY: ${{ secrets.WINDOWS_CSC_LINK != '' && secrets.WINDOWS_CSC_KEY_PASSWORD != '' }}
 
     steps:
       - name: Check out source
@@ -43,19 +65,32 @@ jobs:
           node scripts/verify-js-syntax.js teacher-app
           node scripts/verify-js-syntax.js mini-program/src
 
+      - name: Require signing credentials for tagged releases
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            [[ "$WINDOWS_SIGNING_READY" == "true" ]] || { echo 'Windows signing credentials are required for a tagged release' >&2; exit 1; }
+            [[ "$MACOS_SIGNING_READY" == "true" ]] || { echo 'macOS signing and notarization credentials are required for a tagged release' >&2; exit 1; }
+          fi
+
       - name: Install teacher test dependencies
         working-directory: teacher-app
         run: npm ci
 
       - name: Run teacher tests
         run: |
-          node teacher-app/test/account-auth.test.js
-          node teacher-app/test/mini-program-pairing.test.js
-          node teacher-app/test/connection-code.test.js
-          node teacher-app/test/homework-view.test.js
-          node teacher-app/test/homework-export.test.js
-          node --test teacher-app/test/cloud-client.test.js
+          node --test teacher-app/test/*.test.js
           node --test mini-program/test/*.test.js
+          cd teacher-app
+          npm audit --omit=dev --audit-level=high
+          npm sbom --package-lock-only --sbom-format cyclonedx > teacher-app.cdx.json
+
+      - name: Install and test classroom app
+        working-directory: classroom-app
+        run: |
+          npm ci
+          node --test test/*.test.js
+          npm audit --omit=dev --audit-level=high
+          npm sbom --package-lock-only --sbom-format cyclonedx > classroom-app.cdx.json
 
       - name: Install and verify cloud server
         working-directory: cloud-server
@@ -64,6 +99,38 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm run build
           pnpm test
+          pnpm audit --prod --audit-level high
+
+      - name: Run cloud runtime integration tests
+        working-directory: cloud-server
+        run: |
+          pnpm start > /tmp/banda-cloud.log 2>&1 &
+          server_pid=$!
+          for attempt in $(seq 1 30); do
+            curl --fail --silent http://127.0.0.1:8080/api/v2/system/ready && break
+            sleep 1
+          done
+          pnpm test:runtime
+          kill "$server_pid"
+
+      - name: Type-check and build admin web
+        working-directory: cloud-server/admin-web
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm audit --prod --audit-level high
+          pnpm -F @vben/web-antd run typecheck
+          pnpm run build:antd
+
+      - name: Upload dependency inventories
+        uses: actions/upload-artifact@v7
+        with:
+          name: supply-chain-${{ github.sha }}
+          path: |
+            classroom-app/classroom-app.cdx.json
+            teacher-app/teacher-app.cdx.json
+          if-no-files-found: error
+          retention-days: 30
 
   cloud-container:
     name: Cloud server container
@@ -78,6 +145,8 @@ jobs:
         with:
           context: cloud-server
           push: false
+          provenance: mode=max
+          sbom: true
           tags: banda-cloud:${{ github.sha }}
 
   classroom-windows:
@@ -135,7 +204,7 @@ jobs:
       - name: Build and test native face engine
         working-directory: classroom-app
         run: |
-          node --test test/cloud-bridge.test.js
+          node --test test/*.test.js
           npm run build:native
           npm run test:native
 
@@ -344,7 +413,7 @@ jobs:
         run: |
           if [[ "$MACOS_SIGNING_ENABLED" == "true" ]]; then
             npm run build:mac:ci -- --${{ matrix.arch }} \
-              --config.mac.hardenedRuntime=true
+              --config.mac.hardenedRuntime=true --config.mac.notarize=true
           else
             # Ad-hoc signing gives every nested Electron/native binary a
             # consistent signature even when no Developer ID certificate is
@@ -444,7 +513,7 @@ jobs:
         run: |
           if [[ "$MACOS_SIGNING_ENABLED" == "true" ]]; then
             npm run build:mac:ci -- --${{ matrix.arch }} \
-              --config.mac.hardenedRuntime=true
+              --config.mac.hardenedRuntime=true --config.mac.notarize=true
           else
             npm run build:mac:ci -- --${{ matrix.arch }} \
               --config.mac.identity=- --config.mac.hardenedRuntime=false
@@ -487,6 +556,11 @@ jobs:
       - name: Generate download guide
         run: node .github/scripts/generate-release-notes.js release-notes.md
 
+      - name: Generate release checksums
+        run: |
+          find release -mindepth 2 -type f -name '*.cdx.json' -exec cp '{}' release/ \;
+          find release -maxdepth 1 -type f \( -name '*.exe' -o -name '*.dmg' \) -print0 | sort -z | xargs -0 sha256sum > release/SHA256SUMS.txt
+
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -501,14 +575,14 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" --repo "$GH_REPO" >/dev/null 2>&1; then
             while IFS= read -r asset; do
               case "$asset" in
-                *.exe|*.dmg) ;;
+                *.exe|*.dmg|*.txt|*.json) ;;
                 *) gh release delete-asset "$GITHUB_REF_NAME" "$asset" --yes --repo "$GH_REPO" ;;
               esac
             done < <(gh release view "$GITHUB_REF_NAME" --repo "$GH_REPO" --json assets --jq '.assets[].name')
-            gh release upload "$GITHUB_REF_NAME" "${installers[@]}" --clobber --repo "$GH_REPO"
+            gh release upload "$GITHUB_REF_NAME" "${installers[@]}" release/SHA256SUMS.txt release/*.cdx.json --clobber --repo "$GH_REPO"
             gh release edit "$GITHUB_REF_NAME" --repo "$GH_REPO" --title "$GITHUB_REF_NAME" --notes-file release-notes.md
           else
-            gh release create "$GITHUB_REF_NAME" "${installers[@]}" \
+            gh release create "$GITHUB_REF_NAME" "${installers[@]}" release/SHA256SUMS.txt release/*.cdx.json \
               --repo "$GH_REPO" \
               --verify-tag \
               --notes-file release-notes.md \

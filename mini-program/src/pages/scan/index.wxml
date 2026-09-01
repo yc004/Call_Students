@@ -7,7 +7,7 @@
   </view>
 
   <view class="scan-hero surface">
-    <view class="scan-visual" bindtap="chooseScanAction" hover-class="scan-visual_active">
+    <view class="scan-visual" role="button" aria-label="开始扫描二维码" bindtap="chooseScanAction" hover-class="scan-visual_active">
       <view class="scan-corner top-left"></view><view class="scan-corner top-right"></view>
       <view class="scan-glyph"><view></view><view></view><view></view><view></view><view></view></view>
       <view class="scan-corner bottom-left"></view><view class="scan-corner bottom-right"></view>
@@ -19,16 +19,16 @@
 
   <view class="section-heading"><view><text class="section-title">可以扫描</text><text class="section-note">二维码仅用于局域网内建立安全连接</text></view></view>
   <view class="scan-options surface">
-    <view class="scan-option" bindtap="scanTeacherLogin" hover-class="scan-option_active">
+    <view class="scan-option" role="button" aria-label="扫描二维码登录电脑教师端" bindtap="scanTeacherLogin" hover-class="scan-option_active">
       <view class="option-icon teacher-icon">教</view><view class="option-copy"><text>登录电脑教师端</text><text>使用当前账户登录一台尚未登录的教师端</text></view><text class="option-arrow">›</text>
     </view>
-    <view class="scan-option" bindtap="scanClassroom" hover-class="scan-option_active">
+    <view class="scan-option" role="button" aria-label="扫描二维码添加教室" bindtap="scanClassroom" hover-class="scan-option_active">
       <view class="option-icon room-icon">室</view><view class="option-copy"><text>添加教室</text><text>扫描教室端二维码，保存并立即连接</text></view><text class="option-arrow">›</text>
     </view>
   </view>
 
   <view class="current-summary" wx:if="{{activeRoomName}}"><view class="summary-dot"></view><text>当前教室：{{activeRoomName}}</text><text class="summary-count">已保存 {{roomCount}} 个</text></view>
   <button class="share-room-button" wx:if="{{canShareRoom}}" open-type="share">分享当前教室给教师</button>
-  <view class="share-permission-tip" wx:elif="{{activeRoomName}}" bindtap="explainSharePermission"><text>连接并确认为班主任后，可通过微信分享当前教室</text></view>
+  <view class="share-permission-tip" role="button" aria-label="了解为什么当前不能分享教室" wx:elif="{{activeRoomName}}" bindtap="explainSharePermission"><text>连接并确认为班主任后，可通过微信分享当前教室</text></view>
   <view class="privacy-tip"><text>连接信息只保存在当前设备，并仅在同一局域网内使用。</text></view>
 </view>

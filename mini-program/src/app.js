@@ -71,23 +71,44 @@ App({
       let cloud = session.cloud;
       const expiresAt = new Date(cloud.accessExpiresAt || 0).getTime();
       if (!Number.isFinite(expiresAt) || expiresAt <= Date.now() + 60000) cloud = await cloudApi.refreshSession(cloud);
-      cloud = await cloudApi.getTeacherProfile(cloud);
+      // 教室是首页核心数据，不能被头像、个人资料或科目配置的单项异常阻塞。
+      const rooms = await cloudApi.listClassrooms(cloud);
+      const [profileResult, subjectsResult] = await Promise.allSettled([
+        cloudApi.getTeacherProfile(cloud),
+        cloudApi.listSubjects(cloud),
+      ]);
+      if (profileResult.status === 'fulfilled') cloud = profileResult.value;
+      if (subjectsResult.status === 'fulfilled') cloud.availableSubjects = subjectsResult.value;
       if (cloud.mustChangePassword) {
-        const updated = sessionStore.updateCloud(cloud) || sessionStore.load();
+        const updated = sessionStore.updateCloud(cloud, rooms) || sessionStore.load();
         this.globalData.session = updated;
         wx.reLaunch({ url:'/pages/login/index?from=cloud' });
         return updated;
       }
-      const rooms = await cloudApi.listClassrooms(cloud);
       const updated = sessionStore.updateCloud(cloud, rooms) || sessionStore.load();
       this.globalData.session = updated;
       if (updated && updated.activeRoom) socket.connect(updated.activeRoom, updated.account, { force:true, skipCloudRefresh:true });
+      this.notifyCloudSessionUpdated(updated);
       return updated;
-    })().catch(() => {
+    })().catch(error => {
+      const accessExpired = new Date(session.cloud && session.cloud.accessExpiresAt || 0).getTime() <= Date.now();
+      if (error && (error.statusCode === 401 || accessExpired && /超时|网络|连接/.test(String(error.message || '')))) {
+        socket.disconnect();
+        sessionStore.clear();
+        this.globalData.session = null;
+        wx.reLaunch({ url:'/pages/login/index?from=cloud&expired=1' });
+        return null;
+      }
       if (session.activeRoom) socket.connect(session.activeRoom, session.account);
       return session;
     }).finally(() => { this.cloudRestorePromise = null; });
     return this.cloudRestorePromise;
+  },
+  notifyCloudSessionUpdated(session) {
+    const pages = typeof getCurrentPages === 'function' ? getCurrentPages() : [];
+    pages.forEach(page => {
+      if (page && typeof page.onCloudSessionUpdated === 'function') page.onCloudSessionUpdated(session);
+    });
   },
   onLaunch(options) {
     this.globalData.session = sessionStore.load();

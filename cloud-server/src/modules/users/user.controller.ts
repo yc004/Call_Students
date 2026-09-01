@@ -1,0 +1,11 @@
+import{Body,Controller,Delete,Get,HttpCode,HttpStatus,Param,ParseUUIDPipe,Patch,Post,Query,Req}from'@nestjs/common';import{ApiBearerAuth,ApiTags}from'@nestjs/swagger';
+import type{AuthContext,AuthenticatedRequest}from'../../common/auth-context.js';import{CurrentAuth}from'../../common/current-auth.decorator.js';import{RequirePermissions}from'../../common/permissions.decorator.js';import{BatchCreateTeachersDto,CreateUserDto,UpdateUserDto,UserQueryDto}from'./user.dto.js';import{UserService}from'./user.service.js';
+@ApiTags('users')@ApiBearerAuth()@Controller('users')export class UserController{constructor(private readonly service:UserService){}
+ @Get()@RequirePermissions('user.read')list(@CurrentAuth()a:AuthContext,@Query()q:UserQueryDto){return this.service.list(a,q);}
+ @Get(':id')@RequirePermissions('user.read')detail(@CurrentAuth()a:AuthContext,@Param('id',ParseUUIDPipe)i:string){return this.service.detail(a,i);}
+ @Post()@RequirePermissions('user.manage')create(@CurrentAuth()a:AuthContext,@Body()b:CreateUserDto,@Req()r:AuthenticatedRequest){return this.service.create(a,b,String(r.id||''));}
+ @Post('batch')@RequirePermissions('user.manage')batch(@CurrentAuth()a:AuthContext,@Body()b:BatchCreateTeachersDto,@Req()r:AuthenticatedRequest){return this.service.batchCreateTeachers(a,b,String(r.id||''));}
+ @Post(':id/reset-password')@RequirePermissions('user.manage')resetPassword(@CurrentAuth()a:AuthContext,@Param('id',ParseUUIDPipe)i:string,@Req()r:AuthenticatedRequest){return this.service.resetPassword(a,i,String(r.id||''));}
+ @Patch(':id')@RequirePermissions('user.manage')update(@CurrentAuth()a:AuthContext,@Param('id',ParseUUIDPipe)i:string,@Body()b:UpdateUserDto,@Req()r:AuthenticatedRequest){return this.service.update(a,i,b,String(r.id||''));}
+ @Delete(':id')@HttpCode(HttpStatus.NO_CONTENT)@RequirePermissions('user.manage')async deleteTeacher(@CurrentAuth()a:AuthContext,@Param('id',ParseUUIDPipe)i:string,@Req()r:AuthenticatedRequest){await this.service.deleteTeacher(a,i,String(r.id||''));}
+ @Delete(':userId/devices/:deviceId')@HttpCode(HttpStatus.NO_CONTENT)@RequirePermissions('device.manage')async revoke(@CurrentAuth()a:AuthContext,@Param('userId',ParseUUIDPipe)u:string,@Param('deviceId',ParseUUIDPipe)d:string,@Req()r:AuthenticatedRequest){await this.service.revokeDevice(a,u,d,String(r.id||''));}}

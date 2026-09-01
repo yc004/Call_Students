@@ -34,6 +34,8 @@ codesign --verify --deep --strict --verbose=2 "$app_path"
 signature_details="$(codesign -dv --verbose=4 "$app_path" 2>&1 || true)"
 if [[ "${MACOS_SIGNING_ENABLED:-false}" == "true" ]]; then
   echo "$signature_details" | grep -q 'Authority=Developer ID Application:'
+  xcrun stapler validate "$app_path"
+  spctl --assess --type execute --verbose=2 "$app_path"
   echo "[package] Developer ID signature is valid"
 else
   echo "$signature_details" | grep -q 'Signature=adhoc'

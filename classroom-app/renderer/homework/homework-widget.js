@@ -5,7 +5,7 @@
   var empty = document.getElementById('emptyState');
   var dateLabel = document.getElementById('dateLabel');
   var classLabel = document.getElementById('classLabel');
-  function today() { return new Date().toISOString().slice(0, 10); }
+  function today() { var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
   function formatDate(value) { return new Date(value + 'T00:00:00').toLocaleDateString('zh-CN', { month:'long', day:'numeric', weekday:'long' }); }
   function esc(value) { var node = document.createElement('div'); node.textContent = value || ''; return node.innerHTML; }
   function isDisplayPhase(item) { return !item.deadline || new Date(item.deadline).getTime() > Date.now(); }

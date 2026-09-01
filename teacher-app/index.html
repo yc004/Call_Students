@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https: wss: ws:; object-src 'none'; base-uri 'none'; form-action 'none'">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>班达-教师端</title>
@@ -48,18 +49,19 @@
     </div>
 
     <div id="mainTabs" class="main-tabs hidden" role="tablist" aria-label="当前教室工作台功能">
-      <button id="overviewTabBtn" class="main-tab active" role="tab" aria-selected="true" aria-controls="tab-overview" data-tab="overview"><span class="tab-symbol" aria-hidden="true">‹</span><span>返回工作台</span></button>
-      <button id="callTabBtn" class="main-tab" role="tab" aria-selected="false" aria-controls="tab-call" data-tab="call"><span class="tab-symbol" aria-hidden="true">⌁</span><span>呼叫</span></button>
-      <button class="main-tab" role="tab" aria-selected="false" aria-controls="tab-homework" data-tab="homework"><span class="tab-symbol" aria-hidden="true">□</span><span>作业与通知</span></button>
-      <button class="main-tab" role="tab" aria-selected="false" aria-controls="tab-attendance" data-tab="attendance"><span class="tab-symbol" aria-hidden="true">✓</span><span>出勤</span></button>
-      <button id="classroomTabBtn" class="main-tab hidden" role="tab" aria-selected="false" aria-controls="tab-classroom" data-tab="classroom"><span class="tab-symbol" aria-hidden="true">••</span><span>班级设置</span></button>
+      <button id="overviewTabBtn" class="main-tab active" type="button" role="tab" tabindex="0" aria-selected="true" aria-controls="tab-overview" data-tab="overview"><span class="tab-symbol" aria-hidden="true">‹</span><span>返回工作台</span></button>
+      <button id="callTabBtn" class="main-tab" type="button" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-call" data-tab="call"><span class="tab-symbol" aria-hidden="true">⌁</span><span>呼叫</span></button>
+      <button class="main-tab" type="button" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-homework" data-tab="homework"><span class="tab-symbol" aria-hidden="true">□</span><span>作业与通知</span></button>
+      <button class="main-tab" type="button" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-attendance" data-tab="attendance"><span class="tab-symbol" aria-hidden="true">✓</span><span>出勤</span></button>
+      <button id="classroomTabBtn" class="main-tab hidden" type="button" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-classroom" data-tab="classroom"><span class="tab-symbol" aria-hidden="true">••</span><span>班级设置</span></button>
     </div>
 
     <div id="emptyState" class="empty-state">
       <div class="empty-icon">⌁</div>
-      <p>连接你的第一间教室</p>
-      <p class="muted-note">输入教室大屏显示的 9 位连接码，即可使用学生呼叫、作业、通知和出勤功能。</p>
+      <p id="emptyStateTitle">连接你的第一间教室</p>
+      <p id="emptyStateNote" class="muted-note">输入教室大屏显示的 9 位连接码，即可使用学生呼叫、作业、通知和出勤功能。</p>
       <button id="emptyAddRoomBtn" class="btn btn-primary empty-primary" type="button">加入教室</button>
+      <div id="emptyConnectionActions" class="empty-connection-actions hidden"><button id="emptyRetryRoomBtn" class="btn btn-primary" type="button">立即重试</button><button id="emptyCancelConnectBtn" class="btn" type="button">取消连接</button></div>
     </div>
 
     <!-- ══════════ 教室概览 ══════════ -->
@@ -134,14 +136,14 @@
       <div id="callFlow" class="call-flow hidden">
         <div class="flow-heading"><span>1</span><div><strong>编辑呼叫内容</strong><small>学生姓名会在发送时自动替换</small></div></div>
       <div id="msgRow" class="msg-row hidden">
-        <label for="msgEditor">消息</label>
-        <div id="msgEditor" class="msg-editor" contenteditable="true" spellcheck="false"></div>
+        <label id="msgEditorLabel" for="msgEditor">消息</label>
+        <div id="msgEditor" class="msg-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-labelledby="msgEditorLabel" spellcheck="false"></div>
         <input type="hidden" id="callMessage" value="{name}同学，请到办公室">
       </div>
 
         <div class="flow-heading flow-heading-students"><span>2</span><div><strong>选择要呼叫的学生</strong><small id="callSelectionHint">点击学生卡片中的呼叫按钮即可发送</small></div><button id="multiCallToggle" class="btn call-multi-toggle" type="button">多选呼叫</button></div>
       <div id="searchRow" class="search-row hidden">
-        <input type="text" id="searchInput" class="search-input" placeholder="搜索学生姓名…" autocomplete="off">
+        <label class="sr-only" for="searchInput">搜索学生姓名</label><input type="text" id="searchInput" class="search-input" aria-label="搜索学生姓名" placeholder="搜索学生姓名…" autocomplete="off">
         <span id="searchResult" class="search-result"></span>
       </div>
 
@@ -209,8 +211,8 @@
         <div class="attendance-content">
           <div class="attendance-content-head">
             <div class="face-subtabs" role="tablist" aria-label="出勤视图">
-              <button class="face-subtab active" role="tab" aria-selected="true" aria-controls="faceGridUnknown" data-subtab="unknown">待匹配 <span id="unknownCount" class="subtab-count">0</span></button>
-              <button class="face-subtab" role="tab" aria-selected="false" aria-controls="faceGridRegistered" data-subtab="registered">学生出勤 <span id="registeredCount" class="subtab-count">0</span></button>
+              <button id="faceUnknownTab" class="face-subtab active" type="button" role="tab" tabindex="0" aria-selected="true" aria-controls="faceGridUnknown" data-subtab="unknown">待匹配 <span id="unknownCount" class="subtab-count">0</span></button>
+              <button id="faceRegisteredTab" class="face-subtab" type="button" role="tab" tabindex="-1" aria-selected="false" aria-controls="faceGridRegistered" data-subtab="registered">学生出勤 <span id="registeredCount" class="subtab-count">0</span></button>
             </div>
           </div>
           <div class="face-hint-row" id="faceHintUnknown">
@@ -221,10 +223,10 @@
             <span class="face-hint-icon" aria-hidden="true">i</span>
             <span>已到学生优先显示；灰色卡片表示当前未在摄像头监控范围内。</span>
           </div>
-          <div id="faceGridUnknown" class="face-grid face-grid-unknown">
+          <div id="faceGridUnknown" class="face-grid face-grid-unknown" role="tabpanel" aria-labelledby="faceUnknownTab" aria-hidden="false">
             <div class="attendance-empty"><span>⌁</span><strong>等待教室端采集</strong><small>检测到的新面孔会显示在这里</small></div>
           </div>
-          <div id="faceGridRegistered" class="face-grid face-grid-registered hidden">
+          <div id="faceGridRegistered" class="face-grid face-grid-registered hidden" role="tabpanel" aria-labelledby="faceRegisteredTab" aria-hidden="true">
             <div class="attendance-empty"><span>人</span><strong>暂无学生出勤数据</strong><small>完成学生名单和人脸匹配后即可查看</small></div>
           </div>
         </div>
@@ -232,19 +234,20 @@
     </div>
 
     <!-- 人脸标注弹窗 -->
-    <div id="labelModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="标注学生姓名">
+    <div id="labelModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="labelModalTitle">
       <div class="modal-card">
-        <h3>匹配学生姓名</h3>
+        <h3 id="labelModalTitle">匹配学生姓名</h3>
         <div id="labelPreview" class="label-preview"></div>
-        <label class="field-label">选择学生</label>
+        <label class="field-label" for="labelStudentSelect">选择学生</label>
         <select id="labelStudentSelect" class="field-select">
           <option value="">-- 选择已有学生 --</option>
         </select>
         <div class="label-or">— 或输入新姓名 —</div>
+        <label class="sr-only" for="labelNewName">新学生姓名</label>
         <input type="text" id="labelNewName" placeholder="输入新学生姓名" maxlength="20">
         <div class="modal-actions">
-          <button id="labelCancel" class="btn">取消</button>
-          <button id="labelConfirm" class="btn btn-primary">确认标注</button>
+          <button id="labelCancel" class="btn" type="button">取消</button>
+          <button id="labelConfirm" class="btn btn-primary" type="button">确认标注</button>
         </div>
       </div>
     </div>
@@ -253,22 +256,22 @@
     <div class="main-tab-content hidden" id="tab-homework" role="tabpanel">
       <div id="hwSection" class="hw-section">
         <div class="hw-content-switch" role="tablist" aria-label="内容类型">
-          <button id="hwContentHomework" class="active" type="button" data-content-type="homework">作业</button>
-          <button id="hwContentNotice" type="button" data-content-type="notice">通知</button>
+          <button id="hwContentHomework" class="active" type="button" role="tab" tabindex="0" aria-selected="true" aria-controls="hwContent" data-content-type="homework">作业</button>
+          <button id="hwContentNotice" type="button" role="tab" tabindex="-1" aria-selected="false" aria-controls="hwContent" data-content-type="notice">通知</button>
         </div>
         <div class="hw-stage-bar" role="tablist" aria-label="作业阶段">
-          <button id="hwStagePending" class="hw-stage-tab active" type="button" role="tab" aria-selected="true" data-stage="pending"><span id="hwPendingLabel">待提交作业</span><strong id="hwPendingCount">0</strong><small id="hwPendingHint">尚未到截止时间</small></button>
-          <button id="hwStageClosed" class="hw-stage-tab" type="button" role="tab" aria-selected="false" data-stage="closed"><span id="hwClosedLabel">提交统计</span><strong id="hwClosedCount">0</strong><small id="hwClosedHint">已到截止时间</small></button>
+          <button id="hwStagePending" class="hw-stage-tab active" type="button" role="tab" tabindex="0" aria-selected="true" aria-controls="hwContent" data-stage="pending"><span id="hwPendingLabel">待提交作业</span><strong id="hwPendingCount">0</strong><small id="hwPendingHint">尚未到截止时间</small></button>
+          <button id="hwStageClosed" class="hw-stage-tab" type="button" role="tab" tabindex="-1" aria-selected="false" aria-controls="hwContent" data-stage="closed"><span id="hwClosedLabel">提交统计</span><strong id="hwClosedCount">0</strong><small id="hwClosedHint">已到截止时间</small></button>
         </div>
         <div class="hw-toolbar">
           <div class="hw-toolbar-left">
             <div class="ms-wrap" id="hwSubjectMs">
-              <button class="ms-btn" id="hwSubjectBtn">全部学科 ▾</button>
-              <div class="ms-drop hidden" id="hwSubjectDrop"></div>
+              <button class="ms-btn" id="hwSubjectBtn" type="button" aria-expanded="false" aria-controls="hwSubjectDrop">全部学科 ▾</button>
+              <div class="ms-drop hidden" id="hwSubjectDrop" role="group" aria-label="学科筛选"></div>
             </div>
             <div class="ms-wrap" id="hwAssignMs">
-              <button class="ms-btn" id="hwAssignBtn">全部作业 ▾</button>
-              <div class="ms-drop hidden" id="hwAssignDrop"></div>
+              <button class="ms-btn" id="hwAssignBtn" type="button" aria-expanded="false" aria-controls="hwAssignDrop">全部作业 ▾</button>
+              <div class="ms-drop hidden" id="hwAssignDrop" role="group" aria-label="作业筛选"></div>
             </div>
             <select id="hwStatusFilter" class="hw-filter-select">
               <option value="">全部状态</option>
@@ -283,7 +286,7 @@
             <button id="aiHomeworkBtn" class="btn btn-sm ai-homework-button" type="button"><span aria-hidden="true">✦</span> AI 学情分析</button>
             <button id="exportHomeworkBtn" class="btn btn-sm" type="button">导出表格</button>
             <button id="publishNoticeBtn" class="btn btn-sm" type="button">＋ 发布通知</button>
-            <button id="addAssignmentBtn2" class="btn btn-primary btn-sm">＋ 布置作业</button>
+            <button id="addAssignmentBtn2" class="btn btn-primary btn-sm" type="button">＋ 布置作业</button>
           </div>
         </div>
         <div id="hwContent" class="hw-content"></div>
@@ -331,8 +334,8 @@
     <input type="text" id="connectionCodeInput" placeholder="178-260-683" inputmode="numeric" maxlength="11" autocomplete="off" aria-label="教室连接码">
     <label class="field-label connect-subject-label" for="connectSubjectInput">授课科目</label>
     <div id="connectSubjectPicker" class="ms-wrap subject-picker-control">
-      <button type="button" id="connectSubjectInput" class="ms-btn subject-picker-button" aria-haspopup="listbox" aria-expanded="false">请选择授课科目 ▾</button>
-      <div id="connectSubjectDrop" class="ms-drop subject-picker-drop hidden" role="listbox" aria-multiselectable="true"></div>
+      <button type="button" id="connectSubjectInput" class="ms-btn subject-picker-button" aria-expanded="false" aria-controls="connectSubjectDrop">请选择授课科目 ▾</button>
+      <div id="connectSubjectDrop" class="ms-drop subject-picker-drop hidden" role="group" aria-label="授课科目"></div>
     </div>
     <div class="connect-room-hint"><span>i</span><small>请确保教师电脑与教室电脑连接同一个局域网。</small></div>
     <p id="connectRoomStatus" class="connect-room-status" role="status" aria-live="polite"></p>
@@ -363,7 +366,9 @@
       <label for="organizationServer">服务器地址</label>
       <input id="organizationServer" type="text" placeholder="cloud.example.com:8080" autocomplete="url">
       <label class="checkbox-row"><input id="organizationUseHttps" type="checkbox" checked><span>使用 HTTPS 安全连接</span></label>
-      <label for="organizationLoginName">组织账号</label>
+      <label for="organizationSlug">组织标识</label>
+      <input id="organizationSlug" type="text" maxlength="80" placeholder="例如：org-a1b2c3d4" autocomplete="organization">
+      <label for="organizationLoginName">用户名</label>
       <input id="organizationLoginName" type="text" maxlength="80" placeholder="管理员发放的账号" autocomplete="username">
       <label for="organizationPassword">登录密码</label>
       <input id="organizationPassword" type="password" maxlength="200" placeholder="组织发放的初始密码" autocomplete="current-password">
@@ -382,13 +387,6 @@
       <p id="teacherLoginQrStatus" class="account-field-hint">使用已登录的小程序扫描二维码，以小程序账户登录这台电脑。</p>
       <button id="refreshTeacherLoginQr" class="btn btn-primary account-primary" type="button">生成登录二维码</button>
       <p class="account-switch">这是独立的登录方式。扫码后会导入用户名、头像、使用模式、组织资料和全部教室，不会与这台电脑的旧账户合并。</p>
-      <details class="wechat-direct-settings">
-        <summary>允许直接使用微信扫码</summary>
-        <p>先在微信公众平台配置普通链接二维码规则，再填写规则对应的 HTTPS 链接前缀。</p>
-        <p class="direct-warning">个人主体不能发布该规则，需要改用服务端生成的小程序码。</p>
-        <div><input id="teacherDirectBaseUrl" type="url" placeholder="https://example.com/classroom"><button id="saveTeacherDirectUrl" class="btn btn-sm" type="button">保存</button></div>
-        <small id="teacherDirectStatus">未配置时继续使用小程序内扫码。</small>
-      </details>
     </div>
   </div>
 </div>
@@ -400,8 +398,8 @@
     <h2 id="approvalTitle">已向教室发送加入请求</h2>
     <p id="approvalDesc">教室管理员批准后即可使用学生、作业和出勤功能。</p>
     <div class="approval-actions">
-      <button id="approvalRetryBtn" class="btn btn-primary">重新检查</button>
-      <button id="approvalCancelBtn" class="btn">返回教室列表</button>
+      <button id="approvalRetryBtn" class="btn btn-primary" type="button">重新检查</button>
+      <button id="approvalCancelBtn" class="btn" type="button">返回教室列表</button>
     </div>
   </div>
 </div>
@@ -429,8 +427,8 @@
     <p id="teacherEditName" class="field-hint"></p>
     <label class="field-label" for="teacherEditSubjects">授课科目</label>
     <div id="teacherEditSubjectPicker" class="ms-wrap subject-picker-control">
-      <button type="button" id="teacherEditSubjects" class="ms-btn subject-picker-button" aria-haspopup="listbox" aria-expanded="false">请选择授课科目 ▾</button>
-      <div id="teacherEditSubjectDrop" class="ms-drop subject-picker-drop hidden" role="listbox" aria-multiselectable="true"></div>
+      <button type="button" id="teacherEditSubjects" class="ms-btn subject-picker-button" aria-expanded="false" aria-controls="teacherEditSubjectDrop">请选择授课科目 ▾</button>
+      <div id="teacherEditSubjectDrop" class="ms-drop subject-picker-drop hidden" role="group" aria-label="授课科目"></div>
     </div>
     <p class="field-hint">班主任在这里为教师授权可用学科；教师连接教室后，再确认本次授课科目。</p>
     <div class="modal-actions"><button id="teacherEditCancel" class="btn" type="button">取消</button><button id="teacherEditSave" class="btn btn-primary" type="button">保存授权</button></div>
@@ -440,7 +438,7 @@
 <!-- 教师端设置 -->
 <div id="accountModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="accountModalTitle">
   <div class="modal-card account-modal-card">
-    <h3 id="accountModalTitle">教师端设置</h3>
+    <div class="modal-heading"><h3 id="accountModalTitle">教师端设置</h3><button id="accountModalTopClose" class="modal-close-button" type="button" aria-label="关闭教师端设置">×</button></div>
     <div class="account-summary">
       <span class="account-avatar account-avatar-lg" id="accountModalAvatar">教</span>
       <div><strong id="accountModalName"></strong><small id="accountModalSubjects">连接教室后确认授课科目</small></div>
@@ -460,9 +458,16 @@
     </section>
     <details id="accountCloudSettings" class="wechat-direct-settings cloud-account-settings hidden">
       <summary>云服务状态</summary>
-      <p>组织模式使用服务器地址和组织账号登录。如需改用小程序账户，请先退出当前账户，再在登录页扫码。</p>
+      <p>组织模式使用服务器地址、用户名和密码登录，所属组织会自动识别。如需改用小程序账户，请先退出当前账户，再在登录页扫码。</p>
       <div><button id="accountCloudRefreshBtn" class="btn btn-sm" type="button">刷新教室</button></div>
       <small id="accountCloudStatus"></small>
+    </details>
+    <details class="wechat-direct-settings">
+      <summary>微信直接扫码（高级设置）</summary>
+      <p>仅供已经在微信公众平台配置普通链接二维码规则的管理员使用。</p>
+      <p class="direct-warning">个人主体不能发布该规则，需要改用服务端生成的小程序码。</p>
+      <div><input id="teacherDirectBaseUrl" type="url" aria-label="微信二维码 HTTPS 链接前缀" placeholder="https://example.com/classroom"><button id="saveTeacherDirectUrl" class="btn btn-sm" type="button">保存</button></div>
+      <small id="teacherDirectStatus">未配置时继续使用小程序内扫码。</small>
     </details>
     <details id="accountAiSettings" class="wechat-direct-settings account-ai-settings">
       <summary>AI 学情分析服务</summary>
@@ -482,8 +487,8 @@
       </div>
     </details>
     <div class="modal-actions">
-      <button id="accountModalClose" class="btn">关闭</button>
-      <button id="logoutBtn" class="btn btn-danger-outline">退出登录</button>
+      <button id="accountModalClose" class="btn" type="button">关闭</button>
+      <button id="logoutBtn" class="btn btn-danger-outline" type="button">退出登录</button>
     </div>
   </div>
 </div>
@@ -504,7 +509,7 @@
           <label class="field-label" for="aiStage">作业阶段</label>
           <select id="aiStage" class="field-select"><option value="all">全部作业</option><option value="pending">待提交作业</option><option value="closed">已截止作业</option></select>
           <label class="field-label">作业日期范围</label>
-          <div class="ai-date-row"><input id="aiDateFrom" type="date" title="作业日期起始"><span>至</span><input id="aiDateTo" type="date" title="作业日期结束"></div>
+          <div class="ai-date-row"><input id="aiDateFrom" type="date" aria-label="作业日期起始"><span>至</span><input id="aiDateTo" type="date" aria-label="作业日期结束"></div>
           <label class="field-label" for="aiFocus">希望 AI 重点分析</label>
           <textarea id="aiFocus" rows="3" maxlength="600" placeholder="例如：重点关注连续未提交学生，并设计下周的分层跟进方案"></textarea>
           <label class="ai-privacy-option"><input id="aiAnonymize" type="checkbox" checked><span><strong>匿名化学生姓名</strong><small>发送前替换成编号，报告返回后仅在本机恢复</small></span></label>
@@ -549,21 +554,21 @@
   <div class="modal-card modal-wide">
     <h3 id="hwModalTitleLabel">添加作业</h3>
     <div class="publish-type-switch" role="tablist" aria-label="发布类型">
-      <button id="publishTypeHomework" class="active" type="button" data-publish-type="homework">作业</button>
-      <button id="publishTypeNotice" type="button" data-publish-type="notice">通知</button>
+      <button id="publishTypeHomework" class="active" type="button" role="tab" tabindex="0" aria-selected="true" data-publish-type="homework">作业</button>
+      <button id="publishTypeNotice" type="button" role="tab" tabindex="-1" aria-selected="false" data-publish-type="notice">通知</button>
     </div>
-    <label class="field-label">学科</label>
+    <label class="field-label" for="hwModalSubject">学科</label>
     <select id="hwModalSubject" class="field-select"></select>
-    <label id="publishContentLabel" class="field-label">作业内容</label>
+    <label id="publishContentLabel" class="field-label" for="hwModalTitle">作业内容</label>
     <textarea id="hwModalTitle" placeholder="例如：完成练习册第 12—14 页" maxlength="200" rows="4"></textarea>
-    <label class="field-label">日期</label>
+    <label class="field-label" for="hwModalDate">日期</label>
     <input type="date" id="hwModalDate">
-    <label id="publishDeadlineLabel" class="field-label">提交截止时间</label>
+    <label id="publishDeadlineLabel" class="field-label" for="hwModalDeadline">提交截止时间</label>
     <input type="datetime-local" id="hwModalDeadline">
     <p id="publishHint" class="field-hint">截止前会显示在学生的桌面组件中；到达该时间后自动进入课代表提交统计。</p>
     <div class="modal-actions">
-      <button id="hwModalCancel" class="btn">取消</button>
-      <button id="hwModalConfirm" class="btn btn-primary">确定</button>
+      <button id="hwModalCancel" class="btn" type="button">取消</button>
+      <button id="hwModalConfirm" class="btn btn-primary" type="button">确定</button>
     </div>
   </div>
 </div>

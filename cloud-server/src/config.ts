@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const booleanValue = z.string().optional().transform(value => value === 'true');
+const trustProxyValue = z.string().default('loopback').transform(value => value === 'false' ? false : value === 'true' ? true : value);
 
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -13,13 +13,18 @@ const schema = z.object({
   SETUP_TOKEN: z.string().min(16),
   ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).max(86400).default(900),
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(365).default(30),
-  TRUST_PROXY: booleanValue,
+  TRUST_PROXY: trustProxyValue,
   LOG_LEVEL: z.string().default('info'),
+  CORS_ORIGINS: z.string().default(''),
+  ADMIN_WEB_ROOT: z.string().default(''),
   WECHAT_APP_ID: z.string().optional(),
   WECHAT_APP_SECRET: z.string().optional(),
 }).superRefine((value, context) => {
   if (value.NODE_ENV === 'production' && !value.PUBLIC_URL.startsWith('https://')) {
     context.addIssue({ code:'custom', path:['PUBLIC_URL'], message:'生产环境 PUBLIC_URL 必须使用 HTTPS' });
+  }
+  if(value.NODE_ENV==='production'&&value.TRUST_PROXY===true){
+    context.addIssue({code:'custom',path:['TRUST_PROXY'],message:'生产环境不能信任任意代理，请配置明确的代理网段'});
   }
 });
 

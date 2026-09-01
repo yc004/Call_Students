@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Menu, dialog, safeStorage, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, dialog, safeStorage, clipboard, session } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -15,7 +15,7 @@ const { normalizeWechatDirectBaseUrl, createTeacherPairingDirectLink } = require
 const { buildHomeworkWorkbookBuffer, normalizePayload, safeFilePart } = require('./homework-export');
 const { analyzeHomework, normalizeEndpoint } = require('./homework-ai');
 const connectionCode = require('./connection-code');
-const { normalizeServerUrl, requestJson } = require('./cloud-client');
+const { normalizeServerUrl, requestJson, refreshCloudSession } = require('./cloud-client');
 
 ipcMain.handle('copy-text', (_event, value) => {
   clipboard.writeText(String(value == null ? '' : value));
@@ -32,6 +32,11 @@ if (!HAS_SINGLE_INSTANCE_LOCK) {
 
 // 禁用磁盘缓存
 app.commandLine.appendSwitch('disable-http-cache');
+app.on('web-contents-created',(_event,contents)=>{
+  contents.setWindowOpenHandler(()=>({action:'deny'}));
+  contents.on('will-navigate',(event,target)=>{try{const url=new URL(target);if(url.protocol==='file:'&&path.resolve(url.pathname).startsWith(path.resolve(__dirname)))return;}catch(_error){}event.preventDefault();});
+});
+app.whenReady().then(()=>session.defaultSession.setPermissionRequestHandler((_webContents,_permission,callback)=>callback(false)));
 
 // ── 常量 ──
 // 教师端存储本机教师账户、教室连接码列表和呼叫记录（JSON 文件，体积小无需 SQLite）
@@ -45,9 +50,9 @@ const DATA_FILE = app.isPackaged
 // ═══════════════════════════════════════
 
 function loadAllData() {
-  try {
-    if (fs.existsSync(DATA_FILE)) {
-      const raw = fs.readFileSync(DATA_FILE, 'utf-8');
+  for(const candidate of [DATA_FILE,`${DATA_FILE}.bak`])try {
+    if (fs.existsSync(candidate)) {
+      const raw = fs.readFileSync(candidate, 'utf-8');
       const parsed = JSON.parse(raw);
       const settings = parsed.settings && typeof parsed.settings === 'object' ? parsed.settings : {};
       if (settings.cloud && settings.cloud.tokensEncrypted && safeStorage.isEncryptionAvailable()) {
@@ -71,8 +76,26 @@ function loadAllData() {
         settings,
       };
     }
-  } catch (e) { console.error('loadAllData error:', e.message); }
+  } catch (e) { console.error(`loadAllData error (${candidate}):`, e.message); }
   return { account: null, rooms: [], callHistory: [], settings: {} };
+}
+
+function atomicWriteData(value) {
+  const dir=path.dirname(DATA_FILE);
+  if(!fs.existsSync(dir))fs.mkdirSync(dir,{recursive:true,mode:0o700});
+  const temporary=`${DATA_FILE}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  const descriptor=fs.openSync(temporary,'wx',0o600);
+  try{fs.writeFileSync(descriptor,JSON.stringify(value,null,2),'utf-8');fs.fsyncSync(descriptor);}
+  finally{fs.closeSync(descriptor);}
+  try{
+    if(fs.existsSync(DATA_FILE)){
+      try{JSON.parse(fs.readFileSync(DATA_FILE,'utf-8'));fs.copyFileSync(DATA_FILE,`${DATA_FILE}.bak`);}
+      catch(_invalidPrimary){fs.copyFileSync(DATA_FILE,`${DATA_FILE}.corrupt`);}
+    }
+    fs.renameSync(temporary,DATA_FILE);
+    const directoryDescriptor=fs.openSync(dir,'r');
+    try{fs.fsyncSync(directoryDescriptor);}finally{fs.closeSync(directoryDescriptor);}
+  }catch(error){try{fs.unlinkSync(temporary);}catch(_cleanupError){}throw error;}
 }
 
 function loadData() {
@@ -97,9 +120,7 @@ function migrateStoredRooms() {
   const normalized = loadData().rooms;
   if (JSON.stringify(stored.rooms) !== JSON.stringify(normalized)) {
     const merged = { ...stored, rooms: normalized };
-    const dir = path.dirname(DATA_FILE);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(DATA_FILE, JSON.stringify(merged, null, 2), 'utf-8');
+    atomicWriteData(merged);
   }
   return normalized;
 }
@@ -129,16 +150,14 @@ function saveData(data) {
     delete ai.apiKey;
     merged.settings = { ...merged.settings, ai };
   }
-  const dir = path.dirname(DATA_FILE);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(DATA_FILE, JSON.stringify(merged, null, 2), 'utf-8');
+  atomicWriteData(merged);
 }
 
 async function ensureCloudSession(cloud) {
   if (!cloud) throw new Error('尚未配置云服务');
   const expiresAt = new Date(cloud.accessExpiresAt || 0).getTime();
   if (Number.isFinite(expiresAt) && expiresAt > Date.now() + 60000) return cloud;
-  const session = await requestJson(cloud.serverUrl, '/api/v1/auth/refresh', { method:'POST', body:{ refreshToken:cloud.refreshToken } });
+  const session = await refreshCloudSession(cloud.serverUrl,cloud.refreshToken);
   const updated = { ...cloud, ...session };
   const stored = loadAllData();
   saveData({ settings:{ ...stored.settings, cloud:updated } });
@@ -184,14 +203,14 @@ async function uploadTeacherAvatar(cloud, filePath) {
   const contentType = avatarContentType(filePath);
   const data = fs.readFileSync(filePath);
   if (!data.length || data.length > 5 * 1024 * 1024) throw new Error('头像文件大小不能超过 5MB');
-  const response = await fetch(new URL('/api/v1/teacher/avatar', `${normalizeServerUrl(cloud.serverUrl)}/`), {
+  const response = await fetch(new URL('/api/v2/profile/avatar', `${normalizeServerUrl(cloud.serverUrl)}/`), {
     method:'POST',
-    headers:{ 'content-type':contentType, 'x-banda-client':'teacher-desktop', 'x-banda-protocol':'1', authorization:`Bearer ${cloud.accessToken}` },
+    headers:{ 'content-type':contentType, 'x-banda-client':'teacher-desktop', 'x-banda-protocol':'2', authorization:`Bearer ${cloud.accessToken}` },
     body:data,
   });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(result.message || `头像上传失败（${response.status}）`);
-  return String(result.url || '');
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error&&payload.error.message || `头像上传失败（${response.status}）`);
+  return String(payload.data&&payload.data.url || '');
 }
 
 ipcMain.handle('get-data', () => {
@@ -207,7 +226,7 @@ ipcMain.handle('set-cloud-settings', async (_, value) => {
     const accessToken = String(value && value.accessToken || '');
     const refreshToken = String(value && value.refreshToken || '');
     if (!accessToken || !refreshToken) throw new Error('云服务登录凭证不完整，请重新使用小程序扫码登录');
-    await requestJson(serverUrl, '/health/live');
+    await requestJson(serverUrl, '/api/v2/system/live');
     const stored = loadAllData();
     const cloud = { ...value, serverUrl, accessToken, refreshToken };
     saveData({ settings:{ ...stored.settings, cloud } });
@@ -229,18 +248,19 @@ ipcMain.handle('create-local-session', async (_, input) => {
 ipcMain.handle('login-teacher-cloud', async (_, input) => {
   try {
     const serverUrl = normalizeServerUrl(input && input.serverUrl, input && typeof input.useHttps === 'boolean' ? input.useHttps : undefined);
+    const organizationSlug = String(input && input.organizationSlug || '').trim();
     const loginName = String(input && input.loginName || '').trim();
     const password = String(input && input.password || '');
-    if (!loginName || !password) throw new Error('请输入组织账号和密码');
-    const result = await requestJson(serverUrl, '/api/v1/auth/mini-program/login', { method:'POST', body:{ loginName, password, deviceName:os.hostname() || '教师端' } });
-    const cloud = { version:1, serverUrl, loginName, userId:result.user && result.user.id, userName:result.user && result.user.name, nickname:result.user && result.user.nickname, avatarUrl:result.user && result.user.avatarUrl, mustChangePassword:!!(result.user && result.user.mustChangePassword), organization:result.organization || null, accessToken:result.accessToken, accessExpiresAt:result.accessExpiresAt, refreshToken:result.refreshToken, expiresAt:result.expiresAt };
+    if (!organizationSlug || !loginName || !password) throw new Error('请输入组织标识、用户名和密码');
+    const result = await requestJson(serverUrl, '/api/v2/auth/login', { method:'POST', body:{ organizationSlug, loginName, password, deviceName:os.hostname() || '教师端' } });
+    const cloud = { version:2, serverUrl, organizationSlug, loginName, userId:result.user && result.user.id, userName:result.user && result.user.name, nickname:result.user && result.user.nickname, avatarUrl:result.user && result.user.avatarUrl, mustChangePassword:!!(result.user && result.user.mustChangePassword), organization:result.organization || null, accessToken:result.accessToken, accessExpiresAt:result.accessExpiresAt, refreshToken:result.refreshToken, expiresAt:result.expiresAt };
     const account = { name:String(result.user && (result.user.nickname || result.user.name) || loginName).trim().slice(0,40), avatarUrl:cloud.avatarUrl || '', subjects:[], connectionId:`cloud-${cloud.userId}` };
     saveData({ account, settings:{ ...loadAllData().settings, cloud } });
-    const classrooms = await requestJson(serverUrl, '/api/v1/classrooms', { token:cloud.accessToken }).catch(error => {
-      if (cloud.mustChangePassword && error.code === 'PROFILE_SETUP_REQUIRED') return { classrooms:[] };
+    const classrooms = await requestJson(serverUrl, '/api/v2/client/classrooms', { token:cloud.accessToken }).catch(error => {
+      if (cloud.mustChangePassword) return [];
       throw error;
     });
-    const rooms = (classrooms.classrooms || []).map(room => ({ id:room.id, cloudClassroomId:room.id, transport:'cloud', name:room.name || '云端教室', connectionCode:room.lan_connection_code && connectionCode.isValid(room.lan_connection_code) ? connectionCode.format(room.lan_connection_code) : '', subjects:Array.isArray(room.subjects_json) ? room.subjects_json : [], role:room.role, cloudStatus:room.device_status || 'offline' }));
+    const rooms = (classrooms || []).map(room => ({ id:room.id, cloudClassroomId:room.id, transport:'cloud', name:room.name || '云端教室', connectionCode:room.lan_connection_code && connectionCode.isValid(room.lan_connection_code) ? connectionCode.format(room.lan_connection_code) : '', lanAddresses:Array.isArray(room.lan_addresses_json)?room.lan_addresses_json:[], subjects:Array.isArray(room.subjects_json) ? room.subjects_json : [], role:room.role, cloudStatus:room.device_status || 'offline', publicRelayAvailable:room.public_relay_available===true }));
     saveData({ rooms });
     return { ok:true, account:publicAccount(account), rooms, cloud };
   } catch (error) { return { ok:false, code:error.code, message:error.message || '组织登录失败' }; }
@@ -253,7 +273,7 @@ ipcMain.handle('complete-teacher-profile', async (_, input) => {
     const nickname = String(input && input.nickname || '').trim();
     const newPassword = String(input && input.newPassword || '');
     if (!name || !nickname || newPassword.length < 10) throw new Error('请输入用户名，并设置至少 10 位新密码');
-    const result = await requestJson(cloud.serverUrl, '/api/v1/teacher/profile', { method:'PATCH', token:cloud.accessToken, body:{ name, nickname, newPassword } });
+    const result = await requestJson(cloud.serverUrl, '/api/v2/profile', { method:'PATCH', token:cloud.accessToken, body:{ name, nickname, newPassword } });
     const updatedCloud = { ...cloud, userName:name, nickname, mustChangePassword:false, organization:result.organization || cloud.organization };
     const account = { ...stored.account, name:nickname || name, avatarUrl:updatedCloud.avatarUrl || stored.account.avatarUrl || '' };
     saveData({ account, settings:{ ...stored.settings, cloud:updatedCloud } });
@@ -283,7 +303,7 @@ ipcMain.handle('update-teacher-profile', async (_, input) => {
       if (avatarPath) avatarUrl = await uploadTeacherAvatar(cloud, avatarPath);
       const body = { name, nickname:name };
       if (newPassword) Object.assign(body, { currentPassword, newPassword });
-      const result = await requestJson(cloud.serverUrl, '/api/v1/teacher/profile', { method:'PATCH', token:cloud.accessToken, body });
+      const result = await requestJson(cloud.serverUrl, '/api/v2/profile', { method:'PATCH', token:cloud.accessToken, body });
       cloud = { ...cloud, userName:result.user.name, nickname:result.user.nickname, avatarUrl:avatarUrl || result.user.avatarUrl || '', mustChangePassword:!!result.user.mustChangePassword, organization:result.organization || cloud.organization };
     } else if (avatarPath) {
       avatarUrl = saveLocalTeacherAvatar(avatarPath);
@@ -297,41 +317,25 @@ ipcMain.handle('refresh-cloud-classrooms', async () => {
   try {
     const stored = loadAllData();
     const cloud = await ensureCloudSession(stored.settings.cloud);
-    const profile = await requestJson(cloud.serverUrl, '/api/v1/teacher/profile', { token:cloud.accessToken });
+    const profile = await requestJson(cloud.serverUrl, '/api/v2/profile', { token:cloud.accessToken });
     const updatedCloud = { ...cloud, userName:profile.user.name, nickname:profile.user.nickname, avatarUrl:profile.user.avatarUrl || '', mustChangePassword:!!profile.user.mustChangePassword, organization:profile.organization || cloud.organization };
     const account = { ...stored.account, name:profile.user.nickname || profile.user.name, avatarUrl:profile.user.avatarUrl || '' };
-    const result = await requestJson(cloud.serverUrl, '/api/v1/classrooms', { token:updatedCloud.accessToken });
-    const cloudRooms = (result.classrooms || []).map(room => ({
+    const result = await requestJson(cloud.serverUrl, '/api/v2/client/classrooms', { token:updatedCloud.accessToken });
+    const cloudRooms = (result || []).map(room => ({
       id:room.id, cloudClassroomId:room.id, transport:'cloud', name:room.name || '云端教室',
       connectionCode:room.lan_connection_code && connectionCode.isValid(room.lan_connection_code) ? connectionCode.format(room.lan_connection_code) : '',
-      subjects:Array.isArray(room.subjects_json) ? room.subjects_json : [], role:room.role, cloudStatus:room.device_status || 'offline',
+      lanAddresses:Array.isArray(room.lan_addresses_json)?room.lan_addresses_json:[], subjects:Array.isArray(room.subjects_json) ? room.subjects_json : [], role:room.role, cloudStatus:room.device_status || 'offline', publicRelayAvailable:room.public_relay_available===true,
     }));
     const localRooms = stored.rooms.filter(room => room.transport !== 'cloud');
     saveData({ account, rooms:[...localRooms, ...cloudRooms], settings:{ ...stored.settings, cloud:updatedCloud } });
     return { ok:true, account:publicAccount(account), rooms:cloudRooms, cloud:updatedCloud };
   } catch (error) { return { ok:false, message:error.message || '无法同步云端教室' }; }
 });
-ipcMain.handle('enroll-teacher-cloud', async (_, input) => {
-  try {
-    const stored = loadAllData();
-    if (!stored.account) return { ok:false, message:'请先登录教师端' };
-    if (stored.settings.cloud) return { ok:false, message:'当前教师账号已经接入云服务，请直接刷新教室数据' };
-    const serverUrl = normalizeServerUrl(input && input.serverUrl);
-    const key = String(input && input.key || '').trim();
-    const result = await requestJson(serverUrl, '/api/v1/enrollment/teacher/redeem', { method:'POST', body:{ key, name:stored.account.name, legacyConnectionId:stored.account.connectionId, deviceName:os.hostname() || '教师电脑', deviceType:'teacher-desktop' } });
-    const cloud = { version:1, serverUrl, userId:result.user.id, userName:result.user.name, accessToken:result.accessToken, accessExpiresAt:result.accessExpiresAt, refreshToken:result.refreshToken, expiresAt:result.expiresAt };
-    saveData({ account:{ ...stored.account, name:result.user.name }, settings:{ ...stored.settings, cloud } });
-    const classrooms = await requestJson(serverUrl, '/api/v1/classrooms', { token:cloud.accessToken });
-    const cloudRooms = (classrooms.classrooms || []).map(room => ({ id:room.id, cloudClassroomId:room.id, transport:'cloud', name:room.name || '云端教室', connectionCode:room.lan_connection_code && connectionCode.isValid(room.lan_connection_code) ? connectionCode.format(room.lan_connection_code) : '', subjects:Array.isArray(room.subjects_json) ? room.subjects_json : [], role:room.role, cloudStatus:room.device_status || 'offline' }));
-    saveData({ rooms:[...stored.rooms.filter(room => room.transport !== 'cloud'), ...cloudRooms] });
-    return { ok:true, cloud, rooms:cloudRooms };
-  } catch (error) { return { ok:false, message:error.message || '教师端接入云服务失败' }; }
-});
 ipcMain.handle('clear-teacher-session', async () => {
   const stored = loadAllData();
   saveData({ account:null, rooms:[], callHistory:[], settings:{ ...stored.settings, cloud:null } });
   if (stored.settings.cloud && stored.settings.cloud.refreshToken) {
-    try { await requestJson(stored.settings.cloud.serverUrl, '/api/v1/auth/logout', { method:'POST', body:{ refreshToken:stored.settings.cloud.refreshToken } }); } catch (_error) {}
+    try { await requestJson(stored.settings.cloud.serverUrl, '/api/v2/auth/logout', { method:'POST', body:{ refreshToken:stored.settings.cloud.refreshToken } }); } catch (_error) {}
   }
   return true;
 });
@@ -511,6 +515,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
   mainWin.loadFile('index.html');
@@ -527,6 +532,7 @@ async function runCISmokeTest() {
         preload: path.join(__dirname, 'preload.js'),
         contextIsolation: true,
         nodeIntegration: false,
+        sandbox: true,
       },
     });
     await win.loadFile('index.html');

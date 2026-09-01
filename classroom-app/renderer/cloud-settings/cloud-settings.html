@@ -1,13 +1,15 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>云服务设置</title><link rel="stylesheet" href="../shared/ui.css"><link rel="stylesheet" href="cloud-settings.css"></head>
+<html lang="zh-CN"><head><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https: wss: ws:; object-src 'none'; base-uri 'none'; form-action 'none'"><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>云服务设置</title><link rel="stylesheet" href="../shared/ui.css"><link rel="stylesheet" href="cloud-settings.css"></head>
 <body><main class="cloud-page">
   <header><span>云</span><div><h1>云服务设置</h1><p>联网使用教室管理、呼叫和作业；人脸数据不会上传云端。</p></div></header>
   <section class="cloud-card">
     <div id="connectedState" class="connected hidden"><i></i><div><strong>已接入云服务</strong><small id="connectedServer"></small></div></div>
     <label for="serverUrl">服务器地址</label><input id="serverUrl" type="url" placeholder="https://cloud.example.com">
-    <label for="connectionKey">教室连接密钥</label><input id="connectionKey" type="password" placeholder="ck_...">
+    <label for="organizationSlug">组织标识</label><input id="organizationSlug" type="text" maxlength="80" autocomplete="organization" placeholder="例如：org-a1b2c3d4">
+    <label for="loginName">教室账号</label><input id="loginName" type="text" autocomplete="username" placeholder="请输入管理后台生成的教室账号">
+    <label for="password">教室初始密码</label><input id="password" type="password" autocomplete="current-password" placeholder="请输入教室初始密码">
     <p id="message" role="alert"></p>
-    <div class="actions"><button id="disconnectBtn" class="secondary hidden">断开云服务</button><button id="saveBtn" class="primary">连接云服务</button></div>
+    <div class="actions"><button id="disconnectBtn" class="secondary hidden" type="button">断开云服务</button><button id="saveBtn" class="primary" type="button">连接云服务</button></div>
   </section>
-  <aside>隐私边界：人脸图片、特征、识别结果与人脸出勤只保留在教室电脑，并仅通过局域网提供。</aside>
+  <aside><strong>数据规则：</strong>连接成功后，云端的教室名称、学生名单、教师成员、作业和提交状态会直接覆盖本机原有业务数据。<br><br>隐私边界：人脸图片、特征、识别结果与人脸出勤只保留在教室电脑，并仅通过局域网提供。</aside>
 </main><script src="../shared/error-report.js"></script><script src="cloud-settings.js"></script></body></html>

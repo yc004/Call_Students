@@ -35,3 +35,19 @@ test('我的页面通过顶部账户区域进入独立个人信息页', () => {
   assert.doesNotMatch(profileView, /bindtap="saveProfile"|open-type="chooseAvatar"/);
   assert.match(profileLogic, /pages\/profile-edit\/index/);
 });
+
+test('组织账户在个人信息页集中提供用户名和修改密码入口', () => {
+  const appConfig = fs.readFileSync(path.join(sourceRoot, 'app.json'), 'utf8');
+  const profileView = fs.readFileSync(path.join(sourceRoot, 'pages/profile/index.wxml'), 'utf8');
+  const editView = fs.readFileSync(path.join(sourceRoot, 'pages/profile-edit/index.wxml'), 'utf8');
+  const editLogic = fs.readFileSync(path.join(sourceRoot, 'pages/profile-edit/index.js'), 'utf8');
+  const passwordView = fs.readFileSync(path.join(sourceRoot, 'pages/profile-password/index.wxml'), 'utf8');
+
+  assert.doesNotMatch(profileView, /bindtap="changePassword"|currentPassword|newPassword/);
+  assert.match(editView, /field-label">用户名/);
+  assert.match(editView, /bindtap="openPasswordEditor"/);
+  assert.match(editView, /usageMode === 'tob'/);
+  assert.match(editLogic, /pages\/profile-password\/index/);
+  assert.match(passwordView, /bindtap="changePassword"/);
+  assert.match(appConfig, /pages\/profile-password\/index/);
+});

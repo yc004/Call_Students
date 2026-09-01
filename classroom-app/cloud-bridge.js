@@ -11,7 +11,7 @@ function normalizeCloudConfig(value) {
   if (!/^https?:\/\//i.test(serverUrl)) throw new Error('云服务器地址必须以 http:// 或 https:// 开头');
   const parsed = new URL(serverUrl);
   if (parsed.protocol !== 'https:' && !['localhost','127.0.0.1','::1','[::1]'].includes(parsed.hostname)) throw new Error('云服务必须使用 HTTPS 加密连接');
-  if (!deviceToken || !classroomId || !deviceId) throw new Error('云服务设备凭证不完整，请重新使用教室接入密钥绑定');
+  if (!deviceToken || !classroomId || !deviceId) throw new Error('云服务设备凭证不完整，请由管理员重新绑定教室');
   return { enabled:true, serverUrl, deviceToken, classroomId, deviceId };
 }
 
@@ -31,10 +31,10 @@ function sanitizeCloudMessage(message) {
 }
 
 function cloudSocketUrl(config) {
-  const url = new URL('/ws/v1/classroom', `${config.serverUrl}/`);
+  const url = new URL('/ws/classroom', `${config.serverUrl}/`);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   url.searchParams.set('client', 'classroom-desktop');
-  url.searchParams.set('protocol', '1');
+  url.searchParams.set('protocol', '2');
   return url.toString();
 }
 
@@ -45,6 +45,7 @@ class ClassroomCloudBridge {
     this.localUrl = options.localUrl || 'ws://127.0.0.1:3456';
     this.logger = options.logger || (() => {});
     this.statusProvider = options.statusProvider || (() => ({}));
+    this.revisionProvider = options.revisionProvider || (() => 0);
     this.snapshotProvider = options.snapshotProvider || (() => null);
     this.membershipHandler = options.membershipHandler || (() => false);
     this.classroomHandler = options.classroomHandler || (() => false);
@@ -54,7 +55,10 @@ class ClassroomCloudBridge {
     this.localClients = new Map();
     this.retryTimer = null;
     this.statusTimer = null;
+    this.syncTimer = null;
     this.stopped = false;
+    this.authoritativeRestoreApplied = false;
+    this.retryAttempt = 0;
   }
 
   start() { this.stopped = false; this.connectCloud(); }
@@ -64,11 +68,15 @@ class ClassroomCloudBridge {
     const cloud = new this.WebSocketImpl(cloudSocketUrl(this.config));
     this.cloud = cloud;
     cloud.on('open', () => {
+      this.retryAttempt = 0;
       this.logger('云服务传输通道已连接');
-      cloud.send(JSON.stringify({ type:'authenticate', token:this.config.deviceToken }));
+      cloud.send(JSON.stringify({ event:'authenticate', data:{ deviceToken:this.config.deviceToken } }));
       if (this.statusTimer) clearInterval(this.statusTimer);
       this.statusTimer = setInterval(() => { this.sendDeviceStatus(); this.sendSnapshot(); }, 20000);
       this.statusTimer.unref?.();
+      if (this.syncTimer) clearInterval(this.syncTimer);
+      this.syncTimer = setInterval(() => this.requestAuthoritativeSnapshot(), 30000);
+      this.syncTimer.unref?.();
     });
     cloud.on('message', raw => this.handleCloudMessage(raw));
     cloud.on('error', error => this.logger(`云服务连接错误：${error.message}`));
@@ -76,25 +84,42 @@ class ClassroomCloudBridge {
       if (this.cloud === cloud) this.cloud = null;
       if (this.statusTimer) clearInterval(this.statusTimer);
       this.statusTimer = null;
+      if (this.syncTimer) clearInterval(this.syncTimer);
+      this.syncTimer = null;
       this.closeLocalClients();
-      if (!this.stopped) this.retryTimer = setTimeout(() => { this.retryTimer = null; this.connectCloud(); }, 5000);
+      if (!this.stopped) {
+        const base=Math.min(60000,1000*(2**Math.min(this.retryAttempt++,6)));
+        const delay=Math.round(base*(0.75+Math.random()*0.5));
+        this.retryTimer = setTimeout(() => { this.retryTimer = null; this.connectCloud(); }, delay);
+      }
     });
   }
 
   handleCloudMessage(raw) {
     let message;
     try { message = JSON.parse(String(raw)); } catch (_error) { return; }
-    if (message.type === 'session.ready') {
+    if (message.event === 'session.ready') {
       if (this.cloud && this.cloud.readyState === this.WebSocketImpl.OPEN) {
         this.sendDeviceStatus();
-        this.sendSnapshot();
+        this.requestAuthoritativeSnapshot();
       }
       return;
     }
+    if(message.event!=='classroom.event')return;
+    message=message.data;
+    if (message.type === 'cloud.invalidate') {
+      this.requestAuthoritativeSnapshot();
+      return;
+    }
+    if (message.type === 'cloud.snapshot-current') return;
     if (message.type === 'cloud.restore') {
       try {
         const applied = this.restoreHandler(message);
-        if (applied && this.cloud && this.cloud.readyState === this.WebSocketImpl.OPEN) this.cloud.send(JSON.stringify({ type:'device.snapshot-applied', classroomId:this.config.classroomId }));
+        if (applied) {
+          this.authoritativeRestoreApplied = true;
+          if (this.cloud && this.cloud.readyState === this.WebSocketImpl.OPEN) this.cloud.send(JSON.stringify({ event:'publish',data:{ type:'device.snapshot-applied', classroomId:this.config.classroomId, revision:Number(message.revision || 0) } }));
+          this.sendSnapshot();
+        }
       } catch (error) { this.logger(`云端离线变更恢复失败：${error.message}`); }
       return;
     }
@@ -123,15 +148,23 @@ class ClassroomCloudBridge {
   }
 
   sendDeviceStatus() {
-    if (this.cloud && this.cloud.readyState === this.WebSocketImpl.OPEN) this.cloud.send(JSON.stringify({ type:'device.status', classroomId:this.config.classroomId, payload:this.statusProvider() }));
+    if (this.cloud && this.cloud.readyState === this.WebSocketImpl.OPEN) this.cloud.send(JSON.stringify({ event:'publish',data:{ type:'device.status', classroomId:this.config.classroomId, payload:this.statusProvider() } }));
+  }
+
+  requestAuthoritativeSnapshot() {
+    if (!this.cloud || this.cloud.readyState !== this.WebSocketImpl.OPEN) return;
+    let knownRevision = 0;
+    try { knownRevision = Math.max(0, Number(this.revisionProvider() || 0)); }
+    catch (error) { this.logger(`读取本地云端版本失败：${error.message}`); }
+    this.cloud.send(JSON.stringify({ event:'publish',data:{ type:'device.snapshot-request',classroomId:this.config.classroomId,knownRevision } }));
   }
 
   sendSnapshot() {
-    if (!this.cloud || this.cloud.readyState !== this.WebSocketImpl.OPEN) return;
+    if (!this.authoritativeRestoreApplied || !this.cloud || this.cloud.readyState !== this.WebSocketImpl.OPEN) return;
     let snapshot;
     try { snapshot = sanitizeCloudMessage(this.snapshotProvider()); }
     catch (error) { this.logger(`读取本机云同步数据失败：${error.message}`); return; }
-    if (snapshot) this.cloud.send(JSON.stringify({ ...snapshot, classroomId:this.config.classroomId }));
+    if (snapshot) this.cloud.send(JSON.stringify({ event:'publish',data:{ ...snapshot, classroomId:this.config.classroomId } }));
   }
 
   createLocalClient(clientId) {
@@ -147,7 +180,7 @@ class ClassroomCloudBridge {
       message = sanitizeCloudMessage(message);
       if (!message) return;
       if (this.cloud && this.cloud.readyState === this.WebSocketImpl.OPEN) {
-        this.cloud.send(JSON.stringify({ ...message, classroomId:this.config.classroomId, _cloudClientId:clientId }));
+        this.cloud.send(JSON.stringify({ event:'publish',data:{ ...message, classroomId:this.config.classroomId, _cloudClientId:clientId } }));
       }
     });
     local.on('close', () => { if (this.localClients.get(clientId) === local) this.localClients.delete(clientId); });
@@ -164,9 +197,12 @@ class ClassroomCloudBridge {
     this.stopped = true;
     if (this.retryTimer) clearTimeout(this.retryTimer);
     if (this.statusTimer) clearInterval(this.statusTimer);
+    if (this.syncTimer) clearInterval(this.syncTimer);
     this.retryTimer = null;
     this.statusTimer = null;
+    this.syncTimer = null;
     this.closeLocalClients();
+    this.authoritativeRestoreApplied = false;
     if (this.cloud) { try { this.cloud.close(); } catch (_error) {} }
     this.cloud = null;
   }

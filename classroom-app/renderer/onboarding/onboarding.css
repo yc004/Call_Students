@@ -47,7 +47,7 @@ button { -webkit-tap-highlight-color:transparent; }
 .guide-list li > span { display:grid; width:23px; height:23px; flex:0 0 23px; place-items:center; border:1px solid #cbd8f2; border-radius:50%; color:var(--blue); font-size:11px; font-weight:800; }
 .guide-list p { margin:0; color:#475467; }
 .address-box { margin-top:22px; padding:15px; border:1px solid #cfdbf4; border-radius:13px; background:#f7f9fe; }
-.onboarding-network { margin-bottom:13px; }.onboarding-network select { width:100%;height:36px;padding:0 9px;border:1px solid #cbd8f2;border-radius:8px;color:var(--ink);background:#fff; }.onboarding-network small { display:block;margin-top:5px;color:var(--faint);font-size:10px; }
+.onboarding-network { margin-bottom:13px; }.onboarding-network select { width:100%;height:36px;padding:0 9px;border:1px solid #cbd8f2;border-radius:8px;color:var(--ink);background:#fff; }.onboarding-network small { display:block;margin-top:5px;color:var(--faint);font-size:12px; }
 .qr-preview { display:grid; width:142px; height:142px; margin:0 auto 14px; place-items:center; overflow:hidden; border:1px solid #d7e1f3; border-radius:13px; color:var(--faint); background:#fff; font-size:11px; text-align:center; }
 .qr-preview img { display:none; width:100%; height:100%; object-fit:contain; }.qr-preview img.visible { display:block; }
 .address-label { display:block; margin-bottom:9px; color:var(--muted); font-size:11px; font-weight:800; letter-spacing:.08em; }
@@ -65,7 +65,7 @@ button { -webkit-tap-highlight-color:transparent; }
 .candidate input { width:17px; height:17px; accent-color:var(--blue); }
 .candidate strong,.candidate small { display:block; }
 .candidate small { color:var(--faint); }
-.candidate-tag { padding:3px 7px; border-radius:20px; color:#4268af; background:#e8effd; font-size:10px; font-weight:800; }
+.candidate-tag { padding:3px 7px; border-radius:20px; color:#4268af; background:#e8effd; font-size:11px; font-weight:800; }
 .waiting { display:grid; min-height:128px; place-items:center; padding:18px; border:1px dashed #cbd5e3; border-radius:11px; color:var(--muted); text-align:center; }
 .waiting strong { display:block; margin-bottom:3px; color:#344054; }
 .waiting small { color:var(--faint); }

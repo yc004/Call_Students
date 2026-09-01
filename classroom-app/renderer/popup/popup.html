@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https: wss: ws:; object-src 'none'; base-uri 'none'; form-action 'none'">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>呼叫通知</title>
@@ -10,13 +11,17 @@
 <body>
 
 <div class="popup-container">
-  <div class="call-card" id="callCard">
-    <button class="close-btn" id="closeBtn" title="关闭" aria-label="关闭通知">✕</button>
+  <div class="call-card" id="callCard" role="dialog" aria-labelledby="callStudent" aria-describedby="callMessage timerText">
+    <button class="close-btn" id="closeBtn" type="button" title="关闭" aria-label="关闭通知">✕</button>
     <div class="call-class" id="callClass"></div>
     <div class="call-student" id="callStudent"></div>
     <div class="call-message" id="callMessage">请到办公室</div>
     <div class="call-timer">
       <span class="timer-bar" id="timerBar"></span>
+    </div>
+    <div class="timer-controls">
+      <span id="timerText" class="timer-text" aria-live="polite">将在 8 秒后关闭</span>
+      <button id="pauseBtn" class="pause-btn" type="button" aria-pressed="false">暂停自动关闭</button>
     </div>
   </div>
 </div>

@@ -16,7 +16,7 @@
   <block wx:if="{{status === 'online'}}">
     <view class="section-heading"><view><text class="section-title">呼叫内容</text><text class="section-note">可自由编辑，点击学生后发送</text></view></view>
     <view class="message-editor surface">
-      <textarea class="message-input" value="{{callText}}" maxlength="100" auto-height placeholder="输入要在教室大屏显示的内容" bindinput="editCallText" confirm-type="done"/>
+      <textarea class="message-input" aria-label="大屏呼叫内容" value="{{callText}}" maxlength="100" auto-height placeholder="输入要在教室大屏显示的内容" bindinput="editCallText" confirm-type="done"/>
       <view class="message-tools">
         <view class="message-actions">
           <button class="text-tool name-tool" size="mini" bindtap="insertNameVariable">＋ 学生姓名</button>
@@ -31,11 +31,11 @@
     </scroll-view>
 
     <view class="section-heading call-student-heading"><view><text class="section-title">选择学生</text><text class="section-note" wx:if="{{multiSelect}}">勾选多名学生后统一发送</text><text class="section-note" wx:else>共 {{students.length}} 名学生，点击即可呼叫</text></view><button class="multi-toggle {{multiSelect?'active':''}}" bindtap="toggleMultiSelect">{{multiSelect?'取消多选':'多选呼叫'}}</button></view>
-    <view class="search-box"><view class="search-icon"></view><input placeholder="搜索学生姓名" value="{{query}}" bindinput="search" confirm-type="search"/><text class="search-clear" wx:if="{{query}}" bindtap="clearSearch">×</text></view>
+    <view class="search-box"><view class="search-icon"></view><input aria-label="搜索学生姓名" placeholder="搜索学生姓名" value="{{query}}" bindinput="search" confirm-type="search"/><text role="button" aria-label="清空搜索" class="search-clear" wx:if="{{query}}" bindtap="clearSearch">×</text></view>
     <view class="selection-tools" wx:if="{{multiSelect}}"><button bindtap="selectVisible">全选当前列表</button><button bindtap="clearSelection" disabled="{{!selectedCount}}">清空选择</button><text>已选 {{selectedCount}} 人</text></view>
 
     <view class="student-list surface" wx:if="{{filteredStudents.length}}">
-      <view class="student-cell {{item.sent ? 'sent' : ''}} {{item.selected ? 'selected' : ''}}" hover-class="cell-hover" hover-stay-time="70" wx:for="{{filteredStudents}}" wx:key="id" data-id="{{item.id}}" bindtap="handleStudentTap">
+      <view role="button" aria-label="{{item.name}}，{{item.sent?'呼叫已发送':(multiSelect?(item.selected?'已选择':'未选择'):'点击呼叫')}}" aria-pressed="{{multiSelect ? item.selected : false}}" class="student-cell {{item.sent ? 'sent' : ''}} {{item.selected ? 'selected' : ''}}" hover-class="cell-hover" hover-stay-time="70" wx:for="{{filteredStudents}}" wx:key="id" data-id="{{item.id}}" bindtap="handleStudentTap">
         <view class="student-avatar">{{item.initial}}</view>
         <view class="student-main"><text class="student-name">{{item.name}}</text><text class="student-desc">{{item.sent?'呼叫已发送':(multiSelect?(item.selected?'已加入批量呼叫':'点击选择这名学生'):'点击发送当前呼叫内容')}}</text></view>
         <view class="call-button {{multiSelect?'check-button':''}}">{{item.sent?'✓':(multiSelect?(item.selected?'✓':''):'呼叫')}}</view>

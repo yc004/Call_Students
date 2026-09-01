@@ -15,11 +15,20 @@ let failurePromptShown = false;
 const MAX_CONNECT_ATTEMPTS = 5;
 let currentRoom = null;
 let currentAccount = null;
+let activeUsesCloudRelay = false;
 let socketPhase = 'closed';
 let localResolveSequence = 0;
 let lastFailureError = null;
 let lastFailureTarget = '';
 let state = { status: 'offline', message: '未连接', detail: '', target: '', data: null, attendance: [], presence: [], pendingFaces: [] };
+const DURABLE_MESSAGE_TYPES = new Set(['update-classroom','manage-teacher','update-assignments','update-submission']);
+
+function operationId() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,character=>{
+    const value=Math.floor(Math.random()*16);
+    return(character==='x'?value:(value&3)|8).toString(16);
+  });
+}
 
 function nonEmptySubjects(array) {
   return Array.isArray(array) && array.length ? array : null;
@@ -109,11 +118,13 @@ function scheduleReconnect() {
 }
 
 function connect(room, account, options = {}) {
-  const isCloud = !!(room && room.transport === 'cloud' && room.cloudClassroomId);
-  if (!room || (!isCloud && !room.connectionCode) || !account) return;
+  const cloudRoom = !!(room && room.transport === 'cloud' && room.cloudClassroomId);
+  const hasLanRoute = !!(cloudRoom && connectionCode.isValid(room.connectionCode));
+  const isCloud = cloudRoom && (options.forceCloud === true || !hasLanRoute);
+  if (!room || (!cloudRoom && !room.connectionCode) || !account) return;
   // 切到云端时取消尚未完成的局域网发现，防止迟到的 mDNS 回调覆盖云连接。
   if (isCloud) localResolveSequence += 1;
-  if (isCloud && !options.skipCloudRefresh) {
+  if (cloudRoom && !options.skipCloudRefresh) {
     const stored = sessionStore.load();
     const expiresAt = new Date(stored && stored.cloud && stored.cloud.accessExpiresAt || 0).getTime();
     if (stored && stored.cloud && (!Number.isFinite(expiresAt) || expiresAt <= Date.now() + 60000)) {
@@ -139,6 +150,7 @@ function connect(room, account, options = {}) {
       connect(room, account, { ...options, resolvedHost:result.host, discovery:result.source });
     }).catch(error => {
       if (resolveSequence !== localResolveSequence) return;
+      if (cloudRoom && !options.forceCloud) { connect(room, account, { ...options, force:true, forceCloud:true, skipCloudRefresh:true }); return; }
       setStatus('offline', '无法解析教室地址', error && error.message || '连接码无效');
     });
     return;
@@ -161,6 +173,7 @@ function connect(room, account, options = {}) {
   }
   currentRoom = room;
   currentAccount = account;
+  activeUsesCloudRelay = isCloud;
   stopTimers();
   // 必须先解除旧任务的“当前连接”身份，再调用 close。
   // 微信真机可能在 close() 内同步触发 onClose；顺序相反会把旧连接关闭误报为新扫码连接失败。
@@ -176,7 +189,7 @@ function connect(room, account, options = {}) {
     if (!cloud || !cloud.accessToken) { setStatus('offline', '云服务登录已失效', '请在“我的”页面重新连接云服务'); return; }
     target = cloud.serverUrl;
     state.target = room.name || '云端教室';
-    url = `${cloud.serverUrl.replace(/^http/i, 'ws')}/ws/v1/client?client=mini-program&protocol=1`;
+    url = `${cloud.serverUrl.replace(/^http/i, 'ws')}/ws/client?client=mini-program&protocol=2`;
     setStatus('connecting', '正在连接云服务', state.target);
   } else {
     try { target = options.resolvedHost || connectionCode.decode(room.connectionCode); }
@@ -197,6 +210,10 @@ function connect(room, account, options = {}) {
     socketPhase = 'closed';
     stopTimers();
     try { task && task.close({ code: 1000, reason: 'connect failed' }); } catch (_error) {}
+    if (cloudRoom && !isCloud && !options.forceCloud) {
+      connect(room, account, { ...options, force:true, forceCloud:true, skipCloudRefresh:true });
+      return;
+    }
     recordConnectionFailure(error, target);
   }
   task = wx.connectSocket({ url, tcpNoDelay:true, timeout:8000, fail:error => failAttempt(error) });
@@ -206,7 +223,7 @@ function connect(room, account, options = {}) {
     socketPhase = 'open';
     setStatus('connecting', isCloud ? '正在验证云端身份' : '正在验证身份', isCloud ? state.target : `连接码 ${state.target}`);
     if (isCloud) {
-      task.send({ data:JSON.stringify({ type:'authenticate', token:sessionStore.load().cloud.accessToken }) });
+      task.send({ data:JSON.stringify({ event:'authenticate',data:{ token:sessionStore.load().cloud.accessToken } }) });
     } else {
       // 先建立超时保护再发送身份。局域网响应可能在 send 返回前到达；顺序相反会留下
       // 一个无法被响应处理清除的“幽灵计时器”，8 秒后把正常 pending 连接误判为失败。
@@ -219,16 +236,17 @@ function connect(room, account, options = {}) {
     if (socketTask !== task) return;
     let message;
     try { message = JSON.parse(decodeSocketMessage(data)); } catch (_error) { return; }
-    if (isCloud && message.type === 'session.ready') {
-      task.send({ data:JSON.stringify({ type:'subscribe', classroomId:room.cloudClassroomId }) });
+    if (isCloud && message.event === 'session.ready') {
+      task.send({ data:JSON.stringify({ event:'subscribe',data:{ classroomId:room.cloudClassroomId } }) });
       return;
     }
-    if (isCloud && message.type === 'subscription.ready') {
+    if (isCloud && message.event === 'subscription.ready') {
       verificationTimer = setTimeout(() => failAttempt(new Error('云端教室身份验证超时')), 8000);
       send({ type:'connect', connectionId:account.connectionId, name:account.name, subjects:room.subjects || [] });
       startHeartbeat();
       return;
     }
+    if(isCloud&&message.event==='classroom.event')message=message.data;
     if (verificationTimer) clearTimeout(verificationTimer);
     verificationTimer = null;
     resetConnectionFailures();
@@ -291,8 +309,10 @@ function formatSocketError(error, target) {
 
 function send(data) {
   if (!socketTask) return false;
-  if (currentRoom && currentRoom.transport === 'cloud' && /^(face-|pending-face|label-face|set-face-system)/.test(String(data && data.type || ''))) return false;
-  const payload = currentRoom && currentRoom.transport === 'cloud' ? { ...data, classroomId:currentRoom.cloudClassroomId } : data;
+  if (activeUsesCloudRelay && /^(face-|pending-face|label-face|set-face-system)/.test(String(data && data.type || ''))) return false;
+  const cloudData=activeUsesCloudRelay?{...data,classroomId:currentRoom.cloudClassroomId}:null;
+  if(cloudData&&DURABLE_MESSAGE_TYPES.has(String(cloudData.type||''))&&!cloudData.operationId)cloudData.operationId=operationId();
+  const payload = activeUsesCloudRelay ? { event:'publish',data:cloudData } : data;
   try { socketTask.send({ data: JSON.stringify(payload) }); return true; }
   catch (_error) { return false; }
 }
@@ -336,6 +356,7 @@ function disconnect() {
   localResolveSequence += 1;
   currentRoom = null;
   currentAccount = null;
+  activeUsesCloudRelay = false;
   stopTimers();
   const previousTask = socketTask;
   socketTask = null;
@@ -393,7 +414,7 @@ function fetchRoomSnapshot(room, account, timeoutMs = 6000) {
         const updated = sessionStore.updateCloud(cloud);
         try { getApp().globalData.session = updated; } catch (_error) {}
       }
-      return cloudApi.request(cloud.serverUrl, `/api/v1/classrooms/${encodeURIComponent(room.cloudClassroomId)}/snapshot`, { token:cloud.accessToken, timeout:timeoutMs });
+      return cloudApi.request(cloud.serverUrl, `/api/v2/client/classrooms/${encodeURIComponent(room.cloudClassroomId)}/snapshot`, { token:cloud.accessToken, timeout:timeoutMs });
     };
     return loadSnapshot().then(snapshot => {
       const submissions = new Map();
@@ -405,7 +426,7 @@ function fetchRoomSnapshot(room, account, timeoutMs = 6000) {
         type:'sync', className:snapshot.classroom && snapshot.classroom.name || room.name,
         classroomConfigured:snapshot.classroom && snapshot.classroom.configured !== false,
         students:(snapshot.students || []).map(item => ({ id:item.id, name:item.name })),
-        assignments:(snapshot.assignments || []).map(item => ({ id:item.id, subject:item.subject, type:item.type, title:item.title, deadline:item.deadline, date:String(item.publish_at || item.created_at || '').slice(0,10), submissions:submissions.get(item.id) || {} })),
+        assignments:(snapshot.assignments || []).map(item => { const instant=new Date(item.publish_at||item.created_at||Date.now());const date=`${instant.getFullYear()}-${String(instant.getMonth()+1).padStart(2,'0')}-${String(instant.getDate()).padStart(2,'0')}`;return { id:item.id, subject:item.subject, type:item.type, title:item.title, deadline:item.deadline, date, submissions:submissions.get(item.id) || {} }; }),
         teacher:{ role:snapshot.teacher && snapshot.teacher.role === 'homeroom' ? '班主任' : '授课教师', subjects:snapshot.teacher && snapshot.teacher.subjects_json || [] },
         teachers:{ approved:(snapshot.members || []).map(item => ({ connection_id:item.user_id, name:item.name, role:item.role === 'homeroom' ? '班主任' : '授课教师', subjects:item.subjects_json || [] })), pending:[] },
         attendance:[], pendingFaces:[], faceLanRequired:true,

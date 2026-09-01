@@ -1,9 +1,16 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, protocol, safeStorage, clipboard, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, protocol, safeStorage, clipboard, dialog, session } = require('electron');
 const WebSocket = require('ws');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
+app.on('web-contents-created',(_event,contents)=>{
+  contents.setWindowOpenHandler(()=>({action:'deny'}));
+  contents.on('will-navigate',(event,target)=>{try{const url=new URL(target);if(url.protocol==='file:'&&path.resolve(url.pathname).startsWith(path.resolve(__dirname)))return;}catch(_error){}event.preventDefault();});
+});
+app.whenReady().then(()=>session.defaultSession.setPermissionRequestHandler((webContents,permission,callback)=>{
+  const local=webContents.getURL().startsWith('file:');callback(local&&permission==='media');
+}));
 const { normalizeIncomingCall } = require('./call-message');
 const { getLanInterfaces: selectLanInterfaces } = require('./lan-addresses');
 const connectionCode = require('./connection-code');
@@ -135,8 +142,10 @@ async function runCISmokeTest() {
       show: false,
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
+        additionalArguments:['--banda-window-role=onboarding'],
         contextIsolation: true,
         nodeIntegration: false,
+        sandbox: true,
       },
     });
     await smokeWindow.loadFile('renderer/onboarding/onboarding.html');
@@ -217,7 +226,20 @@ const callQueue = [];
 let isPopupBusy = false;
 let db = null;
 let cloudBridge = null;
+let currentPresence = { updatedAt:0, personCount:0, studentIds:[] };
 const cloudBridgeSecret = crypto.randomBytes(32).toString('base64url');
+
+function protectSensitive(value) {
+  if(!safeStorage.isEncryptionAvailable())throw new Error('系统安全存储不可用，已拒绝保存人脸数据');
+  return `enc:v1:${safeStorage.encryptString(String(value||'')).toString('base64')}`;
+}
+
+function unprotectSensitive(value) {
+  const text=String(value||'');
+  if(!text.startsWith('enc:v1:'))return text;
+  if(!safeStorage.isEncryptionAvailable())throw new Error('系统安全存储不可用，无法读取人脸数据');
+  return safeStorage.decryptString(Buffer.from(text.slice(7),'base64'));
+}
 
 function getCloudConfig() {
   try {
@@ -241,9 +263,17 @@ function serializeCloudConfig(config) {
   return JSON.stringify({ ...publicConfig, deviceTokenEncrypted:safeStorage.encryptString(deviceToken).toString('base64') });
 }
 
+function getInstallationId() {
+  const database=getDb();
+  const existing=String(database.prepare("SELECT value FROM meta WHERE key='installationId'").get()?.value||'');
+  if(/^[0-9a-f-]{36}$/i.test(existing))return existing;
+  const value=crypto.randomUUID();
+  database.prepare("INSERT OR REPLACE INTO meta (key,value) VALUES ('installationId',?)").run(value);
+  return value;
+}
+
 function applyCloudRestore(snapshot) {
-  if (!snapshot || snapshot.type !== 'cloud.restore' || !Array.isArray(snapshot.students) || !Array.isArray(snapshot.assignments)) return false;
-  const data = loadData();
+  if (!snapshot || snapshot.type !== 'cloud.restore' || snapshot.authority !== 'cloud' || !Array.isArray(snapshot.students) || !Array.isArray(snapshot.assignments)) return false;
   const students = snapshot.students.slice(0, 5000).map(item => ({ id:String(item && item.id || '').trim().slice(0,128), name:String(item && item.name || '').trim().slice(0,80) })).filter(item => item.id && item.name);
   const studentIds = new Set(students.map(item => item.id));
   const assignments = snapshot.assignments.slice(0, 5000).map(item => {
@@ -252,13 +282,43 @@ function applyCloudRestore(snapshot) {
     students.forEach(student => { if (!submissions[student.id]) submissions[student.id] = '未提交'; });
     return { id:String(item && item.id || '').trim().slice(0,128), subject:String(item && item.subject || '').trim().slice(0,80), type:item && item.type === 'notice' ? 'notice' : 'homework', title:String(item && item.title || '').trim().slice(0,1000), date:String(item && item.date || '').slice(0,10), deadline:item && item.deadline || null, source:item && item.source === 'student' ? 'student' : 'teacher', submissions:item && item.type === 'notice' ? {} : submissions };
   }).filter(item => item.id && item.title);
-  data.className = String(snapshot.className || data.className || '').trim().slice(0,120);
-  data.students = students;
-  data.assignments = assignments;
-  data.subjects = Array.from(new Set(assignments.map(item => item.subject).filter(Boolean)));
-  if (snapshot.classroomConfigured !== false && data.className && students.length) getDb().prepare("INSERT OR REPLACE INTO meta (key,value) VALUES ('classroomConfigured','true')").run();
-  saveData(data);
+  const teacherData = snapshot.teachers && typeof snapshot.teachers === 'object' ? snapshot.teachers : {};
+  const normalizeTeacher = (item, pending) => {
+    const connectionId = String(item && item.connectionId || '').trim().slice(0,128);
+    const name = String(item && item.name || '云端教师').trim().slice(0,40);
+    if (!connectionId || !name) return null;
+    return { connectionId, name, role:item && item.role === 'homeroom' ? '班主任' : '授课教师', subjects:normalizeSubjects(item && item.subjects), changedAt:String(item && item.changedAt || new Date().toISOString()), pending };
+  };
+  const approvedTeachers = (Array.isArray(teacherData.approved) ? teacherData.approved : []).slice(0,1000).map(item => normalizeTeacher(item, false)).filter(Boolean);
+  const pendingTeachers = (Array.isArray(teacherData.pending) ? teacherData.pending : []).slice(0,1000).map(item => normalizeTeacher(item, true)).filter(Boolean);
+  const className = String(snapshot.className || '').trim().slice(0,120);
+  const d = getDb();
+  d.transaction(() => {
+    d.prepare("INSERT OR REPLACE INTO meta (key,value) VALUES ('className',?)").run(className);
+    d.prepare("INSERT OR REPLACE INTO meta (key,value) VALUES ('classroomConfigured',?)").run(snapshot.classroomConfigured === true ? 'true' : 'false');
+    d.prepare("INSERT OR REPLACE INTO meta (key,value) VALUES ('cloudRevision',?)").run(String(Number(snapshot.revision || 0)));
+    d.prepare('DELETE FROM submissions').run();
+    d.prepare('DELETE FROM assignments').run();
+    d.prepare('DELETE FROM students').run();
+    d.prepare('DELETE FROM approved_teachers').run();
+    d.prepare('DELETE FROM pending_requests').run();
+    for (const student of students) d.prepare('INSERT INTO students (id,name) VALUES (?,?)').run(student.id,student.name);
+    for (const assignment of assignments) {
+      d.prepare('INSERT INTO assignments (id,subject,title,date,deadline,type,source) VALUES (?,?,?,?,?,?,?)').run(assignment.id,assignment.subject,assignment.title,assignment.date,assignment.deadline,assignment.type,assignment.source);
+      for (const [studentId,status] of Object.entries(assignment.submissions)) d.prepare('INSERT INTO submissions (assignment_id,student_id,status) VALUES (?,?,?)').run(assignment.id,studentId,status);
+    }
+    for (const teacher of approvedTeachers) d.prepare('INSERT OR REPLACE INTO approved_teachers (connection_id,name,role,subjects,approved_at) VALUES (?,?,?,?,?)').run(teacher.connectionId,teacher.name,teacher.role,JSON.stringify(teacher.subjects),teacher.changedAt);
+    for (const teacher of pendingTeachers) d.prepare('INSERT OR REPLACE INTO pending_requests (connection_id,name,role,subjects,requested_at) VALUES (?,?,?,?,?)').run(teacher.connectionId,teacher.name,teacher.role,JSON.stringify(teacher.subjects),teacher.changedAt);
+  })();
+  pruneRemovedStudentData();
+  const data = loadData();
+  notifyAllDataChanged(data);
   broadcastSync(data);
+  notifyTeacherCandidatesChanged();
+  notifyOnboardingChanged();
+  // 启动时云端快照通常晚于 Electron ready 回调到达。此时本地可能先被判定为
+  // “未配置”，所以必须在权威快照落库后重新协调运行窗口，否则悬浮球不会创建。
+  reconcileRuntimeWithCurrentConfiguration({ cloudManaged:true });
   return true;
 }
 
@@ -271,6 +331,11 @@ function applyCloudClassroomUpdate(message) {
   return true;
 }
 
+function getCloudRevision() {
+  const value = getDb().prepare("SELECT value FROM meta WHERE key='cloudRevision'").get()?.value;
+  return Math.max(0,Number(value||0));
+}
+
 function restartCloudBridge() {
   if (cloudBridge) cloudBridge.stop();
   cloudBridge = null;
@@ -278,7 +343,8 @@ function restartCloudBridge() {
   if (!config || !wss) { rebuildTrayMenu(); return; }
   cloudBridge = new ClassroomCloudBridge(config, {
     logger:message => logToFile('cloud', message),
-    statusProvider:() => ({ lanConnectionCode:getConnectionCodes()[0] || '' }),
+    statusProvider:() => ({ lanAddresses:getLanAddresses(), lanConnectionCode:getConnectionCodes()[0] || '', operationalStatus:getCloudOperationalStatus() }),
+    revisionProvider:getCloudRevision,
     snapshotProvider:buildCloudSnapshot,
     membershipHandler:applyCloudMembership,
     classroomHandler:applyCloudClassroomUpdate,
@@ -349,6 +415,13 @@ function getDb() {
   // 因为旧库的 attendance 表已存在且无 day 列，SQLite 校验新 DDL 引用的 day 列会报
   // "no such column: day"，导致整个 getDb() 抛错、WS 服务无法启动、教师端连不上。
   migrateAttendanceSchema();
+  const attendanceCutoff=new Date();attendanceCutoff.setDate(attendanceCutoff.getDate()-365);
+  db.prepare('DELETE FROM attendance WHERE day<?').run(localDayKey(attendanceCutoff));
+  if(safeStorage.isEncryptionAvailable()){
+    const legacyFaces=db.prepare("SELECT id,crop_base64,descriptor FROM pending_faces WHERE descriptor NOT LIKE 'enc:v1:%'").all();
+    const encryptFace=db.prepare('UPDATE pending_faces SET crop_base64=?,descriptor=? WHERE id=?');
+    db.transaction(rows=>rows.forEach(row=>encryptFace.run(protectSensitive(row.crop_base64||''),protectSensitive(row.descriptor),row.id)))(legacyFaces);
+  }
   // 从旧 JSON 文件迁移
   if (fs.existsSync(JSON_FILE)) {
     try {
@@ -449,6 +522,18 @@ function loadData() {
   return { className, students, subjects, assignments };
 }
 
+function pruneRemovedStudentData() {
+  const d=getDb();
+  d.prepare('DELETE FROM attendance WHERE student_id NOT IN (SELECT id FROM students)').run();
+  try{
+    const active=new Set(d.prepare('SELECT id FROM students').all().map(row=>String(row.id)));
+    const manager=getGallery();
+    let changed=false;
+    manager.getAllStudentIds().forEach(id=>{if(!active.has(String(id))){manager.removeStudent(id);changed=true;}});
+    if(changed)manager.saveNow();
+  }catch(error){logToFile('privacy',`清理已移除学生人脸数据失败：${error.message}`);}
+}
+
 function saveData(data) {
   const d = getDb();
   const txn = d.transaction(() => {
@@ -472,6 +557,7 @@ function saveData(data) {
     }
   });
   txn();
+  pruneRemovedStudentData();
   const t1 = Date.now();
   notifyAllDataChanged(data);
   const t2 = Date.now();
@@ -934,8 +1020,10 @@ function createOnboardingWindow() {
     backgroundColor: '#F4F7FC',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
+      additionalArguments:['--banda-window-role=onboarding'],
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
   onboardingWin.loadFile('renderer/onboarding/onboarding.html');
@@ -956,8 +1044,10 @@ function createConnectionQrWindow() {
     backgroundColor: '#F4F7FC',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
+      additionalArguments:['--banda-window-role=connection'],
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
   connectionQrWin.loadFile('renderer/connection/connection-qr.html');
@@ -971,7 +1061,7 @@ function createCloudSettingsWindow() {
   cloudSettingsWin = new BrowserWindow({
     width:680, height:650, minWidth:560, minHeight:560,
     title:'云服务设置', icon:APP_ICON_PATH, backgroundColor:'#F4F6FA',
-    webPreferences:{ preload:path.join(__dirname, 'preload.js'), contextIsolation:true, nodeIntegration:false },
+    webPreferences:{ preload:path.join(__dirname, 'preload.js'), additionalArguments:['--banda-window-role=cloud-settings'], contextIsolation:true, nodeIntegration:false, sandbox:true },
   });
   cloudSettingsWin.loadFile('renderer/cloud-settings/cloud-settings.html');
   cloudSettingsWin.on('closed', () => { cloudSettingsWin = null; });
@@ -985,6 +1075,20 @@ function activateBoundRuntime(openBoard = true) {
   rebuildTrayMenu();
   if (openBoard) openBoardWindow();
   return true;
+}
+
+function reconcileRuntimeWithCurrentConfiguration({ cloudManaged = false } = {}) {
+  if (isSystemReady()) return activateBoundRuntime(false);
+  callQueue.length = 0;
+  callMap.clear();
+  [popupWin, boardWin, homeworkFloatWin, faceCheckWin, faceRegisterWin].forEach(win => {
+    if (win && !win.isDestroyed()) win.close();
+  });
+  if (homeworkWidgetWin && !homeworkWidgetWin.isDestroyed()) homeworkWidgetWin.hide();
+  // 云服务模式由云端负责配置。快照暂时不完整时保持后台等待，不弹本地初始化引导。
+  if (!cloudManaged && !isHomeroomBound()) createOnboardingWindow();
+  rebuildTrayMenu();
+  return false;
 }
 
 function deactivateBoundRuntimeForRebinding() {
@@ -1047,7 +1151,7 @@ function createHomeworkFloatWindow() {
     frame: false, transparent: true, resizable: false, movable: true,
     icon: APP_ICON_PATH,
     alwaysOnTop: true, skipTaskbar: true, hasShadow: false,
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), additionalArguments:['--banda-window-role=homework-float'], contextIsolation: true, nodeIntegration: false, sandbox:true },
   });
   homeworkFloatWin.setAlwaysOnTop(true, 'floating');
   homeworkFloatWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -1074,7 +1178,7 @@ function openHomeworkWidget() {
     x: Math.max(12, sw - width - 28), y: Math.max(12, Math.round((sh - height) / 2)),
     frame: false, resizable: true, movable: true, alwaysOnTop: false, backgroundColor: '#F7F9FD', title: '今日安排',
     icon: APP_ICON_PATH,
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), additionalArguments:['--banda-window-role=homework-widget'], contextIsolation: true, nodeIntegration: false, sandbox:true },
   });
   homeworkWidgetWin.loadFile('renderer/homework/homework-widget.html');
   homeworkWidgetWin.on('close', (event) => {
@@ -1108,8 +1212,10 @@ function createPopupWindow() {
     icon: APP_ICON_PATH,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
+      additionalArguments:['--banda-window-role=popup'],
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
 
@@ -1167,8 +1273,10 @@ function createBoardWindow() {
     icon: APP_ICON_PATH,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
+      additionalArguments:['--banda-window-role=homework-board'],
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
   boardWin.loadFile('renderer/homework/homework-board.html');
@@ -1199,8 +1307,10 @@ function createFaceCheckWindow() {
     icon: APP_ICON_PATH,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
+      additionalArguments:['--banda-window-role=face-check'],
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
       webgl: true,
       // 隐藏窗口时仍持续采集，避免 Chromium 将检测循环降频。
       backgroundThrottling: false,
@@ -1228,8 +1338,10 @@ function createFaceRegisterWindow(studentId, name) {
     icon: APP_ICON_PATH,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
+      additionalArguments:['--banda-window-role=face-register'],
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
       webgl: true,
     },
   });
@@ -1264,6 +1376,14 @@ function getAttendanceData() {
     });
   }
   return results;
+}
+
+function getCloudOperationalStatus() {
+  return {
+    reportedAt:new Date().toISOString(),
+    appReady:isSystemReady(),
+    classroomConfigured:isClassroomConfigured(),
+  };
 }
 
 /**
@@ -1354,11 +1474,12 @@ function broadcastLabelResult(faceId, studentId, name) {
 }
 
 function getPendingFaces() {
+  getDb().prepare("DELETE FROM pending_faces WHERE julianday(last_seen)<julianday('now','-7 days')").run();
   const rows = getDb().prepare('SELECT id, crop_base64, descriptor, first_seen, last_seen FROM pending_faces ORDER BY last_seen DESC').all();
   return rows.map(row => ({
     faceId: row.id,
-    cropBase64: row.crop_base64 || '',
-    descriptor: JSON.parse(row.descriptor),
+    cropBase64: unprotectSensitive(row.crop_base64 || ''),
+    descriptor: JSON.parse(unprotectSensitive(row.descriptor)),
     firstSeen: row.first_seen,
     lastSeen: row.last_seen,
   }));
@@ -1426,7 +1547,7 @@ function storePendingFace(det) {
   if (pending.length >= 100) d.prepare('DELETE FROM pending_faces WHERE id IN (SELECT id FROM pending_faces ORDER BY last_seen ASC LIMIT 1)').run();
   const id = 'pf_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   d.prepare('INSERT INTO pending_faces (id, crop_base64, descriptor, first_seen, last_seen) VALUES (?,?,?,?,?)')
-    .run(id, typeof det.cropBase64 === 'string' ? det.cropBase64 : '', JSON.stringify(descriptor), now, now);
+    .run(id, protectSensitive(typeof det.cropBase64 === 'string' ? det.cropBase64 : ''), protectSensitive(JSON.stringify(descriptor)), now, now);
   return true;
 }
 
@@ -1445,7 +1566,7 @@ function broadcastPendingFaces() {
 // ═══════════════════════════════════════
 
 function startWSServer() {
-  wss = new WebSocket.Server({ port: WS_PORT, host: '0.0.0.0' });
+  wss = new WebSocket.Server({ port: WS_PORT, host: '0.0.0.0', maxPayload:256*1024, perMessageDeflate:false });
   wss.on('error', (error) => {
     logToFile('ws', `WebSocket server error: ${error.message}`);
     if (error.code === 'EADDRINUSE') {
@@ -1456,10 +1577,17 @@ function startWSServer() {
 
   wss.on('connection', (ws, req) => {
     const remote = req.socket.remoteAddress;
+    if(!isPrivateLanAddress(remote)){ws.close(4403,'LAN access only');return;}
+    if(wss.clients.size>200){ws.close(4429,'too many connections');return;}
     console.log(`[WS] teacher connected (${remote})`);
     ws._lastPing = Date.now();
+    ws._messageWindow={count:0,resetAt:Date.now()+60_000};
+    ws._authenticationTimer=setTimeout(()=>{if(!ws._teacher)ws.close(4401,'authentication timeout');},10_000);
+    ws._authenticationTimer.unref?.();
 
     ws.on('message', (raw) => {
+      const now=Date.now();if(ws._messageWindow.resetAt<=now)ws._messageWindow={count:0,resetAt:now+60_000};
+      ws._messageWindow.count+=1;if(ws._messageWindow.count>180){ws.close(4429,'rate limit exceeded');return;}
       let msg;
       try { msg = JSON.parse(raw.toString()); } catch { return; }
 
@@ -1559,6 +1687,7 @@ function startWSServer() {
             }
           }
           ws._teacher = teacher;
+          clearTimeout(ws._authenticationTimer);
 
           if (teacher.status === 'approved' && isHomeroomBound() && (isClassroomConfigured() || teacher.role === '班主任')) {
             sendTeacherSync(ws, data);
@@ -1900,6 +2029,7 @@ function startWSServer() {
     });
 
     ws.on('close', (code, reason) => {
+      clearTimeout(ws._authenticationTimer);
       console.log(`[WS] teacher disconnected (${remote}), teacher=${ws._teacher && ws._teacher.name || 'unverified'}, purpose=${ws._purpose || 'unknown'}, code=${code}, reason=${reason && reason.toString() || '-'}`);
       for (const [callId, conn] of callMap) if (conn === ws) callMap.delete(callId);
     });
@@ -1918,6 +2048,15 @@ function startWSServer() {
       }
     });
   }, 15000);
+}
+
+function isPrivateLanAddress(value){
+  const address=String(value||'').replace(/^::ffff:/,'').toLowerCase();
+  if(address==='127.0.0.1'||address==='::1')return true;
+  if(/^10\./.test(address)||/^192\.168\./.test(address)||/^169\.254\./.test(address))return true;
+  const match=/^172\.(\d{1,2})\./.exec(address);
+  if(match&&Number(match[1])>=16&&Number(match[1])<=31)return true;
+  return/^(?:fc|fd)[0-9a-f]{2}:/.test(address)||/^fe[89ab][0-9a-f]:/.test(address);
 }
 
 // 所有已获批准的教师都可以执行课堂呼叫等通用教学操作。
@@ -2044,7 +2183,7 @@ ipcMain.handle('create-student-assignment', (_, input) => {
   const subject = String(input && input.subject || '').trim().slice(0, 30);
   const title = String(input && input.title || '').trim().slice(0, 200);
   const date = String(input && input.date || '').trim();
-  const validDate = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : new Date().toISOString().slice(0, 10);
+  const validDate = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : localDayKey(new Date());
   if (!subject || !data.subjects.includes(subject)) return { success:false, message:'请选择教室中已有的授课科目' };
   if (!title) return { success:false, message:'请填写作业内容' };
   const studentCreatedToday = data.assignments.filter(item => item.source === 'student' && item.date === validDate);
@@ -2085,12 +2224,22 @@ ipcMain.handle('get-cloud-config', () => {
   return config ? { enabled:true, serverUrl:config.serverUrl, classroomId:config.classroomId, deviceId:config.deviceId } : null;
 });
 ipcMain.handle('enroll-cloud', async (_, input) => {
+  let previousBridgePaused = false;
+  let enrolled = null;
   try {
-    const config = await enrollClassroom({ serverUrl:input && input.serverUrl, key:input && input.key, deviceName:os.hostname() || '教室电脑', appVersion:app.getVersion() });
-    getDb().prepare("INSERT OR REPLACE INTO meta (key,value) VALUES ('cloudConfig',?)").run(serializeCloudConfig(config));
+    enrolled = await enrollClassroom({ serverUrl:input && input.serverUrl,organizationSlug:input&&input.organizationSlug,loginName:input&&input.loginName,password:input&&input.password,deviceName:os.hostname() || '教室电脑', appVersion:app.getVersion(),installationId:getInstallationId() });
+    const { snapshot:_snapshot, ...config } = enrolled;
+    const serializedConfig = serializeCloudConfig(config);
+    if (cloudBridge) { cloudBridge.stop(); cloudBridge = null; previousBridgePaused = true; }
+    if (!applyCloudRestore(enrolled.snapshot)) throw new Error('云端未返回有效的教室数据，已取消连接');
+    getDb().prepare("INSERT OR REPLACE INTO meta (key,value) VALUES ('cloudConfig',?)").run(serializedConfig);
     restartCloudBridge();
     return { ok:true, config:{ enabled:true, serverUrl:config.serverUrl, classroomId:config.classroomId, deviceId:config.deviceId } };
-  } catch (error) { return { ok:false, message:error.message || '无法连接云服务' }; }
+  } catch (error) {
+    if(enrolled){try{await revokeClassroom(enrolled);}catch(_revokeError){}}
+    if (previousBridgePaused && !cloudBridge) restartCloudBridge();
+    return { ok:false, message:error.message || '无法连接云服务' };
+  }
 });
 ipcMain.handle('disconnect-cloud', async () => {
   const config = getCloudConfig();
@@ -2208,7 +2357,11 @@ let gallery = null;
 
 function getGallery() {
   if (!gallery) {
-    gallery = new AdaptiveGalleryManager(path.join(DATA_DIR, 'gallery.json'), ACTIVE_EMBEDDING_MODEL);
+    if(!safeStorage.isEncryptionAvailable())throw new Error('系统安全存储不可用，已停止访问人脸底库');
+    gallery = new AdaptiveGalleryManager(path.join(DATA_DIR, 'gallery.json'), ACTIVE_EMBEDDING_MODEL,{
+      encrypt:value=>safeStorage.encryptString(value).toString('base64'),
+      decrypt:value=>safeStorage.decryptString(Buffer.from(String(value),'base64')),
+    });
     gallery.load();
   }
   return gallery;
@@ -2273,6 +2426,12 @@ let _lastAttendanceSig = '';
 
 ipcMain.handle('face:report-detections', (_, detections) => {
   try {
+    const activeDetections = Array.isArray(detections) ? detections : [];
+    currentPresence = {
+      updatedAt:Date.now(),
+      personCount:activeDetections.length,
+      studentIds:Array.from(new Set(activeDetections.filter(item => item && item.isRecognized && item.studentId).map(item => String(item.studentId)))),
+    };
     // detections: [{ faceId, cropBase64, descriptor, studentId, name, similarity, isRecognized }]
     const g = getGallery();
     let pendingChanged = false;

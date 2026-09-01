@@ -5,6 +5,8 @@
 #include <memory>
 #include <string>
 #include <cstring>
+#include <cmath>
+#include <limits>
 
 // ── single global engine instance ──────────────────────────────
 // Protected by the JS event loop (single-threaded in practice).
@@ -17,11 +19,18 @@ static FaceEngine* getEngine() {
 }
 
 static bool validateRgbaBuffer(Napi::Env env, const Napi::Uint8Array& buffer, int width, int height) {
-    if (width <= 0 || height <= 0) {
-        Napi::RangeError::New(env, "Image dimensions must be positive").ThrowAsJavaScriptException();
+    constexpr int MAX_DIMENSION = 8192;
+    constexpr size_t MAX_PIXELS = 40'000'000;
+    if (width <= 0 || height <= 0 || width > MAX_DIMENSION || height > MAX_DIMENSION) {
+        Napi::RangeError::New(env, "Image dimensions are outside the supported range").ThrowAsJavaScriptException();
         return false;
     }
-    const size_t expected = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
+    const size_t pixels = static_cast<size_t>(width) * static_cast<size_t>(height);
+    if (pixels > MAX_PIXELS || pixels > std::numeric_limits<size_t>::max() / 4) {
+        Napi::RangeError::New(env, "Image is too large").ThrowAsJavaScriptException();
+        return false;
+    }
+    const size_t expected = pixels * 4;
     if (buffer.ByteLength() < expected) {
         Napi::RangeError::New(env, "RGBA buffer is smaller than width * height * 4").ThrowAsJavaScriptException();
         return false;
@@ -72,6 +81,9 @@ Napi::Value DetectFaces(const Napi::CallbackInfo& info) {
         return env.Null();
     }
 
+    if(!info[0].IsTypedArray()||info[0].As<Napi::TypedArray>().TypedArrayType()!=napi_uint8_array||!info[1].IsNumber()||!info[2].IsNumber()){
+        Napi::TypeError::New(env,"Expected (Uint8Array, number, number)").ThrowAsJavaScriptException();return env.Null();
+    }
     auto buf = info[0].As<Napi::Uint8Array>();
     int width  = info[1].As<Napi::Number>().Int32Value();
     int height = info[2].As<Napi::Number>().Int32Value();
@@ -114,6 +126,9 @@ Napi::Value ExtractDescriptor(const Napi::CallbackInfo& info) {
         return env.Null();
     }
 
+    if(!info[0].IsTypedArray()||info[0].As<Napi::TypedArray>().TypedArrayType()!=napi_uint8_array||!info[1].IsNumber()||!info[2].IsNumber()||!info[3].IsObject()){
+        Napi::TypeError::New(env,"Expected (Uint8Array, number, number, object)").ThrowAsJavaScriptException();return env.Null();
+    }
     auto buf  = info[0].As<Napi::Uint8Array>();
     int width  = info[1].As<Napi::Number>().Int32Value();
     int height = info[2].As<Napi::Number>().Int32Value();
@@ -125,10 +140,14 @@ Napi::Value ExtractDescriptor(const Napi::CallbackInfo& info) {
     box.y      = boxObj.Get("y").As<Napi::Number>().FloatValue();
     box.width  = boxObj.Get("width").As<Napi::Number>().FloatValue();
     box.height = boxObj.Get("height").As<Napi::Number>().FloatValue();
+    if(!std::isfinite(box.x)||!std::isfinite(box.y)||!std::isfinite(box.width)||!std::isfinite(box.height)||box.width<=1||box.height<=1||box.x<0||box.y<0||box.x+box.width>width||box.y+box.height>height){
+        Napi::RangeError::New(env,"Face box must be finite and inside the image").ThrowAsJavaScriptException();return env.Null();
+    }
     if (boxObj.Has("landmarks") && boxObj.Get("landmarks").IsArray()) {
         auto landmarks = boxObj.Get("landmarks").As<Napi::Array>();
         for (uint32_t i = 0; i < 10 && i < landmarks.Length(); ++i) {
             box.landmarks[i] = landmarks.Get(i).As<Napi::Number>().FloatValue();
+            if(!std::isfinite(box.landmarks[i])){Napi::RangeError::New(env,"Landmarks must be finite").ThrowAsJavaScriptException();return env.Null();}
         }
     }
 
@@ -149,6 +168,9 @@ Napi::Value MatchFace(const Napi::CallbackInfo& info) {
             .ThrowAsJavaScriptException();
         return env.Null();
     }
+    if(!info[0].IsTypedArray()||!info[1].IsTypedArray()||info[0].As<Napi::TypedArray>().TypedArrayType()!=napi_float32_array||info[1].As<Napi::TypedArray>().TypedArrayType()!=napi_float32_array){
+        Napi::TypeError::New(env,"Descriptor and gallery must be Float32Array").ThrowAsJavaScriptException();return env.Null();
+    }
 
     auto descArr = info[0].As<Napi::Float32Array>();
     auto galleryArr = info[1].As<Napi::Float32Array>();
@@ -158,7 +180,7 @@ Napi::Value MatchFace(const Napi::CallbackInfo& info) {
     }
 
     size_t dim = descArr.ElementLength();
-    if (dim == 0 || galleryArr.ElementLength() % dim != 0) {
+    if (dim != 128 || galleryArr.ElementLength() % dim != 0 || galleryArr.ElementLength()/dim>10000 || topK<1 || topK>100) {
         Napi::RangeError::New(env, "Gallery length must be a positive multiple of descriptor length")
             .ThrowAsJavaScriptException();
         return env.Null();
@@ -186,6 +208,9 @@ Napi::Value MatchFaceBatch(const Napi::CallbackInfo& info) {
             .ThrowAsJavaScriptException();
         return env.Null();
     }
+    if(!info[0].IsTypedArray()||!info[1].IsTypedArray()||info[0].As<Napi::TypedArray>().TypedArrayType()!=napi_float32_array||info[1].As<Napi::TypedArray>().TypedArrayType()!=napi_float32_array){
+        Napi::TypeError::New(env,"Descriptors and gallery must be Float32Array").ThrowAsJavaScriptException();return env.Null();
+    }
 
     auto descsArr   = info[0].As<Napi::Float32Array>();
     auto galleryArr = info[1].As<Napi::Float32Array>();
@@ -195,7 +220,7 @@ Napi::Value MatchFaceBatch(const Napi::CallbackInfo& info) {
     }
 
     size_t dim = 128;
-    if (descsArr.ElementLength() % dim != 0 || galleryArr.ElementLength() % dim != 0) {
+    if (descsArr.ElementLength() % dim != 0 || galleryArr.ElementLength() % dim != 0 || descsArr.ElementLength()/dim>256 || galleryArr.ElementLength()/dim>10000 || topK<1 || topK>100) {
         Napi::RangeError::New(env, "Descriptor and gallery lengths must be multiples of 128")
             .ThrowAsJavaScriptException();
         return env.Null();

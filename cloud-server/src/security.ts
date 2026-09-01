@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, randomInt, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { SignJWT, jwtVerify } from 'jose';
 import type { CloudConfig } from './config.js';
@@ -11,6 +11,7 @@ export type AccessSubject = {
   organizationId: string;
   role: string;
   deviceId?: string;
+  authVersion?: number;
 };
 
 export async function hashPassword(password:string): Promise<string> {
@@ -31,6 +32,17 @@ export function generateOpaqueToken(prefix:string): string {
   return `${prefix}_${randomBytes(32).toString('base64url')}`;
 }
 
+export function generateInitialPassword(kind:'admin'|'classroom'|'teacher'):string {
+  const alphabet='23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const random=Array.from({length:10},()=>alphabet[randomInt(alphabet.length)]).join('');
+  const prefix=kind==='teacher'?'T':kind==='classroom'?'C':'A';
+  return `${prefix}-${random.slice(0,4)}-${random.slice(4,8)}-${random.slice(8)}`;
+}
+
+export function generateClassroomLoginName():string {
+  return `room-${randomBytes(5).toString('hex')}`;
+}
+
 export function hashOpaqueToken(value:string, pepper:string): string {
   return createHmac('sha256', pepper).update(String(value || ''), 'utf8').digest('hex');
 }
@@ -41,6 +53,7 @@ export async function signAccessToken(subject:AccessSubject, config:CloudConfig)
     organizationId:subject.organizationId,
     role:subject.role,
     ...(subject.deviceId ? { deviceId:subject.deviceId } : {}),
+    ...(subject.authVersion !== undefined ? { authVersion:subject.authVersion } : {}),
   })
     .setProtectedHeader({ alg:'HS256', typ:'JWT' })
     .setSubject(subject.subjectId)
@@ -64,5 +77,6 @@ export async function verifyAccessToken(token:string, config:CloudConfig): Promi
     organizationId:String(payload.organizationId),
     role:String(payload.role),
     ...(payload.deviceId ? { deviceId:String(payload.deviceId) } : {}),
+    ...(payload.authVersion !== undefined ? { authVersion:Number(payload.authVersion) } : {}),
   };
 }
